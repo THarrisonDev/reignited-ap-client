@@ -1,0 +1,19 @@
+{
+  "bosses": [
+    [
+      "Crush's Dungeon",
+      "Crush Defeated",
+      true
+    ],
+    [
+      "Gulp's Overlook",
+      "Gulp Defeated",
+      true
+    ],
+    [
+      "Ripto's Arena",
+      "Ripto Defeated",
+      true
+    ]
+  ]
+}

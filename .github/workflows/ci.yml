@@ -1,0 +1,96 @@
+name: client
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    name: golangci-lint
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        module: [checkd, launcher]
+    defaults:
+      run:
+        working-directory: ${{ matrix.module }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ matrix.module }}/go.mod
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+      - uses: golangci/golangci-lint-action@v7
+        with:
+          version: latest
+          working-directory: ${{ matrix.module }}
+          args: ./...
+
+  checkd:
+    name: checkd
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: checkd
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: checkd/go.mod
+      - run: go vet ./...
+      - run: go build ./...
+      - run: go test -v ./...
+
+  launcher:
+    name: launcher
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: launcher
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: launcher/go.mod
+          cache-dependency-path: launcher/go.sum
+      - run: go vet ./...
+      - run: go build ./...
+      - run: go test -v ./...
+
+  lua-tests:
+    name: lua tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.4
+      - run: make lua-tests
+
+  lua:
+    name: srt_bridge lua syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: luac parse check (5.4)
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq lua5.4
+          fail=0
+          while IFS= read -r f; do
+            if ! luac5.4 -p "$f"; then fail=1; fi
+          done < <(find ue4ss_mod/srt_bridge -name '*.lua' -type f)
+          exit $fail
+
+  audit:
+    name: generated locations up to date
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: locations.json + regions.lua match the data sources
+        run: python3 checkd/scripts/audit_locations.py

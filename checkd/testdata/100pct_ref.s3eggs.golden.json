@@ -1,0 +1,754 @@
+{
+  "eggs": [
+    [
+      "Agent 9's Lab",
+      "Beulah",
+      true
+    ],
+    [
+      "Agent 9's Lab",
+      "Rowan",
+      true
+    ],
+    [
+      "Agent 9's Lab",
+      "Tony",
+      true
+    ],
+    [
+      "Bamboo Terrace",
+      "Brubeck",
+      true
+    ],
+    [
+      "Bamboo Terrace",
+      "Dwight",
+      true
+    ],
+    [
+      "Bamboo Terrace",
+      "Madison",
+      true
+    ],
+    [
+      "Bamboo Terrace",
+      "Pee-wee",
+      true
+    ],
+    [
+      "Bamboo Terrace",
+      "Rusty",
+      true
+    ],
+    [
+      "Bamboo Terrace",
+      "Tom",
+      true
+    ],
+    [
+      "Bentley's Outpost",
+      "Brian",
+      true
+    ],
+    [
+      "Bentley's Outpost",
+      "Charlie",
+      true
+    ],
+    [
+      "Bentley's Outpost",
+      "Eric",
+      true
+    ],
+    [
+      "Bugbot Factory",
+      "Anabelle",
+      true
+    ],
+    [
+      "Buzz's Dungeon",
+      "Grayson",
+      true
+    ],
+    [
+      "Charmed Ridge",
+      "Abby",
+      true
+    ],
+    [
+      "Charmed Ridge",
+      "Benjamin",
+      true
+    ],
+    [
+      "Charmed Ridge",
+      "Chuck",
+      true
+    ],
+    [
+      "Charmed Ridge",
+      "Moe",
+      true
+    ],
+    [
+      "Charmed Ridge",
+      "Sakura",
+      true
+    ],
+    [
+      "Charmed Ridge",
+      "Shelley",
+      true
+    ],
+    [
+      "Cloud Spires",
+      "Bryan",
+      true
+    ],
+    [
+      "Cloud Spires",
+      "Clare",
+      true
+    ],
+    [
+      "Cloud Spires",
+      "Henry",
+      true
+    ],
+    [
+      "Cloud Spires",
+      "Jake",
+      true
+    ],
+    [
+      "Cloud Spires",
+      "LuLu",
+      true
+    ],
+    [
+      "Cloud Spires",
+      "Stephanie",
+      true
+    ],
+    [
+      "Country Speedway",
+      "Gavin",
+      true
+    ],
+    [
+      "Country Speedway",
+      "Roberto",
+      true
+    ],
+    [
+      "Country Speedway",
+      "Shemp",
+      true
+    ],
+    [
+      "Crawdad Farm",
+      "Nora",
+      true
+    ],
+    [
+      "Crystal Islands",
+      "Elloise",
+      true
+    ],
+    [
+      "Crystal Islands",
+      "Grace",
+      true
+    ],
+    [
+      "Crystal Islands",
+      "Hank",
+      true
+    ],
+    [
+      "Crystal Islands",
+      "Lloyd",
+      true
+    ],
+    [
+      "Crystal Islands",
+      "Manie",
+      true
+    ],
+    [
+      "Crystal Islands",
+      "Max",
+      true
+    ],
+    [
+      "Desert Ruins",
+      "Andy",
+      true
+    ],
+    [
+      "Desert Ruins",
+      "Lester",
+      true
+    ],
+    [
+      "Desert Ruins",
+      "Marty",
+      true
+    ],
+    [
+      "Desert Ruins",
+      "Nelly",
+      true
+    ],
+    [
+      "Desert Ruins",
+      "Pete",
+      true
+    ],
+    [
+      "Desert Ruins",
+      "Sadie",
+      true
+    ],
+    [
+      "Dino Mines",
+      "Dan",
+      true
+    ],
+    [
+      "Dino Mines",
+      "Elliot",
+      true
+    ],
+    [
+      "Dino Mines",
+      "Kiki",
+      true
+    ],
+    [
+      "Dino Mines",
+      "Romey",
+      true
+    ],
+    [
+      "Dino Mines",
+      "Sergio",
+      true
+    ],
+    [
+      "Dino Mines",
+      "Sharon",
+      true
+    ],
+    [
+      "Enchanted Towers",
+      "Alex",
+      true
+    ],
+    [
+      "Enchanted Towers",
+      "Caroline",
+      true
+    ],
+    [
+      "Enchanted Towers",
+      "Gladys",
+      true
+    ],
+    [
+      "Enchanted Towers",
+      "Lys",
+      true
+    ],
+    [
+      "Enchanted Towers",
+      "Peanut",
+      true
+    ],
+    [
+      "Enchanted Towers",
+      "Ralph",
+      true
+    ],
+    [
+      "Evening Lake",
+      "Hannah",
+      true
+    ],
+    [
+      "Evening Lake",
+      "Jonah",
+      true
+    ],
+    [
+      "Evening Lake",
+      "Stooby",
+      true
+    ],
+    [
+      "Evening Lake",
+      "Stuart",
+      true
+    ],
+    [
+      "Evening Lake",
+      "Ted",
+      true
+    ],
+    [
+      "Fireworks Factory",
+      "Donovan",
+      true
+    ],
+    [
+      "Fireworks Factory",
+      "Evan",
+      true
+    ],
+    [
+      "Fireworks Factory",
+      "Grady",
+      true
+    ],
+    [
+      "Fireworks Factory",
+      "Noodles",
+      true
+    ],
+    [
+      "Fireworks Factory",
+      "Patty",
+      true
+    ],
+    [
+      "Fireworks Factory",
+      "Sam",
+      true
+    ],
+    [
+      "Frozen Altars",
+      "Aly",
+      true
+    ],
+    [
+      "Frozen Altars",
+      "Baah",
+      true
+    ],
+    [
+      "Frozen Altars",
+      "Cecil",
+      true
+    ],
+    [
+      "Frozen Altars",
+      "Jana",
+      true
+    ],
+    [
+      "Frozen Altars",
+      "Jasper",
+      true
+    ],
+    [
+      "Frozen Altars",
+      "Ricco",
+      true
+    ],
+    [
+      "Harbor Speedway",
+      "Jessie",
+      true
+    ],
+    [
+      "Harbor Speedway",
+      "Kobe",
+      true
+    ],
+    [
+      "Harbor Speedway",
+      "Sara",
+      true
+    ],
+    [
+      "Haunted Tomb",
+      "Christine",
+      true
+    ],
+    [
+      "Haunted Tomb",
+      "MJ",
+      true
+    ],
+    [
+      "Haunted Tomb",
+      "Malcolm",
+      true
+    ],
+    [
+      "Haunted Tomb",
+      "Roxy",
+      true
+    ],
+    [
+      "Haunted Tomb",
+      "TJ",
+      true
+    ],
+    [
+      "Haunted Tomb",
+      "Will",
+      true
+    ],
+    [
+      "Honey Speedway",
+      "Chris",
+      true
+    ],
+    [
+      "Honey Speedway",
+      "Henri",
+      true
+    ],
+    [
+      "Honey Speedway",
+      "Nori",
+      true
+    ],
+    [
+      "Icy Peak",
+      "Betty",
+      true
+    ],
+    [
+      "Icy Peak",
+      "Cerny",
+      true
+    ],
+    [
+      "Icy Peak",
+      "Chet",
+      true
+    ],
+    [
+      "Icy Peak",
+      "Maynard",
+      true
+    ],
+    [
+      "Icy Peak",
+      "Reez",
+      true
+    ],
+    [
+      "Icy Peak",
+      "Scout",
+      true
+    ],
+    [
+      "Lost Fleet",
+      "Aiden",
+      true
+    ],
+    [
+      "Lost Fleet",
+      "Chad",
+      true
+    ],
+    [
+      "Lost Fleet",
+      "Craig",
+      true
+    ],
+    [
+      "Lost Fleet",
+      "Dolores",
+      true
+    ],
+    [
+      "Lost Fleet",
+      "Ethel",
+      true
+    ],
+    [
+      "Lost Fleet",
+      "Oliver",
+      true
+    ],
+    [
+      "Midday Gardens",
+      "Dave",
+      true
+    ],
+    [
+      "Midday Gardens",
+      "Matt",
+      true
+    ],
+    [
+      "Midday Gardens",
+      "Mingus",
+      true
+    ],
+    [
+      "Midday Gardens",
+      "Modesty",
+      true
+    ],
+    [
+      "Midday Gardens",
+      "Trixie",
+      true
+    ],
+    [
+      "Midnight Mountain",
+      "Al",
+      true
+    ],
+    [
+      "Midnight Mountain",
+      "Billy",
+      true
+    ],
+    [
+      "Midnight Mountain",
+      "Buddy",
+      true
+    ],
+    [
+      "Midnight Mountain",
+      "Evie",
+      true
+    ],
+    [
+      "Midnight Mountain",
+      "Maiken",
+      true
+    ],
+    [
+      "Midnight Mountain",
+      "Saki",
+      true
+    ],
+    [
+      "Molten Crater",
+      "Curlie",
+      true
+    ],
+    [
+      "Molten Crater",
+      "Kermitt",
+      true
+    ],
+    [
+      "Molten Crater",
+      "Luna",
+      true
+    ],
+    [
+      "Molten Crater",
+      "Moira",
+      true
+    ],
+    [
+      "Molten Crater",
+      "Rikki",
+      true
+    ],
+    [
+      "Molten Crater",
+      "Ryan",
+      true
+    ],
+    [
+      "Mushroom Speedway",
+      "John",
+      true
+    ],
+    [
+      "Mushroom Speedway",
+      "Sabina",
+      true
+    ],
+    [
+      "Mushroom Speedway",
+      "Tater",
+      true
+    ],
+    [
+      "Scorch's Pit",
+      "James",
+      true
+    ],
+    [
+      "Seashell Shore",
+      "Dizzy",
+      true
+    ],
+    [
+      "Seashell Shore",
+      "Duke",
+      true
+    ],
+    [
+      "Seashell Shore",
+      "Jackie",
+      true
+    ],
+    [
+      "Seashell Shore",
+      "Jared",
+      true
+    ],
+    [
+      "Seashell Shore",
+      "Jason",
+      true
+    ],
+    [
+      "Seashell Shore",
+      "Mollie",
+      true
+    ],
+    [
+      "Sgt. Byrd Base",
+      "Roy",
+      true
+    ],
+    [
+      "Sgt. Byrd Base",
+      "RyanLee",
+      true
+    ],
+    [
+      "Sgt. Byrd Base",
+      "Sigfried",
+      true
+    ],
+    [
+      "Sheila's Alp",
+      "Jenny",
+      true
+    ],
+    [
+      "Sheila's Alp",
+      "Nan",
+      true
+    ],
+    [
+      "Sheila's Alp",
+      "Ruby",
+      true
+    ],
+    [
+      "Sorceress Lair",
+      "George",
+      true
+    ],
+    [
+      "Spider Town",
+      "Tootie",
+      true
+    ],
+    [
+      "Spike's Arena",
+      "Monique",
+      true
+    ],
+    [
+      "Spooky Swamp",
+      "Frank",
+      true
+    ],
+    [
+      "Spooky Swamp",
+      "Herbi",
+      true
+    ],
+    [
+      "Spooky Swamp",
+      "Michael",
+      true
+    ],
+    [
+      "Spooky Swamp",
+      "Michele",
+      true
+    ],
+    [
+      "Spooky Swamp",
+      "Peggy",
+      true
+    ],
+    [
+      "Spooky Swamp",
+      "Thelonios",
+      true
+    ],
+    [
+      "Starfish Reef",
+      "Ahnashawn",
+      true
+    ],
+    [
+      "Sunny Villa",
+      "Daisy",
+      true
+    ],
+    [
+      "Sunny Villa",
+      "Emily",
+      true
+    ],
+    [
+      "Sunny Villa",
+      "Lucy",
+      true
+    ],
+    [
+      "Sunny Villa",
+      "Miles",
+      true
+    ],
+    [
+      "Sunny Villa",
+      "Sanders",
+      true
+    ],
+    [
+      "Sunny Villa",
+      "Vanessa",
+      true
+    ],
+    [
+      "Sunrise Spring",
+      "Ami",
+      true
+    ],
+    [
+      "Sunrise Spring",
+      "Bruce",
+      true
+    ],
+    [
+      "Sunrise Spring",
+      "Coltrane",
+      true
+    ],
+    [
+      "Sunrise Spring",
+      "Isabelle",
+      true
+    ],
+    [
+      "Sunrise Spring",
+      "Liam",
+      true
+    ],
+    [
+      "Super Bonus Round",
+      "YinYang",
+      true
+    ]
+  ]
+}

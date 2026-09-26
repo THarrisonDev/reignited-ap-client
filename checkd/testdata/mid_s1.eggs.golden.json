@@ -1,0 +1,24 @@
+{
+  "eggs": [
+    [
+      "Stone Hill",
+      1,
+      true
+    ],
+    [
+      "Town Square",
+      1,
+      true
+    ],
+    [
+      "Peace Keepers",
+      1,
+      true
+    ],
+    [
+      "Cliff Town",
+      1,
+      true
+    ]
+  ]
+}

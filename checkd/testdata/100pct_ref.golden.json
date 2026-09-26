@@ -1,0 +1,404 @@
+{
+  "dragons": [
+    [
+      "Alpine Ridge",
+      "Eldrid",
+      true
+    ],
+    [
+      "Alpine Ridge",
+      "Kelvin",
+      true
+    ],
+    [
+      "Alpine Ridge",
+      "Zander",
+      true
+    ],
+    [
+      "Alpine Ridge",
+      "Zane",
+      true
+    ],
+    [
+      "Artisans",
+      "Argus",
+      true
+    ],
+    [
+      "Artisans",
+      "Delbin",
+      true
+    ],
+    [
+      "Artisans",
+      "Nestor",
+      true
+    ],
+    [
+      "Artisans",
+      "Tomas",
+      true
+    ],
+    [
+      "Beast Makers",
+      "Bruno",
+      true
+    ],
+    [
+      "Beast Makers",
+      "Cleetus",
+      true
+    ],
+    [
+      "Blowhard",
+      "Altair",
+      true
+    ],
+    [
+      "Cliff Town",
+      "Enzo",
+      true
+    ],
+    [
+      "Cliff Town",
+      "Halvor",
+      true
+    ],
+    [
+      "Cliff Town",
+      "Marco",
+      true
+    ],
+    [
+      "Dark Hollow",
+      "Alban",
+      true
+    ],
+    [
+      "Dark Hollow",
+      "Darius",
+      true
+    ],
+    [
+      "Dark Hollow",
+      "Oswin",
+      true
+    ],
+    [
+      "Dark Passage",
+      "Apara",
+      true
+    ],
+    [
+      "Dark Passage",
+      "Azizi",
+      true
+    ],
+    [
+      "Dark Passage",
+      "Bakari",
+      true
+    ],
+    [
+      "Dark Passage",
+      "Kasiya",
+      true
+    ],
+    [
+      "Dark Passage",
+      "Obasi",
+      true
+    ],
+    [
+      "Doctor Shemp",
+      "Trondo",
+      true
+    ],
+    [
+      "Dream Weavers",
+      "Lateef",
+      true
+    ],
+    [
+      "Dream Weavers",
+      "Mazi",
+      true
+    ],
+    [
+      "Dream Weavers",
+      "Zikomo",
+      true
+    ],
+    [
+      "Dry Canyon",
+      "Boris",
+      true
+    ],
+    [
+      "Dry Canyon",
+      "Conan",
+      true
+    ],
+    [
+      "Dry Canyon",
+      "Ivor",
+      true
+    ],
+    [
+      "Dry Canyon",
+      "Maximos",
+      true
+    ],
+    [
+      "Gnorc Cove",
+      "Lateef",
+      true
+    ],
+    [
+      "Gnorc Cove",
+      "Tomas",
+      true
+    ],
+    [
+      "Gnorc Gnexus",
+      "Delbin",
+      true
+    ],
+    [
+      "Gnorc Gnexus",
+      "Magnus",
+      true
+    ],
+    [
+      "Haunted Towers",
+      "Copano",
+      true
+    ],
+    [
+      "Haunted Towers",
+      "Kosoko",
+      true
+    ],
+    [
+      "Haunted Towers",
+      "Lutalo",
+      true
+    ],
+    [
+      "High Caves",
+      "Ajax",
+      true
+    ],
+    [
+      "High Caves",
+      "Cedric",
+      true
+    ],
+    [
+      "High Caves",
+      "Cyrus",
+      true
+    ],
+    [
+      "Ice Cavern",
+      "Andor",
+      true
+    ],
+    [
+      "Ice Cavern",
+      "Asher",
+      true
+    ],
+    [
+      "Ice Cavern",
+      "Ragnar",
+      true
+    ],
+    [
+      "Ice Cavern",
+      "Todor",
+      true
+    ],
+    [
+      "Ice Cavern",
+      "Ulric",
+      true
+    ],
+    [
+      "Jacques",
+      "Revilo",
+      true
+    ],
+    [
+      "Jacques",
+      "Unika",
+      true
+    ],
+    [
+      "Lofty Castle",
+      "Baruti",
+      true
+    ],
+    [
+      "Lofty Castle",
+      "Mudada",
+      true
+    ],
+    [
+      "Lofty Castle",
+      "Useni",
+      true
+    ],
+    [
+      "Magic Crafters",
+      "Boldar",
+      true
+    ],
+    [
+      "Magic Crafters",
+      "Cosmos",
+      true
+    ],
+    [
+      "Magic Crafters",
+      "Zantor",
+      true
+    ],
+    [
+      "Metalhead",
+      "Sadiki",
+      true
+    ],
+    [
+      "Misty Bog",
+      "Bubba",
+      true
+    ],
+    [
+      "Misty Bog",
+      "Damon",
+      true
+    ],
+    [
+      "Misty Bog",
+      "Rosco",
+      true
+    ],
+    [
+      "Misty Bog",
+      "Zeke",
+      true
+    ],
+    [
+      "Peace Keepers",
+      "Gunnar",
+      true
+    ],
+    [
+      "Peace Keepers",
+      "Magnus",
+      true
+    ],
+    [
+      "Peace Keepers",
+      "Titan",
+      true
+    ],
+    [
+      "Stone Hill",
+      "Astor",
+      true
+    ],
+    [
+      "Stone Hill",
+      "Gavin",
+      true
+    ],
+    [
+      "Stone Hill",
+      "Gildas",
+      true
+    ],
+    [
+      "Stone Hill",
+      "Lindar",
+      true
+    ],
+    [
+      "Terrace Village",
+      "Claude",
+      true
+    ],
+    [
+      "Terrace Village",
+      "Cyprin",
+      true
+    ],
+    [
+      "Toasty",
+      "Nevin",
+      true
+    ],
+    [
+      "Town Square",
+      "Alvar",
+      true
+    ],
+    [
+      "Town Square",
+      "Devlin",
+      true
+    ],
+    [
+      "Town Square",
+      "Nils",
+      true
+    ],
+    [
+      "Town Square",
+      "Thor",
+      true
+    ],
+    [
+      "Tree Tops",
+      "Isaak",
+      true
+    ],
+    [
+      "Tree Tops",
+      "Jed",
+      true
+    ],
+    [
+      "Tree Tops",
+      "Lyle",
+      true
+    ],
+    [
+      "Twilight Harbor",
+      "Cleetus",
+      true
+    ],
+    [
+      "Twilight Harbor",
+      "Cosmos",
+      true
+    ],
+    [
+      "Wizard Peak",
+      "Hexus",
+      true
+    ],
+    [
+      "Wizard Peak",
+      "Jarvis",
+      true
+    ],
+    [
+      "Wizard Peak",
+      "Lucas",
+      true
+    ]
+  ]
+}

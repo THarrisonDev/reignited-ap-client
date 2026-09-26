@@ -1,0 +1,64 @@
+{
+  "eggs": [
+    [
+      "Town Square",
+      1,
+      true
+    ],
+    [
+      "Stone Hill",
+      1,
+      true
+    ],
+    [
+      "Peace Keepers",
+      1,
+      true
+    ],
+    [
+      "Dry Canyon",
+      1,
+      true
+    ],
+    [
+      "Cliff Town",
+      1,
+      true
+    ],
+    [
+      "Magic Crafters",
+      1,
+      true
+    ],
+    [
+      "Magic Crafters",
+      2,
+      true
+    ],
+    [
+      "Alpine Ridge",
+      1,
+      true
+    ],
+    [
+      "High Caves",
+      1,
+      true
+    ],
+    [
+      "High Caves",
+      2,
+      true
+    ],
+    [
+      "Wizard Peak",
+      1,
+      true
+    ],
+    [
+      "Wizard Peak",
+      2,
+      true
+    ]
+  ]
+}

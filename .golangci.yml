@@ -1,0 +1,23 @@
+# Minimal, fast, and tuned to this codebase: correctness-focused linters on,
+# style debates off. Run via `make lint` (client/Makefile) or CI.
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: none
+  enable:
+    # Correctness
+    - errcheck      # unchecked error returns
+    - govet         # suspicious constructs (shadows, printf, etc.)
+    - staticcheck   # the standard static analysis battery
+    - ineffassign   # assignments that are never used
+    - copyloopvar   # loop var copies that Go 1.22+ makes unnecessary
+    # Bug-prone patterns
+    - nilerr        # returns nil after checking err != nil
+    - exhaustive    # missing switch cases on typed enums
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

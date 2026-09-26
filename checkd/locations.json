@@ -1,0 +1,5114 @@
+{
+  "game": "Spyro Reignited Trilogy",
+  "gemThresholds": [
+    [
+      25,
+      "25% Gems"
+    ],
+    [
+      50,
+      "50% Gems"
+    ],
+    [
+      75,
+      "75% Gems"
+    ],
+    [
+      100,
+      "All Gems"
+    ]
+  ],
+  "games": {
+    "spyro1": {
+      "baseId": 100000,
+      "locationPrefix": "Spyro 1: ",
+      "skillPointRange": [
+        1,
+        14
+      ],
+      "regions": {
+        "Artisans": {
+          "levelPath": "/LS101_ArtisansHome/Maps/",
+          "gemTotal": 100,
+          "checks": [
+            {
+              "type": "dragon",
+              "name": "Nestor",
+              "location": "Spyro 1: Artisans: Free Nestor",
+              "id": 100000
+            },
+            {
+              "type": "dragon",
+              "name": "Delbin",
+              "location": "Spyro 1: Artisans: Free Delbin",
+              "id": 100001
+            },
+            {
+              "type": "dragon",
+              "name": "Tomas",
+              "location": "Spyro 1: Artisans: Free Tomas",
+              "id": 100002
+            },
+            {
+              "type": "dragon",
+              "name": "Argus",
+              "location": "Spyro 1: Artisans: Free Argus",
+              "id": 100003
+            },
+            {
+              "type": "skillpoint",
+              "name": "Reach tricky platform",
+              "enum": 1,
+              "location": "Spyro 1: Artisans: Reach tricky platform (Skill Point)",
+              "id": 100004
+            },
+            {
+              "type": "gem",
+              "threshold": 25,
+              "location": "Spyro 1: Artisans: 25% Gems",
+              "id": 102010
+            },
+            {
+              "type": "gem",
+              "threshold": 50,
+              "location": "Spyro 1: Artisans: 50% Gems",
+              "id": 102011
+            },
+            {
+              "type": "gem",
+              "threshold": 75,
+              "location": "Spyro 1: Artisans: 75% Gems",
+              "id": 102012
+            },
+            {
+              "type": "gem",
+              "threshold": 100,
+              "location": "Spyro 1: Artisans: All Gems",
+              "id": 102013
+            }
+          ],
+          "events": []
+        },
+        "Town Square": {
+          "levelPath": "/LS104_Townsquare/Maps/",
+          "gemTotal": 200,
+          "checks": [
+            {
+              "type": "dragon",
+              "name": "Nils",
+              "location": "Spyro 1: Town Square: Free Nils",
+              "id": 100005
+            },
+            {
+              "type": "dragon",
+              "name": "Devlin",
+              "location": "Spyro 1: Town Square: Free Devlin",
+              "id": 100006
+            },
+            {
+              "type": "dragon",
+              "name": "Alvar",
+              "location": "Spyro 1: Town Square: Free Alvar",
+              "id": 100007
+            },
+            {
+              "type": "dragon",
+              "name": "Thor",
+              "location": "Spyro 1: Town Square: Free Thor",
+              "id": 100008
+            },
+            {
+              "type": "egg",
+              "ordinal": 1,
+              "location": "Spyro 1: Town Square: Catch the egg thief",
+              "id": 100009
+            },
+            {
+              "type": "skillpoint",
+              "name": "All bulls stuck",
+              "enum": 3,
+              "location": "Spyro 1: Town Square: All bulls stuck (Skill Point)",
+              "id": 100010
+            },
+            {
+              "type": "gem",
+              "threshold": 25,
+              "location": "Spyro 1: Town Square: 25% Gems",
+              "id": 102020
+            },
+            {
+              "type": "gem",
+              "threshold": 50,
+              "location": "Spyro 1: Town Square: 50% Gems",
+              "id": 102021
+            },
+            {
+              "type": "gem",
+              "threshold": 75,
+              "location": "Spyro 1: Town Square: 75% Gems",
+              "id": 102022
+            },
+            {
+              "type": "gem",
+              "threshold": 100,
+              "location": "Spyro 1: Town Square: All Gems",
+              "id": 102023
+            }
+          ],
+          "events": [
+            {
+              "location": "Spyro 1: Town Square Complete",
+              "id": 103002
+            }
+          ]
+        },
+        "Stone Hill": {
+          "levelPath": "/LS102_StoneHill/Maps/",
+          "gemTotal": 200,
+          "checks": [
+            {
+              "type": "dragon",
+              "name": "Lindar",
+              "location": "Spyro 1: Stone Hill: Free Lindar",
+              "id": 100011
+            },
+            {
+              "type": "dragon",
+              "name": "Astor",
+              "location": "Spyro 1: Stone Hill: Free Astor",
+              "id": 100012
+            },
+            {
+              "type": "dragon",
+              "name": "Gavin",
+              "location": "Spyro 1: Stone Hill: Free Gavin",
+              "id": 100013
+            },
+            {
+              "type": "dragon",
+              "name": "Gildas",
+              "location": "Spyro 1: Stone Hill: Free Gildas",
+              "id": 100014
+            },
+            {
+              "type": "egg",
+              "ordinal": 1,
+              "location": "Spyro 1: Stone Hill: Catch the egg thief",
+              "id": 100015
+            },
+            {
+              "type": "skillpoint",
+              "name": "Burn the hidden pink tulip",
+              "enum": 2,
+              "location": "Spyro 1: Stone Hill: Burn the hidden pink tulip (Skill Point)",
+              "id": 100016
+            },
+            {
+              "type": "gem",
+              "threshold": 25,
+              "location": "Spyro 1: Stone Hill: 25% Gems",
+              "id": 102030
+            },
+            {
+              "type": "gem",
+              "threshold": 50,
+              "location": "Spyro 1: Stone Hill: 50% Gems",
+              "id": 102031
+            },
+            {
+              "type": "gem",
+              "threshold": 75,
+              "location": "Spyro 1: Stone Hill: 75% Gems",
+              "id": 102032
+            },
+            {
+              "type": "gem",
+              "threshold": 100,
+              "location": "Spyro 1: Stone Hill: All Gems",
+              "id": 102033
+            }
+          ],
+          "events": [
+            {
+              "location": "Spyro 1: Stone Hill Complete",
+              "id": 103003
+            }
+          ]
+        },
+        "Dark Hollow": {
+          "levelPath": "/LS103_DarkHollow/Maps/",
+          "gemTotal": 100,
+          "checks": [
+            {
+              "type": "dragon",
+              "name": "Alban",
+              "location": "Spyro 1: Dark Hollow: Free Alban",
+              "id": 100017
+            },
+            {
+              "type": "dragon",
+              "name": "Oswin",
+              "location": "Spyro 1: Dark Hollow: Free Oswin",
+              "id": 100018
+            },
+            {
+              "type": "dragon",
+              "name": "Darius",
+              "location": "Spyro 1: Dark Hollow: Free Darius",
+              "id": 100019
+            },
+            {
+              "type": "gem",
+              "threshold": 25,
+              "location": "Spyro 1: Dark Hollow: 25% Gems",
+              "id": 102040
+            },
+            {
+              "type": "gem",
+              "threshold": 50,
+              "location": "Spyro 1: Dark Hollow: 50% Gems",
+              "id": 102041
+            },
+            {
+              "type": "gem",
+              "threshold": 75,
+              "location": "Spyro 1: Dark Hollow: 75% Gems",
+              "id": 102042
+            },
+            {
+              "type": "gem",
+              "threshold": 100,
+              "location": "Spyro 1: Dark Hollow: All Gems",
+              "id": 102043
+            }
+          ],
+          "events": [
+            {
+              "location": "Spyro 1: Dark Hollow Complete",
+              "id": 103004
+            }
+          ]
+        },
+        "Toasty": {
+          "levelPath": "/LS106_Toasty/Maps/",
+          "gemTotal": 100,
+          "checks": [
+            {
+              "type": "dragon",
+              "name": "Nevin",
+              "location": "Spyro 1: Toasty: Free Nevin",
+              "id": 100020
+            },
+            {
+              "type": "gem",
+              "threshold": 100,
+              "location": "Spyro 1: Toasty: All Gems",
+              "id": 102053
+            }
+          ],
+          "events": [
+            {
+              "location": "Spyro 1: Toasty Defeated",
+              "id": 103005
+            }
+          ]
+        },
+        "Sunny Flight": {
+          "levelPath": "/LS105_Sunnyflight/Maps/",
+          "gemTotal": 300,
+          "checks": [],
+          "events": [
+            {
+              "location": "Spyro 1: Sunny Flight Complete",
+              "id": 103006
+            }
+          ]
+        },
+        "Peace Keepers": {
+          "levelPath": "/LS107_PeacekeeperHome/Maps/",
+          "gemTotal": 200,
+          "checks": [
+            {
+              "type": "dragon",
+              "name": "Titan",
+              "location": "Spyro 1: Peace Keepers: Free Titan",
+              "id": 100021
+            },
+            {
+              "type": "dragon",
+              "name": "Magnus",
+              "location": "Spyro 1: Peace Keepers: Free Magnus",
+              "id": 100022
+            },
+            {
+              "type": "dragon",
+              "name": "Gunnar",
+              "location": "Spyro 1: Peace Keepers: Free Gunnar",
+              "id": 100023
+            },
+            {
+              "type": "egg",
+              "ordinal": 1,
+              "location": "Spyro 1: Peace Keepers: Catch the egg thief",
+              "id": 100024
+            },
+            {
+              "type": "skillpoint",
+              "name": "Scare 6 Gnorcs into tents",
+              "enum": 4,
+              "location": "Spyro 1: Peace Keepers: Scare 6 Gnorcs into tents (Skill Point)",
+              "id": 100025
+            },
+            {
+              "type": "gem",
+              "threshold": 25,
+              "location": "Spyro 1: Peace Keepers: 25% Gems",
+              "id": 102070
+            },
+            {
+              "type": "gem",
+              "threshold": 50,
+              "location": "Spyro 1: Peace Keepers: 50% Gems",
+              "id": 102071
+            },
+            {
+              "type": "gem",
+              "threshold": 75,
+              "location": "Spyro 1: Peace Keepers: 75% Gems",
+              "id": 102072
+            },
+            {
+              "type": "gem",
+              "threshold": 100,
+              "location": "Spyro 1: Peace Keepers: All Gems",
+              "id": 102073
+            }
+          ],
+          "events": []
+        },
+        "Dry Canyon": {
+          "levelPath": "/LS108_DryCanyon/Maps/",
+          "gemTotal": 400,
+          "checks": [
+            {
+              "type": "dragon",
+              "name": "Conan",
+              "location": "Spyro 1: Dry Canyon: Free Conan",
+              "id": 100026
+            },
+            {
+              "type": "dragon",
+              "name": "Boris",
+              "location": "Spyro 1: Dry Canyon: Free Boris",
+              "id": 100027
+            },
+            {
+              "type": "dragon",
+              "name": "Ivor",
+              "location": "Spyro 1: Dry Canyon: Free Ivor",
+              "id": 100028
+            },
+            {
+              "type": "dragon",
+              "name": "Maximos",
+              "location": "Spyro 1: Dry Canyon: Free Maximos",
+              "id": 100029
+            },
+            {
+              "type": "egg",
+              "ordinal": 1,
+              "location": "Spyro 1: Dry Canyon: Catch the egg thief",
+              "id": 100030
+            },
+            {
+              "type": "gem",
+              "threshold": 25,
+              "location": "Spyro 1: Dry Canyon: 25% Gems",
+              "id": 102080
+            },
+            {
+              "type": "gem",
+              "threshold": 50,
+              "location": "Spyro 1: Dry Canyon: 50% Gems",
+              "id": 102081
+            },
+            {
+              "type": "gem",
+              "threshold": 75,
+              "location": "Spyro 1: Dry Canyon: 75% Gems",
+              "id": 102082
+            },
+            {
+              "type": "gem",
+              "threshold": 100,
+              "location": "Spyro 1: Dry Canyon: All Gems",
+              "id": 102083
+            }
+          ],
+          "events": [
+            {
+              "location": "Spyro 1: Dry Canyon Complete",
+              "id": 103008
+            }
+          ]
+        },
+        "Cliff Town": {
+          "levelPath": "/LS109_CliffTown/Maps/",
+          "gemTotal": 400,
+          "checks": [
+            {
+              "type": "dragon",
+              "name": "Halvor",
+              "location": "Spyro 1: Cliff Town: Free Halvor",
+              "id": 100031
+            },
+            {
+              "type": "dragon",
+              "name": "Enzo",
+              "location": "Spyro 1: Cliff Town: Free Enzo",
+              "id": 100032
+            },
+            {
+              "type": "dragon",
+              "name": "Marco",
+              "location": "Spyro 1: Cliff Town: Free Marco",
+              "id": 100033
+            },
+            {
+              "type": "egg",
+              "ordinal": 1,
+              "location": "Spyro 1: Cliff Town: Catch the egg thief",
+              "id": 100034
+            },
+            {
+              "type": "gem",
+              "threshold": 25,
+              "location": "Spyro 1: Cliff Town: 25% Gems",
+              "id": 102090
+            },
+            {
+              "type": "gem",
+              "threshold": 50,
+              "location": "Spyro 1: Cliff Town: 50% Gems",
+              "id": 102091
+            },
+            {
+              "type": "gem",
+              "threshold": 75,
+              "location": "Spyro 1: Cliff Town: 75% Gems",
+              "id": 102092
+            },
+            {
+              "type": "gem",
+              "threshold": 100,
+              "location": "Spyro 1: Cliff Town: All Gems",
+              "id": 102093
+            }
+          ],
+          "events": [
+            {
+              "location": "Spyro 1: Cliff Town Complete",
+              "id": 103009
+            }
+          ]
+        },
+        "Ice Cavern": {
+          "levelPath": "/LS110_IceCavern/Maps/",
+          "gemTotal": 400,
+          "checks": [
+            {
+              "type": "dragon",
+              "name": "Ulric",
+              "location": "Spyro 1: Ice Cavern: Free Ulric",
+              "id": 100035
+            },
+            {
+              "type": "dragon",
+              "name": "Todor",
+              "location": "Spyro 1: Ice Cavern: Free Todor",
+              "id": 100036
+            },
+            {
+              "type": "dragon",
+              "name": "Andor",
+              "location": "Spyro 1: Ice Cavern: Free Andor",
+              "id": 100037
+            },
+            {
+              "type": "dragon",
+              "name": "Asher",
+              "location": "Spyro 1: Ice Cavern: Free Asher",
+              "id": 100038
+            },
+            {
+              "type": "dragon",
+              "name": "Ragnar",
+              "location": "Spyro 1: Ice Cavern: Free Ragnar",
+              "id": 100039
+            },
+            {
+              "type": "gem",
+              "threshold": 25,
+              "location": "Spyro 1: Ice Cavern: 25% Gems",
+              "id": 102100
+            },
+            {
+              "type": "gem",
+              "threshold": 50,
+              "location": "Spyro 1: Ice Cavern: 50% Gems",
+              "id": 102101
+            },
+            {
+              "type": "gem",
+              "threshold": 75,
+              "location": "Spyro 1: Ice Cavern: 75% Gems",
+              "id": 102102
+            },
+            {
+              "type": "gem",
+              "threshold": 100,
+              "location": "Spyro 1: Ice Cavern: All Gems",
+              "id": 102103
+            }
+          ],
+          "events": [
+            {
+              "location": "Spyro 1: Ice Cavern Complete",
+              "id": 103010
+            }
+          ]
+        },
+        "Doctor Shemp": {
+          "levelPath": "/LS112_DrShemp/Maps/",
+          "gemTotal": 300,
+          "checks": [
+            {
+              "type": "dragon",
+              "name": "Trondo",
+              "location": "Spyro 1: Doctor Shemp: Free Trondo",
+              "id": 100040
+            },
+            {
+              "type": "skillpoint",
+              "name": "Perfect",
+              "enum": 5,
+              "location": "Spyro 1: Doctor Shemp: Perfect (Skill Point)",
+              "id": 100041
+            },
+            {
+              "type": "gem",
+              "threshold": 100,
+              "location": "Spyro 1: Doctor Shemp: All Gems",
+              "id": 102113
+            }
+          ],
+          "events": [
+            {
+              "location": "Spyro 1: Doctor Shemp Defeated",
+              "id": 103011
+            }
+          ]
+        },
+        "Night Flight": {
+          "levelPath": "/LS111_NightFlight/Maps/",
+          "gemTotal": 300,
+          "checks": [],
+          "events": [
+            {
+              "location": "Spyro 1: Night Flight Complete",
+              "id": 103012
+            }
+          ]
+        },
+        "Magic Crafters": {
+          "levelPath": "/LS113_MagicHome/Maps/",
+          "gemTotal": 300,
+          "checks": [
+            {
+              "type": "dragon",
+              "name": "Cosmos",
+              "location": "Spyro 1: Magic Crafters: Free Cosmos",
+              "id": 100042
+            },
+            {
+              "type": "dragon",
+              "name": "Zantor",
+              "location": "Spyro 1: Magic Crafters: Free Zantor",
+              "id": 100043
+            },
+            {
+              "type": "dragon",
+              "name": "Boldar",
+              "location": "Spyro 1: Magic Crafters: Free Boldar",
+              "id": 100044
+            },
+            {
+              "type": "egg",
+              "ordinal": 1,
+              "location": "Spyro 1: Magic Crafters: Catch the egg thief (start area)",
+              "id": 100045
+            },
+            {
+              "type": "egg",
+              "ordinal": 2,
+              "location": "Spyro 1: Magic Crafters: Catch the egg thief (supercharge ramp)",
+              "id": 100046
+            },
+            {
+              "type": "gem",
+              "threshold": 25,
+              "location": "Spyro 1: Magic Crafters: 25% Gems",
+              "id": 102130
+            },
+            {
+              "type": "gem",
+              "threshold": 50,
+              "location": "Spyro 1: Magic Crafters: 50% Gems",
+              "id": 102131
+            },
+            {
+              "type": "gem",
+              "threshold": 75,
+              "location": "Spyro 1: Magic Crafters: 75% Gems",
+              "id": 102132
+            },
+            {
+              "type": "gem",
+              "threshold": 100,
+              "location": "Spyro 1: Magic Crafters: All Gems",
+              "id": 102133
+            }
+          ],
+          "events": []
+        },
+        "Alpine Ridge": {
+          "levelPath": "/LS114_AlpineRidge/Maps/",
+          "gemTotal": 500,
+          "checks": [
+            {
+              "type": "dragon",
+              "name": "Zane",
+              "location": "Spyro 1: Alpine Ridge: Free Zane",
+              "id": 100047
+            },
+            {
+              "type": "dragon",
+              "name": "Eldrid",
+              "location": "Spyro 1: Alpine Ridge: Free Eldrid",
+              "id": 100048
+            },
+            {
+              "type": "dragon",
+              "name": "Zander",
+              "location": "Spyro 1: Alpine Ridge: Free Zander",
+              "id": 100049
+            },
+            {
+              "type": "dragon",
+              "name": "Kelvin",
+              "location": "Spyro 1: Alpine Ridge: Free Kelvin",
+              "id": 100050
+            },
+            {
+              "type": "egg",
+              "ordinal": 1,
+              "location": "Spyro 1: Alpine Ridge: Catch the egg thief",
+              "id": 100051
+            },
+            {
+              "type": "gem",
+              "threshold": 25,
+              "location": "Spyro 1: Alpine Ridge: 25% Gems",
+              "id": 102140
+            },
+            {
+              "type": "gem",
+              "threshold": 50,
+              "location": "Spyro 1: Alpine Ridge: 50% Gems",
+              "id": 102141
+            },
+            {
+              "type": "gem",
+              "threshold": 75,
+              "location": "Spyro 1: Alpine Ridge: 75% Gems",
+              "id": 102142
+            },
+            {
+              "type": "gem",
+              "threshold": 100,
+              "location": "Spyro 1: Alpine Ridge: All Gems",
+              "id": 102143
+            }
+          ],
+          "events": [
+            {
+              "location": "Spyro 1: Alpine Ridge Complete",
+              "id": 103014
+            }
+          ]
+        },
+        "High Caves": {
+          "levelPath": "/LS115_HighCaves/Maps/",
+          "gemTotal": 500,
+          "checks": [
+            {
+              "type": "dragon",
+              "name": "Ajax",
+              "location": "Spyro 1: High Caves: Free Ajax",
+              "id": 100052
+            },
+            {
+              "type": "dragon",
+              "name": "Cyrus",
+              "location": "Spyro 1: High Caves: Free Cyrus",
+              "id": 100053
+            },
+            {
+              "type": "dragon",
+              "name": "Cedric",
+              "location": "Spyro 1: High Caves: Free Cedric",
+              "id": 100054
+            },
+            {
+              "type": "egg",
+              "ordinal": 1,
+              "location": "Spyro 1: High Caves: Catch the egg thief (supercharge pool)",
+              "id": 100055
+            },
+            {
+              "type": "egg",
+              "ordinal": 2,
+              "location": "Spyro 1: High Caves: Catch the egg thief (archway ledge)",
+              "id": 100056
+            },
+            {
+              "type": "skillpoint",
+              "name": "Burn hidden painting",
+              "enum": 6,
+              "location": "Spyro 1: High Caves: Burn hidden painting (Skill Point)",
+              "id": 100057
+            },
+            {
+              "type": "gem",
+              "threshold": 25,
+              "location": "Spyro 1: High Caves: 25% Gems",
+              "id": 102150
+            },
+            {
+              "type": "gem",
+              "threshold": 50,
+              "location": "Spyro 1: High Caves: 50% Gems",
+              "id": 102151
+            },
+            {
+              "type": "gem",
+              "threshold": 75,
+              "location": "Spyro 1: High Caves: 75% Gems",
+              "id": 102152
+            },
+            {
+              "type": "gem",
+              "threshold": 100,
+              "location": "Spyro 1: High Caves: All Gems",
+              "id": 102153
+            }
+          ],
+          "events": [
+            {
+              "location": "Spyro 1: High Caves Complete",
+              "id": 103015
+            }
+          ]
+        },
+        "Wizard Peak": {
+          "levelPath": "/LS116_WizardPeak/Maps/",
+          "gemTotal": 500,
+          "checks": [
+            {
+              "type": "dragon",
+              "name": "Jarvis",
+              "location": "Spyro 1: Wizard Peak: Free Jarvis",
+              "id": 100058
+            },
+            {
+              "type": "dragon",
+              "name": "Hexus",
+              "location": "Spyro 1: Wizard Peak: Free Hexus",
+              "id": 100059
+            },
+            {
+              "type": "dragon",
+              "name": "Lucas",
+              "location": "Spyro 1: Wizard Peak: Free Lucas",
+              "id": 100060
+            },
+            {
+              "type": "egg",
+              "ordinal": 1,
+              "location": "Spyro 1: Wizard Peak: Catch the egg thief (hidden platform)",
+              "id": 100061
+            },
+            {
+              "type": "egg",
+              "ordinal": 2,
+              "location": "Spyro 1: Wizard Peak: Catch the egg thief (pool by steps)",
+              "id": 100062
+            },
+            {
+              "type": "gem",
+              "threshold": 25,
+              "location": "Spyro 1: Wizard Peak: 25% Gems",
+              "id": 102160
+            },
+            {
+              "type": "gem",
+              "threshold": 50,
+              "location": "Spyro 1: Wizard Peak: 50% Gems",
+              "id": 102161
+            },
+            {
+              "type": "gem",
+              "threshold": 75,
+              "location": "Spyro 1: Wizard Peak: 75% Gems",
+              "id": 102162
+            },
+            {
+              "type": "gem",
+              "threshold": 100,
+              "location": "Spyro 1: Wizard Peak: All Gems",
+              "id": 102163
+            }
+          ],
+          "events": [
+            {
+              "location": "Spyro 1: Wizard Peak Complete",
+              "id": 103016
+            }
+          ]
+        },
+        "Blowhard": {
+          "levelPath": "/LS118_Blowhard/Maps/",
+          "gemTotal": 400,
+          "checks": [
+            {
+              "type": "dragon",
+              "name": "Altair",
+              "location": "Spyro 1: Blowhard: Free Altair",
+              "id": 100063
+            },
+            {
+              "type": "skillpoint",
+              "name": "Ride a Druid platform for 10 seconds",
+              "enum": 7,
+              "location": "Spyro 1: Blowhard: Ride a Druid platform for 10 seconds (Skill Point)",
+              "id": 100064
+            },
+            {
+              "type": "gem",
+              "threshold": 100,
+              "location": "Spyro 1: Blowhard: All Gems",
+              "id": 102173
+            }
+          ],
+          "events": [
+            {
+              "location": "Spyro 1: Blowhard Defeated",
+              "id": 103017
+            }
+          ]
+        },
+        "Crystal Flight": {
+          "levelPath": "/LS117_CrystalFlight/Maps/",
+          "gemTotal": 300,
+          "checks": [],
+          "events": [
+            {
+              "location": "Spyro 1: Crystal Flight Complete",
+              "id": 103018
+            }
+          ]
+        },
+        "Beast Makers": {
+          "levelPath": "/LS119_BeastHome/Maps/",
+          "gemTotal": 300,
+          "checks": [
+            {
+              "type": "dragon",
+              "name": "Bruno",
+              "location": "Spyro 1: Beast Makers: Free Bruno",
+              "id": 100065
+            },
+            {
+              "type": "dragon",
+              "name": "Cleetus",
+              "location": "Spyro 1: Beast Makers: Free Cleetus",
+              "id": 100066
+            },
+            {
+              "type": "gem",
+              "threshold": 25,
+              "location": "Spyro 1: Beast Makers: 25% Gems",
+              "id": 102190
+            },
+            {
+              "type": "gem",
+              "threshold": 50,
+              "location": "Spyro 1: Beast Makers: 50% Gems",
+              "id": 102191
+            },
+            {
+              "type": "gem",
+              "threshold": 75,
+              "location": "Spyro 1: Beast Makers: 75% Gems",
+              "id": 102192
+            },
+            {
+              "type": "gem",
+              "threshold": 100,
+              "location": "Spyro 1: Beast Makers: All Gems",
+              "id": 102193
+            }
+          ],
+          "events": []
+        },
+        "Terrace Village": {
+          "levelPath": "/LS120_TerraceVillage/Maps/",
+          "gemTotal": 400,
+          "checks": [
+            {
+              "type": "dragon",
+              "name": "Claude",
+              "location": "Spyro 1: Terrace Village: Free Claude",
+              "id": 100067
+            },
+            {
+              "type": "dragon",
+              "name": "Cyprin",
+              "location": "Spyro 1: Terrace Village: Free Cyprin",
+              "id": 100068
+            },
+            {
+              "type": "skillpoint",
+              "name": "No electric floor damage",
+              "enum": 8,
+              "location": "Spyro 1: Terrace Village: No electric floor damage (Skill Point)",
+              "id": 100069
+            },
+            {
+              "type": "gem",
+              "threshold": 25,
+              "location": "Spyro 1: Terrace Village: 25% Gems",
+              "id": 102200
+            },
+            {
+              "type": "gem",
+              "threshold": 50,
+              "location": "Spyro 1: Terrace Village: 50% Gems",
+              "id": 102201
+            },
+            {
+              "type": "gem",
+              "threshold": 75,
+              "location": "Spyro 1: Terrace Village: 75% Gems",
+              "id": 102202
+            },
+            {
+              "type": "gem",
+              "threshold": 100,
+              "location": "Spyro 1: Terrace Village: All Gems",
+              "id": 102203
+            }
+          ],
+          "events": [
+            {
+              "location": "Spyro 1: Terrace Village Complete",
+              "id": 103020
+            }
+          ]
+        },
+        "Misty Bog": {
+          "levelPath": "/LS121_MistyBog/Maps/",
+          "gemTotal": 500,
+          "checks": [
+            {
+              "type": "dragon",
+              "name": "Rosco",
+              "location": "Spyro 1: Misty Bog: Free Rosco",
+              "id": 100070
+            },
+            {
+              "type": "dragon",
+              "name": "Damon",
+              "location": "Spyro 1: Misty Bog: Free Damon",
+              "id": 100071
+            },
+            {
+              "type": "dragon",
+              "name": "Bubba",
+              "location": "Spyro 1: Misty Bog: Free Bubba",
+              "id": 100072
+            },
+            {
+              "type": "dragon",
+              "name": "Zeke",
+              "location": "Spyro 1: Misty Bog: Free Zeke",
+              "id": 100073
+            },
+            {
+              "type": "gem",
+              "threshold": 25,
+              "location": "Spyro 1: Misty Bog: 25% Gems",
+              "id": 102210
+            },
+            {
+              "type": "gem",
+              "threshold": 50,
+              "location": "Spyro 1: Misty Bog: 50% Gems",
+              "id": 102211
+            },
+            {
+              "type": "gem",
+              "threshold": 75,
+              "location": "Spyro 1: Misty Bog: 75% Gems",
+              "id": 102212
+            },
+            {
+              "type": "gem",
+              "threshold": 100,
+              "location": "Spyro 1: Misty Bog: All Gems",
+              "id": 102213
+            }
+          ],
+          "events": [
+            {
+              "location": "Spyro 1: Misty Bog Complete",
+              "id": 103021
+            }
+          ]
+        },
+        "Tree Tops": {
+          "levelPath": "/LS122_TreeTops/Maps/",
+          "gemTotal": 500,
+          "checks": [
+            {
+              "type": "dragon",
+              "name": "Isaak",
+              "location": "Spyro 1: Tree Tops: Free Isaak",
+              "id": 100074
+            },
+            {
+              "type": "dragon",
+              "name": "Lyle",
+              "location": "Spyro 1: Tree Tops: Free Lyle",
+              "id": 100075
+            },
+            {
+              "type": "dragon",
+              "name": "Jed",
+              "location": "Spyro 1: Tree Tops: Free Jed",
+              "id": 100076
+            },
+            {
+              "type": "gem",
+              "threshold": 25,
+              "location": "Spyro 1: Tree Tops: 25% Gems",
+              "id": 102220
+            },
+            {
+              "type": "gem",
+              "threshold": 50,
+              "location": "Spyro 1: Tree Tops: 50% Gems",
+              "id": 102221
+            },
+            {
+              "type": "gem",
+              "threshold": 75,
+              "location": "Spyro 1: Tree Tops: 75% Gems",
+              "id": 102222
+            },
+            {
+              "type": "gem",
+              "threshold": 100,
+              "location": "Spyro 1: Tree Tops: All Gems",
+              "id": 102223
+            }
+          ],
+          "events": [
+            {
+              "location": "Spyro 1: Tree Tops Complete",
+              "id": 103022
+            }
+          ]
+        },
+        "Metalhead": {
+          "levelPath": "/LS124_MetalHead/Maps/",
+          "gemTotal": 500,
+          "checks": [
+            {
+              "type": "dragon",
+              "name": "Sadiki",
+              "location": "Spyro 1: Metalhead: Free Sadiki",
+              "id": 100077
+            },
+            {
+              "type": "skillpoint",
+              "name": "Perfect",
+              "enum": 9,
+              "location": "Spyro 1: Metalhead: Perfect (Skill Point)",
+              "id": 100078
+            },
+            {
+              "type": "gem",
+              "threshold": 100,
+              "location": "Spyro 1: Metalhead: All Gems",
+              "id": 102233
+            }
+          ],
+          "events": [
+            {
+              "location": "Spyro 1: Metalhead Defeated",
+              "id": 103023
+            }
+          ]
+        },
+        "Wild Flight": {
+          "levelPath": "/LS123_WildFlight/Maps/",
+          "gemTotal": 300,
+          "checks": [],
+          "events": [
+            {
+              "location": "Spyro 1: Wild Flight Complete",
+              "id": 103024
+            }
+          ]
+        },
+        "Dream Weavers": {
+          "levelPath": "/LS125_DreamWeaverHome/Maps/",
+          "gemTotal": 300,
+          "checks": [
+            {
+              "type": "dragon",
+              "name": "Lateef",
+              "location": "Spyro 1: Dream Weavers: Free Lateef",
+              "id": 100079
+            },
+            {
+              "type": "dragon",
+              "name": "Zikomo",
+              "location": "Spyro 1: Dream Weavers: Free Zikomo",
+              "id": 100080
+            },
+            {
+              "type": "dragon",
+              "name": "Mazi",
+              "location": "Spyro 1: Dream Weavers: Free Mazi",
+              "id": 100081
+            },
+            {
+              "type": "skillpoint",
+              "name": "Secret room",
+              "enum": 10,
+              "location": "Spyro 1: Dream Weavers: Secret room (Skill Point)",
+              "id": 100082
+            },
+            {
+              "type": "gem",
+              "threshold": 25,
+              "location": "Spyro 1: Dream Weavers: 25% Gems",
+              "id": 102250
+            },
+            {
+              "type": "gem",
+              "threshold": 50,
+              "location": "Spyro 1: Dream Weavers: 50% Gems",
+              "id": 102251
+            },
+            {
+              "type": "gem",
+              "threshold": 75,
+              "location": "Spyro 1: Dream Weavers: 75% Gems",
+              "id": 102252
+            },
+            {
+              "type": "gem",
+              "threshold": 100,
+              "location": "Spyro 1: Dream Weavers: All Gems",
+              "id": 102253
+            }
+          ],
+          "events": []
+        },
+        "Dark Passage": {
+          "levelPath": "/LS126_DarkPassage/Maps/",
+          "gemTotal": 500,
+          "checks": [
+            {
+              "type": "dragon",
+              "name": "Kasiya",
+              "location": "Spyro 1: Dark Passage: Free Kasiya",
+              "id": 100083
+            },
+            {
+              "type": "dragon",
+              "name": "Azizi",
+              "location": "Spyro 1: Dark Passage: Free Azizi",
+              "id": 100084
+            },
+            {
+              "type": "dragon",
+              "name": "Bakari",
+              "location": "Spyro 1: Dark Passage: Free Bakari",
+              "id": 100085
+            },
+            {
+              "type": "dragon",
+              "name": "Apara",
+              "location": "Spyro 1: Dark Passage: Free Apara",
+              "id": 100086
+            },
+            {
+              "type": "dragon",
+              "name": "Obasi",
+              "location": "Spyro 1: Dark Passage: Free Obasi",
+              "id": 100087
+            },
+            {
+              "type": "gem",
+              "threshold": 25,
+              "location": "Spyro 1: Dark Passage: 25% Gems",
+              "id": 102260
+            },
+            {
+              "type": "gem",
+              "threshold": 50,
+              "location": "Spyro 1: Dark Passage: 50% Gems",
+              "id": 102261
+            },
+            {
+              "type": "gem",
+              "threshold": 75,
+              "location": "Spyro 1: Dark Passage: 75% Gems",
+              "id": 102262
+            },
+            {
+              "type": "gem",
+              "threshold": 100,
+              "location": "Spyro 1: Dark Passage: All Gems",
+              "id": 102263
+            }
+          ],
+          "events": [
+            {
+              "location": "Spyro 1: Dark Passage Complete",
+              "id": 103026
+            }
+          ]
+        },
+        "Lofty Castle": {
+          "levelPath": "/LS127_LoftyCastle/Maps/",
+          "gemTotal": 400,
+          "checks": [
+            {
+              "type": "dragon",
+              "name": "Mudada",
+              "location": "Spyro 1: Lofty Castle: Free Mudada",
+              "id": 100088
+            },
+            {
+              "type": "dragon",
+              "name": "Useni",
+              "location": "Spyro 1: Lofty Castle: Free Useni",
+              "id": 100089
+            },
+            {
+              "type": "dragon",
+              "name": "Baruti",
+              "location": "Spyro 1: Lofty Castle: Free Baruti",
+              "id": 100090
+            },
+            {
+              "type": "skillpoint",
+              "name": "Destroy hidden stump",
+              "enum": 12,
+              "location": "Spyro 1: Lofty Castle: Destroy hidden stump (Skill Point)",
+              "id": 100091
+            },
+            {
+              "type": "gem",
+              "threshold": 25,
+              "location": "Spyro 1: Lofty Castle: 25% Gems",
+              "id": 102270
+            },
+            {
+              "type": "gem",
+              "threshold": 50,
+              "location": "Spyro 1: Lofty Castle: 50% Gems",
+              "id": 102271
+            },
+            {
+              "type": "gem",
+              "threshold": 75,
+              "location": "Spyro 1: Lofty Castle: 75% Gems",
+              "id": 102272
+            },
+            {
+              "type": "gem",
+              "threshold": 100,
+              "location": "Spyro 1: Lofty Castle: All Gems",
+              "id": 102273
+            }
+          ],
+          "events": [
+            {
+              "location": "Spyro 1: Lofty Castle Complete",
+              "id": 103027
+            }
+          ]
+        },
+        "Haunted Towers": {
+          "levelPath": "/LS128_HauntedTowers/Maps/",
+          "gemTotal": 500,
+          "checks": [
+            {
+              "type": "dragon",
+              "name": "Kosoko",
+              "location": "Spyro 1: Haunted Towers: Free Kosoko",
+              "id": 100092
+            },
+            {
+              "type": "dragon",
+              "name": "Lutalo",
+              "location": "Spyro 1: Haunted Towers: Free Lutalo",
+              "id": 100093
+            },
+            {
+              "type": "dragon",
+              "name": "Copano",
+              "location": "Spyro 1: Haunted Towers: Free Copano",
+              "id": 100094
+            },
+            {
+              "type": "skillpoint",
+              "name": "Burn blue wizard hat",
+              "enum": 11,
+              "location": "Spyro 1: Haunted Towers: Burn blue wizard hat (Skill Point)",
+              "id": 100095
+            },
+            {
+              "type": "gem",
+              "threshold": 25,
+              "location": "Spyro 1: Haunted Towers: 25% Gems",
+              "id": 102280
+            },
+            {
+              "type": "gem",
+              "threshold": 50,
+              "location": "Spyro 1: Haunted Towers: 50% Gems",
+              "id": 102281
+            },
+            {
+              "type": "gem",
+              "threshold": 75,
+              "location": "Spyro 1: Haunted Towers: 75% Gems",
+              "id": 102282
+            },
+            {
+              "type": "gem",
+              "threshold": 100,
+              "location": "Spyro 1: Haunted Towers: All Gems",
+              "id": 102283
+            }
+          ],
+          "events": [
+            {
+              "location": "Spyro 1: Haunted Towers Complete",
+              "id": 103028
+            }
+          ]
+        },
+        "Jacques": {
+          "levelPath": "/LS130_Jacques/Maps/",
+          "gemTotal": 500,
+          "checks": [
+            {
+              "type": "dragon",
+              "name": "Unika",
+              "location": "Spyro 1: Jacques: Free Unika",
+              "id": 100096
+            },
+            {
+              "type": "dragon",
+              "name": "Revilo",
+              "location": "Spyro 1: Jacques: Free Revilo",
+              "id": 100097
+            },
+            {
+              "type": "skillpoint",
+              "name": "Perfect",
+              "enum": 13,
+              "location": "Spyro 1: Jacques: Perfect (Skill Point)",
+              "id": 100098
+            },
+            {
+              "type": "gem",
+              "threshold": 100,
+              "location": "Spyro 1: Jacques: All Gems",
+              "id": 102293
+            }
+          ],
+          "events": [
+            {
+              "location": "Spyro 1: Jacques Defeated",
+              "id": 103029
+            }
+          ]
+        },
+        "Icy Flight": {
+          "levelPath": "/LS129_IcyFlight/Maps/",
+          "gemTotal": 300,
+          "checks": [],
+          "events": [
+            {
+              "location": "Spyro 1: Icy Flight Complete",
+              "id": 103030
+            }
+          ]
+        },
+        "Gnorc Gnexus": {
+          "levelPath": "/LS131_GnastyHome/Maps/",
+          "gemTotal": 200,
+          "checks": [
+            {
+              "type": "dragon",
+              "name": "Delbin",
+              "location": "Spyro 1: Gnorc Gnexus: Free Delbin",
+              "id": 100099
+            },
+            {
+              "type": "dragon",
+              "name": "Magnus",
+              "location": "Spyro 1: Gnorc Gnexus: Free Magnus",
+              "id": 100100
+            },
+            {
+              "type": "gem",
+              "threshold": 25,
+              "location": "Spyro 1: Gnorc Gnexus: 25% Gems",
+              "id": 102310
+            },
+            {
+              "type": "gem",
+              "threshold": 50,
+              "location": "Spyro 1: Gnorc Gnexus: 50% Gems",
+              "id": 102311
+            },
+            {
+              "type": "gem",
+              "threshold": 75,
+              "location": "Spyro 1: Gnorc Gnexus: 75% Gems",
+              "id": 102312
+            },
+            {
+              "type": "gem",
+              "threshold": 100,
+              "location": "Spyro 1: Gnorc Gnexus: All Gems",
+              "id": 102313
+            }
+          ],
+          "events": []
+        },
+        "Gnorc Cove": {
+          "levelPath": "/LS132_GnorcCove/Maps/",
+          "gemTotal": 400,
+          "checks": [
+            {
+              "type": "dragon",
+              "name": "Lateef",
+              "location": "Spyro 1: Gnorc Cove: Free Lateef",
+              "id": 100101
+            },
+            {
+              "type": "dragon",
+              "name": "Tomas",
+              "location": "Spyro 1: Gnorc Cove: Free Tomas",
+              "id": 100102
+            },
+            {
+              "type": "gem",
+              "threshold": 25,
+              "location": "Spyro 1: Gnorc Cove: 25% Gems",
+              "id": 102320
+            },
+            {
+              "type": "gem",
+              "threshold": 50,
+              "location": "Spyro 1: Gnorc Cove: 50% Gems",
+              "id": 102321
+            },
+            {
+              "type": "gem",
+              "threshold": 75,
+              "location": "Spyro 1: Gnorc Cove: 75% Gems",
+              "id": 102322
+            },
+            {
+              "type": "gem",
+              "threshold": 100,
+              "location": "Spyro 1: Gnorc Cove: All Gems",
+              "id": 102323
+            }
+          ],
+          "events": [
+            {
+              "location": "Spyro 1: Gnorc Cove Complete",
+              "id": 103032
+            }
+          ]
+        },
+        "Twilight Harbor": {
+          "levelPath": "/LS133_TwlightHarbour/Maps/",
+          "gemTotal": 400,
+          "checks": [
+            {
+              "type": "dragon",
+              "name": "Cosmos",
+              "location": "Spyro 1: Twilight Harbor: Free Cosmos",
+              "id": 100103
+            },
+            {
+              "type": "dragon",
+              "name": "Cleetus",
+              "location": "Spyro 1: Twilight Harbor: Free Cleetus",
+              "id": 100104
+            },
+            {
+              "type": "gem",
+              "threshold": 25,
+              "location": "Spyro 1: Twilight Harbor: 25% Gems",
+              "id": 102330
+            },
+            {
+              "type": "gem",
+              "threshold": 50,
+              "location": "Spyro 1: Twilight Harbor: 50% Gems",
+              "id": 102331
+            },
+            {
+              "type": "gem",
+              "threshold": 75,
+              "location": "Spyro 1: Twilight Harbor: 75% Gems",
+              "id": 102332
+            },
+            {
+              "type": "gem",
+              "threshold": 100,
+              "location": "Spyro 1: Twilight Harbor: All Gems",
+              "id": 102333
+            }
+          ],
+          "events": [
+            {
+              "location": "Spyro 1: Twilight Harbor Complete",
+              "id": 103033
+            }
+          ]
+        },
+        "Gnasty Gnorc": {
+          "levelPath": "/LS134_GnastyGnorc/Maps/",
+          "gemTotal": 500,
+          "checks": [
+            {
+              "type": "skillpoint",
+              "name": "Perfect",
+              "enum": 14,
+              "location": "Spyro 1: Gnasty Gnorc: Perfect (Skill Point)",
+              "id": 100105
+            },
+            {
+              "type": "gem",
+              "threshold": 100,
+              "location": "Spyro 1: Gnasty Gnorc: All Gems",
+              "id": 102343
+            }
+          ],
+          "events": [
+            {
+              "location": "Spyro 1: Gnasty Gnorc Defeated",
+              "id": 103034
+            }
+          ]
+        },
+        "Gnasty's Loot": {
+          "levelPath": "/LS135_GnastyLoot/Maps/",
+          "gemTotal": 2000,
+          "checks": [
+            {
+              "type": "gem",
+              "threshold": 25,
+              "location": "Spyro 1: Gnasty's Loot: 25% Gems",
+              "id": 102350
+            },
+            {
+              "type": "gem",
+              "threshold": 50,
+              "location": "Spyro 1: Gnasty's Loot: 50% Gems",
+              "id": 102351
+            },
+            {
+              "type": "gem",
+              "threshold": 75,
+              "location": "Spyro 1: Gnasty's Loot: 75% Gems",
+              "id": 102352
+            },
+            {
+              "type": "gem",
+              "threshold": 100,
+              "location": "Spyro 1: Gnasty's Loot: All Gems",
+              "id": 102353
+            }
+          ],
+          "events": [
+            {
+              "location": "Spyro 1: Gnasty's Loot Complete",
+              "id": 103035
+            }
+          ]
+        }
+      }
+    },
+    "spyro2": {
+      "baseId": 200000,
+      "locationPrefix": "Spyro 2: ",
+      "skillPointRange": [
+        15,
+        30
+      ],
+      "regions": {
+        "Summer Forest": {
+          "levelPath": "/LS201_SummerForest_Home/Maps/",
+          "gemTotal": 400,
+          "checks": [
+            {
+              "type": "orb",
+              "location": "Spyro 2: Summer Forest: Hunter's challenge",
+              "id": 200000,
+              "name": "Hunter's challenge"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Summer Forest: On a secret ledge",
+              "id": 200001,
+              "name": "On a secret ledge"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Summer Forest: Atop a ladder",
+              "id": 200002,
+              "name": "Atop a ladder"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Summer Forest: Behind the door",
+              "id": 200003,
+              "name": "Behind the door"
+            },
+            {
+              "type": "ability",
+              "location": "Spyro 2: Summer Forest: Swim Ability",
+              "id": 200004,
+              "ability": "Swim"
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Summer Forest: 25% Gems",
+              "id": 200005,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Summer Forest: 50% Gems",
+              "id": 200006,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Summer Forest: 75% Gems",
+              "id": 200007,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Summer Forest: All Gems",
+              "id": 200008,
+              "threshold": 100
+            }
+          ]
+        },
+        "Glimmer": {
+          "levelPath": "/LS202_Glimmer/Maps/",
+          "gemTotal": 400,
+          "checks": [
+            {
+              "type": "orb",
+              "location": "Spyro 2: Glimmer: Lizard hunt",
+              "id": 201000,
+              "name": "Lizard hunt"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Glimmer: Gem lamp flight outdoors",
+              "id": 201001,
+              "name": "Gem Lamp Flight outdoors"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Glimmer: Gem lamp flight in cave",
+              "id": 201002,
+              "name": "Gem Lamp Flight in cave"
+            },
+            {
+              "type": "talisman",
+              "location": "Spyro 2: Glimmer: Magic Pick",
+              "id": 201003,
+              "name": "Magic Pick"
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Glimmer: 25% Gems",
+              "id": 201004,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Glimmer: 50% Gems",
+              "id": 201005,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Glimmer: 75% Gems",
+              "id": 201006,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Glimmer: All Gems",
+              "id": 201007,
+              "threshold": 100
+            }
+          ]
+        },
+        "Idol Springs": {
+          "levelPath": "/LS203_IdolSprings/Maps/",
+          "gemTotal": 400,
+          "checks": [
+            {
+              "type": "orb",
+              "location": "Spyro 2: Idol Springs: Foreman Bud's puzzles",
+              "id": 202000,
+              "name": "Foreman Bud's puzzles"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Idol Springs: Hula Girl rescue",
+              "id": 202001,
+              "name": "Hula Girl rescue"
+            },
+            {
+              "type": "talisman",
+              "location": "Spyro 2: Idol Springs: Jade Idol",
+              "id": 202002,
+              "name": "Jade Idol"
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Idol Springs: 25% Gems",
+              "id": 202003,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Idol Springs: 50% Gems",
+              "id": 202004,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Idol Springs: 75% Gems",
+              "id": 202005,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Idol Springs: All Gems",
+              "id": 202006,
+              "threshold": 100
+            },
+            {
+              "type": "skillpoint",
+              "location": "Spyro 2: Idol Springs: Land on Idol (Skill Point)",
+              "id": 202007,
+              "name": "Land on Idol",
+              "enum": 15
+            }
+          ]
+        },
+        "Colossus": {
+          "levelPath": "/LS204_Colossus/Maps/",
+          "gemTotal": 400,
+          "checks": [
+            {
+              "type": "orb",
+              "location": "Spyro 2: Colossus: Hockey vs. Goalie",
+              "id": 203000,
+              "name": "Hockey vs. Goalie"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Colossus: Hockey one on one",
+              "id": 203001,
+              "name": "Hockey one on one"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Colossus: Evil spirit search",
+              "id": 203002,
+              "name": "Evil spirit search"
+            },
+            {
+              "type": "talisman",
+              "location": "Spyro 2: Colossus: Gold Statue",
+              "id": 203003,
+              "name": "Gold Statue"
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Colossus: 25% Gems",
+              "id": 203004,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Colossus: 50% Gems",
+              "id": 203005,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Colossus: 75% Gems",
+              "id": 203006,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Colossus: All Gems",
+              "id": 203007,
+              "threshold": 100
+            },
+            {
+              "type": "skillpoint",
+              "location": "Spyro 2: Colossus: Perfect in Hockey (Skill Point)",
+              "id": 203008,
+              "name": "Perfect in Hockey",
+              "enum": 16
+            }
+          ]
+        },
+        "Hurricos": {
+          "levelPath": "/LS205_Hurricos/Maps/",
+          "gemTotal": 400,
+          "checks": [
+            {
+              "type": "orb",
+              "location": "Spyro 2: Hurricos: Stone thief chase",
+              "id": 204000,
+              "name": "Stone thief chase"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Hurricos: Factory Glide 1",
+              "id": 204001,
+              "name": "Factory Glide 1"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Hurricos: Factory Glide 2",
+              "id": 204002,
+              "name": "Factory Glide 2"
+            },
+            {
+              "type": "talisman",
+              "location": "Spyro 2: Hurricos: Gear of Power",
+              "id": 204003,
+              "name": "Gear of Power"
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Hurricos: 25% Gems",
+              "id": 204004,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Hurricos: 50% Gems",
+              "id": 204005,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Hurricos: 75% Gems",
+              "id": 204006,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Hurricos: All Gems",
+              "id": 204007,
+              "threshold": 100
+            },
+            {
+              "type": "skillpoint",
+              "location": "Spyro 2: Hurricos: All Windmills (Skill Point)",
+              "id": 204008,
+              "name": "All Windmills",
+              "enum": 17
+            }
+          ]
+        },
+        "Sunny Beach": {
+          "levelPath": "/LS206_SunnyBeach/Maps/",
+          "gemTotal": 400,
+          "checks": [
+            {
+              "type": "orb",
+              "location": "Spyro 2: Sunny Beach: Blasting boxes",
+              "id": 205000,
+              "name": "Blasting boxes"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Sunny Beach: Turtle soup I",
+              "id": 205001,
+              "name": "Turtle soup I"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Sunny Beach: Turtle soup II",
+              "id": 205002,
+              "name": "Turtle soup II"
+            },
+            {
+              "type": "talisman",
+              "location": "Spyro 2: Sunny Beach: Turtle Medallion",
+              "id": 205003,
+              "name": "Turtle Medallion"
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Sunny Beach: 25% Gems",
+              "id": 205004,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Sunny Beach: 50% Gems",
+              "id": 205005,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Sunny Beach: 75% Gems",
+              "id": 205006,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Sunny Beach: All Gems",
+              "id": 205007,
+              "threshold": 100
+            }
+          ]
+        },
+        "Aquaria Towers": {
+          "levelPath": "/LS207_AquariaTowers/Maps/",
+          "gemTotal": 400,
+          "checks": [
+            {
+              "type": "orb",
+              "location": "Spyro 2: Aquaria Towers: Seahorse rescue",
+              "id": 206000,
+              "name": "Seahorse rescue"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Aquaria Towers: Manta ride I",
+              "id": 206001,
+              "name": "Manta ride I"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Aquaria Towers: Manta ride II",
+              "id": 206002,
+              "name": "Manta ride II"
+            },
+            {
+              "type": "talisman",
+              "location": "Spyro 2: Aquaria Towers: Enchanted Shell",
+              "id": 206003,
+              "name": "Enchanted Shell"
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Aquaria Towers: 25% Gems",
+              "id": 206004,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Aquaria Towers: 50% Gems",
+              "id": 206005,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Aquaria Towers: 75% Gems",
+              "id": 206006,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Aquaria Towers: All Gems",
+              "id": 206007,
+              "threshold": 100
+            },
+            {
+              "type": "skillpoint",
+              "location": "Spyro 2: Aquaria Towers: All Seaweed (Skill Point)",
+              "id": 206008,
+              "name": "All Seaweed",
+              "enum": 18
+            }
+          ]
+        },
+        "Crush's Dungeon": {
+          "levelPath": "/LS208_CrushsDungeon/Maps/",
+          "gemTotal": 0,
+          "checks": [
+            {
+              "type": "boss",
+              "location": "Spyro 2: Crush's Dungeon: Crush Defeated",
+              "id": 207000,
+              "name": "Crush Defeated"
+            },
+            {
+              "type": "skillpoint",
+              "location": "Spyro 2: Crush's Dungeon: Perfect (Skill Point)",
+              "id": 207001,
+              "name": "Perfect",
+              "enum": 20
+            }
+          ]
+        },
+        "Ocean Speedway": {
+          "levelPath": "/LS209_OceanSpeedway/Maps/",
+          "gemTotal": 0,
+          "checks": [
+            {
+              "type": "orb",
+              "location": "Spyro 2: Ocean Speedway: Follow Hunter",
+              "id": 208000,
+              "name": "Follow Hunter"
+            },
+            {
+              "type": "skillpoint",
+              "location": "Spyro 2: Ocean Speedway: Under 1:10 (Skill Point)",
+              "id": 208001,
+              "name": "Under 1:10",
+              "enum": 19
+            }
+          ]
+        },
+        "Autumn Plains": {
+          "levelPath": "/LS210_AutumnPlains_Home/Maps/",
+          "gemTotal": 400,
+          "checks": [
+            {
+              "type": "orb",
+              "location": "Spyro 2: Autumn Plains: The end of the wall",
+              "id": 209000,
+              "name": "The end of the wall"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Autumn Plains: Long glide!",
+              "id": 209001,
+              "name": "Long glide!"
+            },
+            {
+              "type": "ability",
+              "location": "Spyro 2: Autumn Plains: Climb Ability",
+              "id": 209002,
+              "ability": "Climb"
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Autumn Plains: 25% Gems",
+              "id": 209003,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Autumn Plains: 50% Gems",
+              "id": 209004,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Autumn Plains: 75% Gems",
+              "id": 209005,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Autumn Plains: All Gems",
+              "id": 209006,
+              "threshold": 100
+            }
+          ]
+        },
+        "Crystal Glacier": {
+          "levelPath": "/LS211_CrystalGlacier/Maps/",
+          "gemTotal": 400,
+          "checks": [
+            {
+              "type": "orb",
+              "location": "Spyro 2: Crystal Glacier: Draclet cave",
+              "id": 210000,
+              "name": "Draclet cave"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Crystal Glacier: George the snow leopard",
+              "id": 210001,
+              "name": "George the snow leopard"
+            },
+            {
+              "type": "talisman",
+              "location": "Spyro 2: Crystal Glacier: Ice Crystal",
+              "id": 210002,
+              "name": "Ice Crystal"
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Crystal Glacier: 25% Gems",
+              "id": 210003,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Crystal Glacier: 50% Gems",
+              "id": 210004,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Crystal Glacier: 75% Gems",
+              "id": 210005,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Crystal Glacier: All Gems",
+              "id": 210006,
+              "threshold": 100
+            }
+          ]
+        },
+        "Skelos Badlands": {
+          "levelPath": "/LS212_SkelosBadlands/Maps/",
+          "gemTotal": 400,
+          "checks": [
+            {
+              "type": "orb",
+              "location": "Spyro 2: Skelos Badlands: Lava lizards I",
+              "id": 211000,
+              "name": "Lava lizards I"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Skelos Badlands: Lava lizards II",
+              "id": 211001,
+              "name": "Lava lizards II"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Skelos Badlands: Dem bones",
+              "id": 211002,
+              "name": "Dem bones"
+            },
+            {
+              "type": "talisman",
+              "location": "Spyro 2: Skelos Badlands: Ancient Bone",
+              "id": 211003,
+              "name": "Ancient Bone"
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Skelos Badlands: 25% Gems",
+              "id": 211004,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Skelos Badlands: 50% Gems",
+              "id": 211005,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Skelos Badlands: 75% Gems",
+              "id": 211006,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Skelos Badlands: All Gems",
+              "id": 211007,
+              "threshold": 100
+            },
+            {
+              "type": "skillpoint",
+              "location": "Spyro 2: Skelos Badlands: Catbat Quartet (Skill Point)",
+              "id": 211008,
+              "name": "Catbat Quartet",
+              "enum": 21
+            },
+            {
+              "type": "skillpoint",
+              "location": "Spyro 2: Skelos Badlands: All Cacti (Skill Point)",
+              "id": 211009,
+              "name": "All Cacti",
+              "enum": 22
+            }
+          ]
+        },
+        "Zephyr": {
+          "levelPath": "/LS213_Zephyr/Maps/",
+          "gemTotal": 400,
+          "checks": [
+            {
+              "type": "orb",
+              "location": "Spyro 2: Zephyr: Cowlek corral I",
+              "id": 212000,
+              "name": "Cowlek corral I"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Zephyr: Cowlek corral II",
+              "id": 212001,
+              "name": "Cowlek corral II"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Zephyr: Sowing seeds I",
+              "id": 212002,
+              "name": "Sowing seeds I"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Zephyr: Sowing seeds II",
+              "id": 212003,
+              "name": "Sowing seeds II"
+            },
+            {
+              "type": "talisman",
+              "location": "Spyro 2: Zephyr: Ruby Bomb",
+              "id": 212004,
+              "name": "Ruby Bomb"
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Zephyr: 25% Gems",
+              "id": 212005,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Zephyr: 50% Gems",
+              "id": 212006,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Zephyr: 75% Gems",
+              "id": 212007,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Zephyr: All Gems",
+              "id": 212008,
+              "threshold": 100
+            }
+          ]
+        },
+        "Breeze Harbor": {
+          "levelPath": "/LS214_BreezeHarbor/Maps/",
+          "gemTotal": 400,
+          "checks": [
+            {
+              "type": "orb",
+              "location": "Spyro 2: Breeze Harbor: Mine blast",
+              "id": 213000,
+              "name": "Mine blast"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Breeze Harbor: Gear grab",
+              "id": 213001,
+              "name": "Gear grab"
+            },
+            {
+              "type": "talisman",
+              "location": "Spyro 2: Breeze Harbor: Glass Anchor",
+              "id": 213002,
+              "name": "Glass Anchor"
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Breeze Harbor: 25% Gems",
+              "id": 213003,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Breeze Harbor: 50% Gems",
+              "id": 213004,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Breeze Harbor: 75% Gems",
+              "id": 213005,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Breeze Harbor: All Gems",
+              "id": 213006,
+              "threshold": 100
+            }
+          ]
+        },
+        "Scorch": {
+          "levelPath": "/LS215_Scorch/Maps/",
+          "gemTotal": 400,
+          "checks": [
+            {
+              "type": "orb",
+              "location": "Spyro 2: Scorch: Barrel of Monkeys",
+              "id": 214000,
+              "name": "Barrel of Monkeys"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Scorch: Capture the flags",
+              "id": 214001,
+              "name": "Capture the flags"
+            },
+            {
+              "type": "talisman",
+              "location": "Spyro 2: Scorch: Emerald Scarab",
+              "id": 214002,
+              "name": "Emerald Scarab"
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Scorch: 25% Gems",
+              "id": 214003,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Scorch: 50% Gems",
+              "id": 214004,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Scorch: 75% Gems",
+              "id": 214005,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Scorch: All Gems",
+              "id": 214006,
+              "threshold": 100
+            },
+            {
+              "type": "skillpoint",
+              "location": "Spyro 2: Scorch: All Trees (Skill Point)",
+              "id": 214007,
+              "name": "All Trees",
+              "enum": 23
+            }
+          ]
+        },
+        "Fracture Hills": {
+          "levelPath": "/LS216_FractureHills/Maps/",
+          "gemTotal": 400,
+          "checks": [
+            {
+              "type": "orb",
+              "location": "Spyro 2: Fracture Hills: Free the faun",
+              "id": 215000,
+              "name": "Free the faun"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Fracture Hills: Alchemist escort",
+              "id": 215001,
+              "name": "Alchemist escort"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Fracture Hills: Earthshaper bash",
+              "id": 215002,
+              "name": "Earthshaper bash"
+            },
+            {
+              "type": "talisman",
+              "location": "Spyro 2: Fracture Hills: Bronze Flute",
+              "id": 215003,
+              "name": "Bronze Flute"
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Fracture Hills: 25% Gems",
+              "id": 215004,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Fracture Hills: 50% Gems",
+              "id": 215005,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Fracture Hills: 75% Gems",
+              "id": 215006,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Fracture Hills: All Gems",
+              "id": 215007,
+              "threshold": 100
+            },
+            {
+              "type": "skillpoint",
+              "location": "Spyro 2: Fracture Hills: 3 Laps of Supercharge (Skill Point)",
+              "id": 215008,
+              "name": "3 Laps of Supercharge",
+              "enum": 24
+            }
+          ]
+        },
+        "Magma Cone": {
+          "levelPath": "/LS217_MagmaCone/Maps/",
+          "gemTotal": 400,
+          "checks": [
+            {
+              "type": "orb",
+              "location": "Spyro 2: Magma Cone: Party crashers",
+              "id": 216000,
+              "name": "Party crashers"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Magma Cone: Crystal geysers I",
+              "id": 216001,
+              "name": "Crystal geysers I"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Magma Cone: Crystal geysers II",
+              "id": 216002,
+              "name": "Crystal geysers II"
+            },
+            {
+              "type": "talisman",
+              "location": "Spyro 2: Magma Cone: Volcano Idol",
+              "id": 216003,
+              "name": "Volcano Idol"
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Magma Cone: 25% Gems",
+              "id": 216004,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Magma Cone: 50% Gems",
+              "id": 216005,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Magma Cone: 75% Gems",
+              "id": 216006,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Magma Cone: All Gems",
+              "id": 216007,
+              "threshold": 100
+            }
+          ]
+        },
+        "Shady Oasis": {
+          "levelPath": "/LS218_ShadyOasis/Maps/",
+          "gemTotal": 400,
+          "checks": [
+            {
+              "type": "orb",
+              "location": "Spyro 2: Shady Oasis: Catch 3 thieves",
+              "id": 217000,
+              "name": "Catch 3 thieves"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Shady Oasis: Free Hippos",
+              "id": 217001,
+              "name": "Free Hippos"
+            },
+            {
+              "type": "talisman",
+              "location": "Spyro 2: Shady Oasis: Mystic Lamp",
+              "id": 217002,
+              "name": "Mystic Lamp"
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Shady Oasis: 25% Gems",
+              "id": 217003,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Shady Oasis: 50% Gems",
+              "id": 217004,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Shady Oasis: 75% Gems",
+              "id": 217005,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Shady Oasis: All Gems",
+              "id": 217006,
+              "threshold": 100
+            }
+          ]
+        },
+        "Gulp's Overlook": {
+          "levelPath": "/LS219_GulpsOverlook/Maps/",
+          "gemTotal": 0,
+          "checks": [
+            {
+              "type": "boss",
+              "location": "Spyro 2: Gulp's Overlook: Gulp Defeated",
+              "id": 218000,
+              "name": "Gulp Defeated"
+            },
+            {
+              "type": "skillpoint",
+              "location": "Spyro 2: Gulp's Overlook: Perfect (Skill Point)",
+              "id": 218001,
+              "name": "Perfect",
+              "enum": 27
+            },
+            {
+              "type": "skillpoint",
+              "location": "Spyro 2: Gulp's Overlook: Hit Ripto (Skill Point)",
+              "id": 218002,
+              "name": "Hit Ripto",
+              "enum": 28
+            }
+          ]
+        },
+        "Icy Speedway": {
+          "levelPath": "/LS220_IcySpeedway/Maps/",
+          "gemTotal": 0,
+          "checks": [
+            {
+              "type": "orb",
+              "location": "Spyro 2: Icy Speedway: Parasail through Rings",
+              "id": 219000,
+              "name": "Parasail through Rings"
+            },
+            {
+              "type": "skillpoint",
+              "location": "Spyro 2: Icy Speedway: Under 1:15 (Skill Point)",
+              "id": 219001,
+              "name": "Under 1:15",
+              "enum": 25
+            }
+          ]
+        },
+        "Metro Speedway": {
+          "levelPath": "/LS221_MetroSpeedway/Maps/",
+          "gemTotal": 0,
+          "checks": [
+            {
+              "type": "orb",
+              "location": "Spyro 2: Metro Speedway: Grab the Loot",
+              "id": 220000,
+              "name": "Grab the Loot"
+            },
+            {
+              "type": "skillpoint",
+              "location": "Spyro 2: Metro Speedway: Under 1:15 (Skill Point)",
+              "id": 220001,
+              "name": "Under 1:15",
+              "enum": 26
+            }
+          ]
+        },
+        "Winter Tundra": {
+          "levelPath": "/LS222_WinterTundra_Home/Maps/",
+          "gemTotal": 400,
+          "checks": [
+            {
+              "type": "orb",
+              "location": "Spyro 2: Winter Tundra: Top of the waterfall",
+              "id": 221000,
+              "name": "Top of the waterfall"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Winter Tundra: On the tall wall",
+              "id": 221001,
+              "name": "On the tall wall"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Winter Tundra: Smash the rock",
+              "id": 221002,
+              "name": "Smash the rock"
+            },
+            {
+              "type": "ability",
+              "location": "Spyro 2: Winter Tundra: Headbash Ability",
+              "id": 221003,
+              "ability": "Headbash"
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Winter Tundra: 25% Gems",
+              "id": 221004,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Winter Tundra: 50% Gems",
+              "id": 221005,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Winter Tundra: 75% Gems",
+              "id": 221006,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Winter Tundra: All Gems",
+              "id": 221007,
+              "threshold": 100
+            }
+          ]
+        },
+        "Mystic Marsh": {
+          "levelPath": "/LS223_MysticMarsh/Maps/",
+          "gemTotal": 400,
+          "checks": [
+            {
+              "type": "orb",
+              "location": "Spyro 2: Mystic Marsh: Fix the fountain",
+              "id": 222000,
+              "name": "Fix the fountain"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Mystic Marsh: Very versatile thieves!",
+              "id": 222001,
+              "name": "Very versatile thieves!"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Mystic Marsh: Retrieve professor's pencil",
+              "id": 222002,
+              "name": "Retrive professor's pencil"
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Mystic Marsh: 25% Gems",
+              "id": 222003,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Mystic Marsh: 50% Gems",
+              "id": 222004,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Mystic Marsh: 75% Gems",
+              "id": 222005,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Mystic Marsh: All Gems",
+              "id": 222006,
+              "threshold": 100
+            }
+          ]
+        },
+        "Cloud Temples": {
+          "levelPath": "/LS224_CloudTemples/Maps/",
+          "gemTotal": 400,
+          "checks": [
+            {
+              "type": "orb",
+              "location": "Spyro 2: Cloud Temples: Break down doors",
+              "id": 223000,
+              "name": "Break down doors"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Cloud Temples: Ring tower bells",
+              "id": 223001,
+              "name": "Ring tower bells"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Cloud Temples: Agent Zero's hideout",
+              "id": 223002,
+              "name": "Agent Zero's hideout"
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Cloud Temples: 25% Gems",
+              "id": 223003,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Cloud Temples: 50% Gems",
+              "id": 223004,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Cloud Temples: 75% Gems",
+              "id": 223005,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Cloud Temples: All Gems",
+              "id": 223006,
+              "threshold": 100
+            }
+          ]
+        },
+        "Metropolis": {
+          "levelPath": "/LS225_Metropolis/Maps/",
+          "gemTotal": 400,
+          "checks": [
+            {
+              "type": "orb",
+              "location": "Spyro 2: Metropolis: Conquer invading cows",
+              "id": 224000,
+              "name": "Conquer invading cows"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Metropolis: Shoot down sheep saucers I",
+              "id": 224001,
+              "name": "Shoot down sheep saucers I"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Metropolis: Shoot down sheep saucers II",
+              "id": 224002,
+              "name": "Shoot down sheep saucers II"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Metropolis: Ox bombing",
+              "id": 224003,
+              "name": "Ox bombing"
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Metropolis: 25% Gems",
+              "id": 224004,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Metropolis: 50% Gems",
+              "id": 224005,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Metropolis: 75% Gems",
+              "id": 224006,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Metropolis: All Gems",
+              "id": 224007,
+              "threshold": 100
+            }
+          ]
+        },
+        "Robotica Farms": {
+          "levelPath": "/LS226_RoboticaFarms/Maps/",
+          "gemTotal": 400,
+          "checks": [
+            {
+              "type": "orb",
+              "location": "Spyro 2: Robotica Farms: Switch on bug light",
+              "id": 225000,
+              "name": "Switch on bug light"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Robotica Farms: Clear tractor path",
+              "id": 225001,
+              "name": "Clear tractor path"
+            },
+            {
+              "type": "orb",
+              "location": "Spyro 2: Robotica Farms: Exterminate crow bugs",
+              "id": 225002,
+              "name": "Exterminate crow bugs"
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Robotica Farms: 25% Gems",
+              "id": 225003,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Robotica Farms: 50% Gems",
+              "id": 225004,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Robotica Farms: 75% Gems",
+              "id": 225005,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 2: Robotica Farms: All Gems",
+              "id": 225006,
+              "threshold": 100
+            }
+          ]
+        },
+        "Ripto's Arena": {
+          "levelPath": "/LS227_RiptosArena/Maps/",
+          "gemTotal": 0,
+          "checks": [
+            {
+              "type": "boss",
+              "location": "Spyro 2: Ripto's Arena: Ripto Defeated",
+              "id": 226000,
+              "name": "Ripto Defeated"
+            },
+            {
+              "type": "skillpoint",
+              "location": "Spyro 2: Ripto's Arena: Perfect (Skill Point)",
+              "id": 226001,
+              "name": "Perfect",
+              "enum": 30
+            }
+          ]
+        },
+        "Canyon Speedway": {
+          "levelPath": "/LS228_CanyonSpeedway/Maps/",
+          "gemTotal": 0,
+          "checks": [
+            {
+              "type": "orb",
+              "location": "Spyro 2: Canyon Speedway: Shoot down balloons",
+              "id": 227000,
+              "name": "Shoot down balloons"
+            },
+            {
+              "type": "skillpoint",
+              "location": "Spyro 2: Canyon Speedway: Under 1:10 (Skill Point)",
+              "id": 227001,
+              "name": "Under 1:10",
+              "enum": 29
+            }
+          ]
+        }
+      }
+    },
+    "spyro3": {
+      "baseId": 300000,
+      "locationPrefix": "Spyro 3: ",
+      "skillPointRange": [
+        31,
+        50
+      ],
+      "regions": {
+        "Sunrise Spring": {
+          "levelPath": "/LS301_SunriseSpring_Home/Maps/",
+          "gemTotal": 400,
+          "checks": [
+            {
+              "type": "gem",
+              "location": "Spyro 3: Sunrise Spring: 25% Gems",
+              "id": 300000,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Sunrise Spring: 50% Gems",
+              "id": 300001,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Sunrise Spring: 75% Gems",
+              "id": 300002,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Sunrise Spring: All Gems",
+              "id": 300003,
+              "threshold": 100
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Sunrise Spring: Isabelle",
+              "id": 300004,
+              "name": "Isabelle",
+              "saveKey": "Isabelle"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Sunrise Spring: Coltrane",
+              "id": 300005,
+              "name": "Coltrane",
+              "saveKey": "Coltrane"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Sunrise Spring: Ami",
+              "id": 300006,
+              "name": "Ami",
+              "saveKey": "Ami"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Sunrise Spring: Bruce",
+              "id": 300007,
+              "name": "Bruce",
+              "saveKey": "Bruce"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Sunrise Spring: Liam",
+              "id": 300008,
+              "name": "Liam",
+              "saveKey": "Liam"
+            }
+          ]
+        },
+        "Sunny Villa": {
+          "levelPath": "/LS302_SunnyVilla/Maps/",
+          "gemTotal": 400,
+          "checks": [
+            {
+              "type": "gem",
+              "location": "Spyro 3: Sunny Villa: 25% Gems",
+              "id": 301000,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Sunny Villa: 50% Gems",
+              "id": 301001,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Sunny Villa: 75% Gems",
+              "id": 301002,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Sunny Villa: All Gems",
+              "id": 301003,
+              "threshold": 100
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Sunny Villa: Sanders",
+              "id": 301004,
+              "name": "Sanders",
+              "saveKey": "Sanders"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Sunny Villa: Vanessa",
+              "id": 301005,
+              "name": "Vanessa",
+              "saveKey": "Vanessa"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Sunny Villa: Miles",
+              "id": 301006,
+              "name": "Miles",
+              "saveKey": "Miles"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Sunny Villa: Emily",
+              "id": 301007,
+              "name": "Emily",
+              "saveKey": "Emily"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Sunny Villa: Daisy",
+              "id": 301008,
+              "name": "Daisy",
+              "saveKey": "Daisy"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Sunny Villa: Lucy",
+              "id": 301009,
+              "name": "Lucy",
+              "saveKey": "Lucy"
+            },
+            {
+              "type": "skillpoint",
+              "location": "Spyro 3: Sunny Villa: Flame all trees (Skill Point)",
+              "id": 301010,
+              "name": "Flame all trees",
+              "enum": 31
+            },
+            {
+              "type": "skillpoint",
+              "location": "Spyro 3: Sunny Villa: Skateboard course record I (Skill Point)",
+              "id": 301011,
+              "name": "Skateboard course record I",
+              "enum": 32
+            }
+          ]
+        },
+        "Cloud Spires": {
+          "levelPath": "/LS303_CloudSpires/Maps/",
+          "gemTotal": 400,
+          "checks": [
+            {
+              "type": "gem",
+              "location": "Spyro 3: Cloud Spires: 25% Gems",
+              "id": 302000,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Cloud Spires: 50% Gems",
+              "id": 302001,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Cloud Spires: 75% Gems",
+              "id": 302002,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Cloud Spires: All Gems",
+              "id": 302003,
+              "threshold": 100
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Cloud Spires: Clare",
+              "id": 302004,
+              "name": "Clare",
+              "saveKey": "Clare"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Cloud Spires: Stephanie",
+              "id": 302005,
+              "name": "Stephanie",
+              "saveKey": "Stephanie"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Cloud Spires: Henry",
+              "id": 302006,
+              "name": "Henry",
+              "saveKey": "Henry"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Cloud Spires: LuLu",
+              "id": 302007,
+              "name": "LuLu",
+              "saveKey": "LuLu"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Cloud Spires: Jake",
+              "id": 302008,
+              "name": "Jake",
+              "saveKey": "Jake"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Cloud Spires: Bryan",
+              "id": 302009,
+              "name": "Bryan",
+              "saveKey": "Bryan"
+            }
+          ]
+        },
+        "Molten Crater": {
+          "levelPath": "/LS304_MoltenCrater/Maps/",
+          "gemTotal": 400,
+          "checks": [
+            {
+              "type": "gem",
+              "location": "Spyro 3: Molten Crater: 25% Gems",
+              "id": 303000,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Molten Crater: 50% Gems",
+              "id": 303001,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Molten Crater: 75% Gems",
+              "id": 303002,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Molten Crater: All Gems",
+              "id": 303003,
+              "threshold": 100
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Molten Crater: Curlie",
+              "id": 303004,
+              "name": "Curlie",
+              "saveKey": "Curlie"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Molten Crater: Rikki",
+              "id": 303005,
+              "name": "Rikki",
+              "saveKey": "Rikki"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Molten Crater: Moira",
+              "id": 303006,
+              "name": "Moira",
+              "saveKey": "Moira"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Molten Crater: Kermitt",
+              "id": 303007,
+              "name": "Kermitt",
+              "saveKey": "Kermitt"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Molten Crater: Luna",
+              "id": 303008,
+              "name": "Luna",
+              "saveKey": "Luna"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Molten Crater: Ryan",
+              "id": 303009,
+              "name": "Ryan",
+              "saveKey": "Ryan"
+            },
+            {
+              "type": "skillpoint",
+              "location": "Spyro 3: Molten Crater: Assemble tiki heads (Skill Point)",
+              "id": 303010,
+              "name": "Assemble tiki heads",
+              "enum": 33
+            },
+            {
+              "type": "skillpoint",
+              "location": "Spyro 3: Molten Crater: Supercharge the wall (Skill Point)",
+              "id": 303011,
+              "name": "Supercharge the wall",
+              "enum": 34
+            }
+          ]
+        },
+        "Seashell Shore": {
+          "levelPath": "/LS305_SeashellShore/Maps/",
+          "gemTotal": 400,
+          "checks": [
+            {
+              "type": "gem",
+              "location": "Spyro 3: Seashell Shore: 25% Gems",
+              "id": 304000,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Seashell Shore: 50% Gems",
+              "id": 304001,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Seashell Shore: 75% Gems",
+              "id": 304002,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Seashell Shore: All Gems",
+              "id": 304003,
+              "threshold": 100
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Seashell Shore: Dizzy",
+              "id": 304004,
+              "name": "Dizzy",
+              "saveKey": "Dizzy"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Seashell Shore: Jason",
+              "id": 304005,
+              "name": "Jason",
+              "saveKey": "Jason"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Seashell Shore: Mollie",
+              "id": 304006,
+              "name": "Mollie",
+              "saveKey": "Mollie"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Seashell Shore: Jared",
+              "id": 304007,
+              "name": "Jared",
+              "saveKey": "Jared"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Seashell Shore: Jackie",
+              "id": 304008,
+              "name": "Jackie",
+              "saveKey": "Jackie"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Seashell Shore: Duke",
+              "id": 304009,
+              "name": "Duke",
+              "saveKey": "Duke"
+            },
+            {
+              "type": "skillpoint",
+              "location": "Spyro 3: Seashell Shore: Catch the funky chicken (Skill Point)",
+              "id": 304010,
+              "name": "Catch the funky chicken",
+              "enum": 35
+            }
+          ]
+        },
+        "Sheila's Alp": {
+          "levelPath": "/LS306_SheilasAlp/Maps/",
+          "gemTotal": 400,
+          "checks": [
+            {
+              "type": "gem",
+              "location": "Spyro 3: Sheila's Alp: 25% Gems",
+              "id": 305000,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Sheila's Alp: 50% Gems",
+              "id": 305001,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Sheila's Alp: 75% Gems",
+              "id": 305002,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Sheila's Alp: All Gems",
+              "id": 305003,
+              "threshold": 100
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Sheila's Alp: Nan",
+              "id": 305004,
+              "name": "Nan",
+              "saveKey": "Nan"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Sheila's Alp: Jenny",
+              "id": 305005,
+              "name": "Jenny",
+              "saveKey": "Jenny"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Sheila's Alp: Ruby",
+              "id": 305006,
+              "name": "Ruby",
+              "saveKey": "Ruby"
+            }
+          ]
+        },
+        "Mushroom Speedway": {
+          "levelPath": "/LS307_MushroomSpeedway/Maps/",
+          "gemTotal": 0,
+          "checks": [
+            {
+              "type": "egg",
+              "location": "Spyro 3: Mushroom Speedway: Sabina",
+              "id": 306000,
+              "name": "Sabina",
+              "saveKey": "Sabina"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Mushroom Speedway: John",
+              "id": 306001,
+              "name": "John",
+              "saveKey": "John"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Mushroom Speedway: Tater",
+              "id": 306002,
+              "name": "Tater",
+              "saveKey": "Tater"
+            }
+          ]
+        },
+        "Buzz's Dungeon": {
+          "levelPath": "/LS308_BuzzsDungeon/Maps/",
+          "gemTotal": 0,
+          "checks": [
+            {
+              "type": "boss",
+              "location": "Spyro 3: Buzz's Dungeon: Buzz Defeated",
+              "id": 307000,
+              "name": "Buzz Defeated",
+              "saveKey": "Grayson"
+            }
+          ]
+        },
+        "Crawdad Farm": {
+          "levelPath": "/LS309_CrawdadFarm/Maps/",
+          "gemTotal": 200,
+          "checks": [
+            {
+              "type": "gem",
+              "location": "Spyro 3: Crawdad Farm: 25% Gems",
+              "id": 308000,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Crawdad Farm: 50% Gems",
+              "id": 308001,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Crawdad Farm: 75% Gems",
+              "id": 308002,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Crawdad Farm: All Gems",
+              "id": 308003,
+              "threshold": 100
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Crawdad Farm: Nora",
+              "id": 308004,
+              "name": "Nora",
+              "saveKey": "Nora"
+            },
+            {
+              "type": "sparxpower",
+              "location": "Spyro 3: Crawdad Farm: Sparx Gem Collect Range (Power)",
+              "id": 308005,
+              "name": "EIT_SparxPower_GemCollectRange"
+            }
+          ]
+        },
+        "Midday Gardens": {
+          "levelPath": "/LS310_MiddayGardens_Home/Maps/",
+          "gemTotal": 400,
+          "checks": [
+            {
+              "type": "gem",
+              "location": "Spyro 3: Midday Gardens: 25% Gems",
+              "id": 309000,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Midday Gardens: 50% Gems",
+              "id": 309001,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Midday Gardens: 75% Gems",
+              "id": 309002,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Midday Gardens: All Gems",
+              "id": 309003,
+              "threshold": 100
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Midday Gardens: Trixie",
+              "id": 309004,
+              "name": "Trixie",
+              "saveKey": "Trixie"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Midday Gardens: Dave",
+              "id": 309005,
+              "name": "Dave",
+              "saveKey": "Dave"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Midday Gardens: Mingus",
+              "id": 309006,
+              "name": "Mingus",
+              "saveKey": "Mingus"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Midday Gardens: Modesty",
+              "id": 309007,
+              "name": "Modesty",
+              "saveKey": "Modesty"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Midday Gardens: Matt",
+              "id": 309008,
+              "name": "Matt",
+              "saveKey": "Matt"
+            }
+          ]
+        },
+        "Icy Peak": {
+          "levelPath": "/LS311_IcyPeak/Maps/",
+          "gemTotal": 500,
+          "checks": [
+            {
+              "type": "gem",
+              "location": "Spyro 3: Icy Peak: 25% Gems",
+              "id": 310000,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Icy Peak: 50% Gems",
+              "id": 310001,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Icy Peak: 75% Gems",
+              "id": 310002,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Icy Peak: All Gems",
+              "id": 310003,
+              "threshold": 100
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Icy Peak: Chet",
+              "id": 310004,
+              "name": "Chet",
+              "saveKey": "Chet"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Icy Peak: Maynard",
+              "id": 310005,
+              "name": "Maynard",
+              "saveKey": "Maynard"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Icy Peak: Reez",
+              "id": 310006,
+              "name": "Reez",
+              "saveKey": "Reez"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Icy Peak: Cerny",
+              "id": 310007,
+              "name": "Cerny",
+              "saveKey": "Cerny"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Icy Peak: Betty",
+              "id": 310008,
+              "name": "Betty",
+              "saveKey": "Betty"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Icy Peak: Scout",
+              "id": 310009,
+              "name": "Scout",
+              "saveKey": "Scout"
+            },
+            {
+              "type": "skillpoint",
+              "location": "Spyro 3: Icy Peak: Glide to pedestal (Skill Point)",
+              "id": 310010,
+              "name": "Glide to pedestal",
+              "enum": 36
+            }
+          ]
+        },
+        "Enchanted Towers": {
+          "levelPath": "/LS312_EnchantedTowers/Maps/",
+          "gemTotal": 500,
+          "checks": [
+            {
+              "type": "gem",
+              "location": "Spyro 3: Enchanted Towers: 25% Gems",
+              "id": 311000,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Enchanted Towers: 50% Gems",
+              "id": 311001,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Enchanted Towers: 75% Gems",
+              "id": 311002,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Enchanted Towers: All Gems",
+              "id": 311003,
+              "threshold": 100
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Enchanted Towers: Gladys",
+              "id": 311004,
+              "name": "Gladys",
+              "saveKey": "Gladys"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Enchanted Towers: Ralph",
+              "id": 311005,
+              "name": "Ralph",
+              "saveKey": "Ralph"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Enchanted Towers: Peanut",
+              "id": 311006,
+              "name": "Peanut",
+              "saveKey": "Peanut"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Enchanted Towers: Caroline",
+              "id": 311007,
+              "name": "Caroline",
+              "saveKey": "Caroline"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Enchanted Towers: Alex",
+              "id": 311008,
+              "name": "Alex",
+              "saveKey": "Alex"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Enchanted Towers: Lys",
+              "id": 311009,
+              "name": "Lys",
+              "saveKey": "Lys"
+            },
+            {
+              "type": "skillpoint",
+              "location": "Spyro 3: Enchanted Towers: Skateboard course record II (Skill Point)",
+              "id": 311010,
+              "name": "Skateboard course record II",
+              "enum": 37
+            }
+          ]
+        },
+        "Spooky Swamp": {
+          "levelPath": "/LS313_SpookySwamp/Maps/",
+          "gemTotal": 500,
+          "checks": [
+            {
+              "type": "gem",
+              "location": "Spyro 3: Spooky Swamp: 25% Gems",
+              "id": 312000,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Spooky Swamp: 50% Gems",
+              "id": 312001,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Spooky Swamp: 75% Gems",
+              "id": 312002,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Spooky Swamp: All Gems",
+              "id": 312003,
+              "threshold": 100
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Spooky Swamp: Michael",
+              "id": 312004,
+              "name": "Michael",
+              "saveKey": "Michael"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Spooky Swamp: Thelonios",
+              "id": 312005,
+              "name": "Thelonios",
+              "saveKey": "Thelonios"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Spooky Swamp: Frank",
+              "id": 312006,
+              "name": "Frank",
+              "saveKey": "Frank"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Spooky Swamp: Peggy",
+              "id": 312007,
+              "name": "Peggy",
+              "saveKey": "Peggy"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Spooky Swamp: Michele",
+              "id": 312008,
+              "name": "Michele",
+              "saveKey": "Michele"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Spooky Swamp: Herbi",
+              "id": 312009,
+              "name": "Herbi",
+              "saveKey": "Herbi"
+            },
+            {
+              "type": "skillpoint",
+              "location": "Spyro 3: Spooky Swamp: Destroy all piranha signs (Skill Point)",
+              "id": 312010,
+              "name": "Destroy all piranha signs",
+              "enum": 38
+            }
+          ]
+        },
+        "Bamboo Terrace": {
+          "levelPath": "/LS314_BambooTerrace/Maps/",
+          "gemTotal": 500,
+          "checks": [
+            {
+              "type": "gem",
+              "location": "Spyro 3: Bamboo Terrace: 25% Gems",
+              "id": 313000,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Bamboo Terrace: 50% Gems",
+              "id": 313001,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Bamboo Terrace: 75% Gems",
+              "id": 313002,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Bamboo Terrace: All Gems",
+              "id": 313003,
+              "threshold": 100
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Bamboo Terrace: Dwight",
+              "id": 313004,
+              "name": "Dwight",
+              "saveKey": "Dwight"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Bamboo Terrace: Madison",
+              "id": 313005,
+              "name": "Madison",
+              "saveKey": "Madison"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Bamboo Terrace: Tom",
+              "id": 313006,
+              "name": "Tom",
+              "saveKey": "Tom"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Bamboo Terrace: Pee-wee",
+              "id": 313007,
+              "name": "Pee-wee",
+              "saveKey": "Pee-wee"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Bamboo Terrace: Rusty",
+              "id": 313008,
+              "name": "Rusty",
+              "saveKey": "Rusty"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Bamboo Terrace: Brubeck",
+              "id": 313009,
+              "name": "Brubeck",
+              "saveKey": "Brubeck"
+            }
+          ]
+        },
+        "Sgt. Byrd Base": {
+          "levelPath": "/LS315_SgtByrdBase/Maps/",
+          "gemTotal": 500,
+          "checks": [
+            {
+              "type": "gem",
+              "location": "Spyro 3: Sgt. Byrd Base: 25% Gems",
+              "id": 314000,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Sgt. Byrd Base: 50% Gems",
+              "id": 314001,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Sgt. Byrd Base: 75% Gems",
+              "id": 314002,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Sgt. Byrd Base: All Gems",
+              "id": 314003,
+              "threshold": 100
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Sgt. Byrd Base: Sigfried",
+              "id": 314004,
+              "name": "Sigfried",
+              "saveKey": "Sigfried"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Sgt. Byrd Base: RyanLee",
+              "id": 314005,
+              "name": "RyanLee",
+              "saveKey": "RyanLee"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Sgt. Byrd Base: Roy",
+              "id": 314006,
+              "name": "Roy",
+              "saveKey": "Roy"
+            },
+            {
+              "type": "skillpoint",
+              "location": "Spyro 3: Sgt. Byrd Base: Bomb the gophers (Skill Point)",
+              "id": 314007,
+              "name": "Bomb the gophers",
+              "enum": 39
+            }
+          ]
+        },
+        "Country Speedway": {
+          "levelPath": "/LS316_CountrySpeedway/Maps/",
+          "gemTotal": 0,
+          "checks": [
+            {
+              "type": "egg",
+              "location": "Spyro 3: Country Speedway: Gavin",
+              "id": 315000,
+              "name": "Gavin",
+              "saveKey": "Gavin"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Country Speedway: Shemp",
+              "id": 315001,
+              "name": "Shemp",
+              "saveKey": "Shemp"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Country Speedway: Roberto",
+              "id": 315002,
+              "name": "Roberto",
+              "saveKey": "Roberto"
+            }
+          ]
+        },
+        "Spike's Arena": {
+          "levelPath": "/LS317_SpikesArena/Maps/",
+          "gemTotal": 0,
+          "checks": [
+            {
+              "type": "boss",
+              "location": "Spyro 3: Spike's Arena: Spike Defeated",
+              "id": 316000,
+              "name": "Spike Defeated",
+              "saveKey": "Monique"
+            }
+          ]
+        },
+        "Spider Town": {
+          "levelPath": "/LS318_SpiderTown/Maps/",
+          "gemTotal": 200,
+          "checks": [
+            {
+              "type": "gem",
+              "location": "Spyro 3: Spider Town: 25% Gems",
+              "id": 317000,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Spider Town: 50% Gems",
+              "id": 317001,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Spider Town: 75% Gems",
+              "id": 317002,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Spider Town: All Gems",
+              "id": 317003,
+              "threshold": 100
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Spider Town: Tootie",
+              "id": 317004,
+              "name": "Tootie",
+              "saveKey": "Tootie"
+            }
+          ]
+        },
+        "Evening Lake": {
+          "levelPath": "/LS319_EveningLake_Home/Maps/",
+          "gemTotal": 400,
+          "checks": [
+            {
+              "type": "gem",
+              "location": "Spyro 3: Evening Lake: 25% Gems",
+              "id": 318000,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Evening Lake: 50% Gems",
+              "id": 318001,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Evening Lake: 75% Gems",
+              "id": 318002,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Evening Lake: All Gems",
+              "id": 318003,
+              "threshold": 100
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Evening Lake: Hannah",
+              "id": 318004,
+              "name": "Hannah",
+              "saveKey": "Hannah"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Evening Lake: Stuart",
+              "id": 318005,
+              "name": "Stuart",
+              "saveKey": "Stuart"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Evening Lake: Ted",
+              "id": 318006,
+              "name": "Ted",
+              "saveKey": "Ted"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Evening Lake: Stooby",
+              "id": 318007,
+              "name": "Stooby",
+              "saveKey": "Stooby"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Evening Lake: Jonah",
+              "id": 318008,
+              "name": "Jonah",
+              "saveKey": "Jonah"
+            }
+          ]
+        },
+        "Lost Fleet": {
+          "levelPath": "/LS320_LostFleet/Maps/",
+          "gemTotal": 600,
+          "checks": [
+            {
+              "type": "gem",
+              "location": "Spyro 3: Lost Fleet: 25% Gems",
+              "id": 319000,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Lost Fleet: 50% Gems",
+              "id": 319001,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Lost Fleet: 75% Gems",
+              "id": 319002,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Lost Fleet: All Gems",
+              "id": 319003,
+              "threshold": 100
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Lost Fleet: Craig",
+              "id": 319004,
+              "name": "Craig",
+              "saveKey": "Craig"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Lost Fleet: Chad",
+              "id": 319005,
+              "name": "Chad",
+              "saveKey": "Chad"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Lost Fleet: Ethel",
+              "id": 319006,
+              "name": "Ethel",
+              "saveKey": "Ethel"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Lost Fleet: Dolores",
+              "id": 319007,
+              "name": "Dolores",
+              "saveKey": "Dolores"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Lost Fleet: Oliver",
+              "id": 319008,
+              "name": "Oliver",
+              "saveKey": "Oliver"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Lost Fleet: Aiden",
+              "id": 319009,
+              "name": "Aiden",
+              "saveKey": "Aiden"
+            },
+            {
+              "type": "skillpoint",
+              "location": "Spyro 3: Lost Fleet: Skateboard record time (Skill Point)",
+              "id": 319010,
+              "name": "Skateboard record time",
+              "enum": 41
+            }
+          ]
+        },
+        "Frozen Altars": {
+          "levelPath": "/LS321_FrozenAltars/Maps/",
+          "gemTotal": 600,
+          "checks": [
+            {
+              "type": "gem",
+              "location": "Spyro 3: Frozen Altars: 25% Gems",
+              "id": 320000,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Frozen Altars: 50% Gems",
+              "id": 320001,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Frozen Altars: 75% Gems",
+              "id": 320002,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Frozen Altars: All Gems",
+              "id": 320003,
+              "threshold": 100
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Frozen Altars: Cecil",
+              "id": 320004,
+              "name": "Cecil",
+              "saveKey": "Cecil"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Frozen Altars: Jasper",
+              "id": 320005,
+              "name": "Jasper",
+              "saveKey": "Jasper"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Frozen Altars: Jana",
+              "id": 320006,
+              "name": "Jana",
+              "saveKey": "Jana"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Frozen Altars: Aly",
+              "id": 320007,
+              "name": "Aly",
+              "saveKey": "Aly"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Frozen Altars: Ricco",
+              "id": 320008,
+              "name": "Ricco",
+              "saveKey": "Ricco"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Frozen Altars: Baah",
+              "id": 320009,
+              "name": "Baah",
+              "saveKey": "Baah"
+            },
+            {
+              "type": "skillpoint",
+              "location": "Spyro 3: Frozen Altars: Beat yeti in two rounds (Skill Point)",
+              "id": 320010,
+              "name": "Beat yeti in two rounds",
+              "enum": 40
+            }
+          ]
+        },
+        "Fireworks Factory": {
+          "levelPath": "/LS322_FireworksFactory/Maps/",
+          "gemTotal": 600,
+          "checks": [
+            {
+              "type": "gem",
+              "location": "Spyro 3: Fireworks Factory: 25% Gems",
+              "id": 321000,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Fireworks Factory: 50% Gems",
+              "id": 321001,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Fireworks Factory: 75% Gems",
+              "id": 321002,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Fireworks Factory: All Gems",
+              "id": 321003,
+              "threshold": 100
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Fireworks Factory: Grady",
+              "id": 321004,
+              "name": "Grady",
+              "saveKey": "Grady"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Fireworks Factory: Noodles",
+              "id": 321005,
+              "name": "Noodles",
+              "saveKey": "Noodles"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Fireworks Factory: Sam",
+              "id": 321006,
+              "name": "Sam",
+              "saveKey": "Sam"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Fireworks Factory: Evan",
+              "id": 321007,
+              "name": "Evan",
+              "saveKey": "Evan"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Fireworks Factory: Patty",
+              "id": 321008,
+              "name": "Patty",
+              "saveKey": "Patty"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Fireworks Factory: Donovan",
+              "id": 321009,
+              "name": "Donovan",
+              "saveKey": "Donovan"
+            },
+            {
+              "type": "skillpoint",
+              "location": "Spyro 3: Fireworks Factory: Find Agent 9's powerup (Skill Point)",
+              "id": 321010,
+              "name": "Find Agent 9's powerup",
+              "enum": 42
+            }
+          ]
+        },
+        "Charmed Ridge": {
+          "levelPath": "/LS323_CharmedRidge/Maps/",
+          "gemTotal": 600,
+          "checks": [
+            {
+              "type": "gem",
+              "location": "Spyro 3: Charmed Ridge: 25% Gems",
+              "id": 322000,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Charmed Ridge: 50% Gems",
+              "id": 322001,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Charmed Ridge: 75% Gems",
+              "id": 322002,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Charmed Ridge: All Gems",
+              "id": 322003,
+              "threshold": 100
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Charmed Ridge: Benjamin",
+              "id": 322004,
+              "name": "Benjamin",
+              "saveKey": "Benjamin"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Charmed Ridge: Moe",
+              "id": 322005,
+              "name": "Moe",
+              "saveKey": "Moe"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Charmed Ridge: Sakura",
+              "id": 322006,
+              "name": "Sakura",
+              "saveKey": "Sakura"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Charmed Ridge: Abby",
+              "id": 322007,
+              "name": "Abby",
+              "saveKey": "Abby"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Charmed Ridge: Shelley",
+              "id": 322008,
+              "name": "Shelley",
+              "saveKey": "Shelley"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Charmed Ridge: Chuck",
+              "id": 322009,
+              "name": "Chuck",
+              "saveKey": "Chuck"
+            },
+            {
+              "type": "skillpoint",
+              "location": "Spyro 3: Charmed Ridge: The Impossible Tower (Skill Point)",
+              "id": 322010,
+              "name": "The Impossible Tower",
+              "enum": 43
+            },
+            {
+              "type": "skillpoint",
+              "location": "Spyro 3: Charmed Ridge: Shoot the temple windows (Skill Point)",
+              "id": 322011,
+              "name": "Shoot the temple windows",
+              "enum": 44
+            }
+          ]
+        },
+        "Bentley's Outpost": {
+          "levelPath": "/LS324_BentleysOutpost/Maps/",
+          "gemTotal": 600,
+          "checks": [
+            {
+              "type": "gem",
+              "location": "Spyro 3: Bentley's Outpost: 25% Gems",
+              "id": 323000,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Bentley's Outpost: 50% Gems",
+              "id": 323001,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Bentley's Outpost: 75% Gems",
+              "id": 323002,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Bentley's Outpost: All Gems",
+              "id": 323003,
+              "threshold": 100
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Bentley's Outpost: Brian",
+              "id": 323004,
+              "name": "Brian",
+              "saveKey": "Brian"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Bentley's Outpost: Charlie",
+              "id": 323005,
+              "name": "Charlie",
+              "saveKey": "Charlie"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Bentley's Outpost: Eric",
+              "id": 323006,
+              "name": "Eric",
+              "saveKey": "Eric"
+            },
+            {
+              "type": "skillpoint",
+              "location": "Spyro 3: Bentley's Outpost: Push box off the cliff (Skill Point)",
+              "id": 323007,
+              "name": "Push box off the cliff",
+              "enum": 45
+            }
+          ]
+        },
+        "Honey Speedway": {
+          "levelPath": "/LS325_HoneySpeedway/Maps/",
+          "gemTotal": 0,
+          "checks": [
+            {
+              "type": "egg",
+              "location": "Spyro 3: Honey Speedway: Chris",
+              "id": 324000,
+              "name": "Chris",
+              "saveKey": "Chris"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Honey Speedway: Henri",
+              "id": 324001,
+              "name": "Henri",
+              "saveKey": "Henri"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Honey Speedway: Nori",
+              "id": 324002,
+              "name": "Nori",
+              "saveKey": "Nori"
+            }
+          ]
+        },
+        "Scorch's Pit": {
+          "levelPath": "/LS326_ScorchsPit/Maps/",
+          "gemTotal": 0,
+          "checks": [
+            {
+              "type": "boss",
+              "location": "Spyro 3: Scorch's Pit: Scorch Defeated",
+              "id": 325000,
+              "name": "Scorch Defeated",
+              "saveKey": "James"
+            }
+          ]
+        },
+        "Starfish Reef": {
+          "levelPath": "/LS327_StarfishReef/Maps/",
+          "gemTotal": 200,
+          "checks": [
+            {
+              "type": "gem",
+              "location": "Spyro 3: Starfish Reef: 25% Gems",
+              "id": 326000,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Starfish Reef: 50% Gems",
+              "id": 326001,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Starfish Reef: 75% Gems",
+              "id": 326002,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Starfish Reef: All Gems",
+              "id": 326003,
+              "threshold": 100
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Starfish Reef: Ahnashawn",
+              "id": 326004,
+              "name": "Ahnashawn",
+              "saveKey": "Ahnashawn"
+            },
+            {
+              "type": "sparxpower",
+              "location": "Spyro 3: Starfish Reef: Sparx Extra Hit Point (Power)",
+              "id": 326005,
+              "name": "EIT_SparxPower_ExtraHP"
+            }
+          ]
+        },
+        "Midnight Mountain": {
+          "levelPath": "/LS328_MidnightMountain_Home/Maps/",
+          "gemTotal": 400,
+          "checks": [
+            {
+              "type": "gem",
+              "location": "Spyro 3: Midnight Mountain: 25% Gems",
+              "id": 327000,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Midnight Mountain: 50% Gems",
+              "id": 327001,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Midnight Mountain: 75% Gems",
+              "id": 327002,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Midnight Mountain: All Gems",
+              "id": 327003,
+              "threshold": 100
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Midnight Mountain: Billy",
+              "id": 327004,
+              "name": "Billy",
+              "saveKey": "Billy"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Midnight Mountain: Saki",
+              "id": 327005,
+              "name": "Saki",
+              "saveKey": "Saki"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Midnight Mountain: Maiken",
+              "id": 327006,
+              "name": "Maiken",
+              "saveKey": "Maiken"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Midnight Mountain: Buddy",
+              "id": 327007,
+              "name": "Buddy",
+              "saveKey": "Buddy"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Midnight Mountain: Evie",
+              "id": 327008,
+              "name": "Evie",
+              "saveKey": "Evie"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Midnight Mountain: Al",
+              "id": 327009,
+              "name": "Al",
+              "saveKey": "Al"
+            }
+          ]
+        },
+        "Crystal Islands": {
+          "levelPath": "/LS329_CrystalIslands/Maps/",
+          "gemTotal": 700,
+          "checks": [
+            {
+              "type": "gem",
+              "location": "Spyro 3: Crystal Islands: 25% Gems",
+              "id": 328000,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Crystal Islands: 50% Gems",
+              "id": 328001,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Crystal Islands: 75% Gems",
+              "id": 328002,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Crystal Islands: All Gems",
+              "id": 328003,
+              "threshold": 100
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Crystal Islands: Manie",
+              "id": 328004,
+              "name": "Manie",
+              "saveKey": "Manie"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Crystal Islands: Lloyd",
+              "id": 328005,
+              "name": "Lloyd",
+              "saveKey": "Lloyd"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Crystal Islands: Max",
+              "id": 328006,
+              "name": "Max",
+              "saveKey": "Max"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Crystal Islands: Grace",
+              "id": 328007,
+              "name": "Grace",
+              "saveKey": "Grace"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Crystal Islands: Elloise",
+              "id": 328008,
+              "name": "Elloise",
+              "saveKey": "Elloise"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Crystal Islands: Hank",
+              "id": 328009,
+              "name": "Hank",
+              "saveKey": "Hank"
+            }
+          ]
+        },
+        "Desert Ruins": {
+          "levelPath": "/LS330_DesertRuins/Maps/",
+          "gemTotal": 700,
+          "checks": [
+            {
+              "type": "gem",
+              "location": "Spyro 3: Desert Ruins: 25% Gems",
+              "id": 329000,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Desert Ruins: 50% Gems",
+              "id": 329001,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Desert Ruins: 75% Gems",
+              "id": 329002,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Desert Ruins: All Gems",
+              "id": 329003,
+              "threshold": 100
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Desert Ruins: Andy",
+              "id": 329004,
+              "name": "Andy",
+              "saveKey": "Andy"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Desert Ruins: Marty",
+              "id": 329005,
+              "name": "Marty",
+              "saveKey": "Marty"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Desert Ruins: Nelly",
+              "id": 329006,
+              "name": "Nelly",
+              "saveKey": "Nelly"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Desert Ruins: Lester",
+              "id": 329007,
+              "name": "Lester",
+              "saveKey": "Lester"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Desert Ruins: Pete",
+              "id": 329008,
+              "name": "Pete",
+              "saveKey": "Pete"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Desert Ruins: Sadie",
+              "id": 329009,
+              "name": "Sadie",
+              "saveKey": "Sadie"
+            },
+            {
+              "type": "skillpoint",
+              "location": "Spyro 3: Desert Ruins: Destroy all seaweed (Skill Point)",
+              "id": 329010,
+              "name": "Destroy all seaweed",
+              "enum": 46
+            }
+          ]
+        },
+        "Haunted Tomb": {
+          "levelPath": "/LS331_HauntedTomb/Maps/",
+          "gemTotal": 700,
+          "checks": [
+            {
+              "type": "gem",
+              "location": "Spyro 3: Haunted Tomb: 25% Gems",
+              "id": 330000,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Haunted Tomb: 50% Gems",
+              "id": 330001,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Haunted Tomb: 75% Gems",
+              "id": 330002,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Haunted Tomb: All Gems",
+              "id": 330003,
+              "threshold": 100
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Haunted Tomb: Christine",
+              "id": 330004,
+              "name": "Christine",
+              "saveKey": "Christine"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Haunted Tomb: Will",
+              "id": 330005,
+              "name": "Will",
+              "saveKey": "Will"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Haunted Tomb: Malcolm",
+              "id": 330006,
+              "name": "Malcolm",
+              "saveKey": "Malcolm"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Haunted Tomb: Roxy",
+              "id": 330007,
+              "name": "Roxy",
+              "saveKey": "Roxy"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Haunted Tomb: MJ",
+              "id": 330008,
+              "name": "MJ",
+              "saveKey": "MJ"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Haunted Tomb: TJ",
+              "id": 330009,
+              "name": "TJ",
+              "saveKey": "TJ"
+            },
+            {
+              "type": "skillpoint",
+              "location": "Spyro 3: Haunted Tomb: Swim into the dark hole (Skill Point)",
+              "id": 330010,
+              "name": "Swim into the dark hole",
+              "enum": 47
+            }
+          ]
+        },
+        "Dino Mines": {
+          "levelPath": "/LS332_DinoMines/Maps/",
+          "gemTotal": 702,
+          "checks": [
+            {
+              "type": "gem",
+              "location": "Spyro 3: Dino Mines: 25% Gems",
+              "id": 331000,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Dino Mines: 50% Gems",
+              "id": 331001,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Dino Mines: 75% Gems",
+              "id": 331002,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Dino Mines: All Gems",
+              "id": 331003,
+              "threshold": 100
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Dino Mines: Dan",
+              "id": 331004,
+              "name": "Dan",
+              "saveKey": "Dan"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Dino Mines: Romey",
+              "id": 331005,
+              "name": "Romey",
+              "saveKey": "Romey"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Dino Mines: Kiki",
+              "id": 331006,
+              "name": "Kiki",
+              "saveKey": "Kiki"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Dino Mines: Elliot",
+              "id": 331007,
+              "name": "Elliot",
+              "saveKey": "Elliot"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Dino Mines: Sharon",
+              "id": 331008,
+              "name": "Sharon",
+              "saveKey": "Sharon"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Dino Mines: Sergio",
+              "id": 331009,
+              "name": "Sergio",
+              "saveKey": "Sergio"
+            },
+            {
+              "type": "skillpoint",
+              "location": "Spyro 3: Dino Mines: Hit all the seahorses (Skill Point)",
+              "id": 331010,
+              "name": "Hit all the seahorses",
+              "enum": 48
+            },
+            {
+              "type": "skillpoint",
+              "location": "Spyro 3: Dino Mines: Hit the secret dino (Skill Point)",
+              "id": 331011,
+              "name": "Hit the secret dino",
+              "enum": 49
+            }
+          ]
+        },
+        "Agent 9's Lab": {
+          "levelPath": "/LS333_Agent9sLab/Maps/",
+          "gemTotal": 700,
+          "checks": [
+            {
+              "type": "gem",
+              "location": "Spyro 3: Agent 9's Lab: 25% Gems",
+              "id": 332000,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Agent 9's Lab: 50% Gems",
+              "id": 332001,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Agent 9's Lab: 75% Gems",
+              "id": 332002,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Agent 9's Lab: All Gems",
+              "id": 332003,
+              "threshold": 100
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Agent 9's Lab: Beulah",
+              "id": 332004,
+              "name": "Beulah",
+              "saveKey": "Beulah"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Agent 9's Lab: Tony",
+              "id": 332005,
+              "name": "Tony",
+              "saveKey": "Tony"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Agent 9's Lab: Rowan",
+              "id": 332006,
+              "name": "Rowan",
+              "saveKey": "Rowan"
+            },
+            {
+              "type": "skillpoint",
+              "location": "Spyro 3: Agent 9's Lab: Blow up all palm trees (Skill Point)",
+              "id": 332007,
+              "name": "Blow up all palm trees",
+              "enum": 50
+            }
+          ]
+        },
+        "Harbor Speedway": {
+          "levelPath": "/LS334_HarborSpeedway/Maps/",
+          "gemTotal": 0,
+          "checks": [
+            {
+              "type": "egg",
+              "location": "Spyro 3: Harbor Speedway: Kobe",
+              "id": 333000,
+              "name": "Kobe",
+              "saveKey": "Kobe"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Harbor Speedway: Sara",
+              "id": 333001,
+              "name": "Sara",
+              "saveKey": "Sara"
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Harbor Speedway: Jessie",
+              "id": 333002,
+              "name": "Jessie",
+              "saveKey": "Jessie"
+            }
+          ]
+        },
+        "Sorceress Lair": {
+          "levelPath": "/LS335_SorceressLair/Maps/",
+          "gemTotal": 0,
+          "checks": [
+            {
+              "type": "boss",
+              "location": "Spyro 3: Sorceress Lair: Sorceress Defeated",
+              "id": 334000,
+              "name": "Sorceress Defeated",
+              "saveKey": "George"
+            }
+          ]
+        },
+        "Bugbot Factory": {
+          "levelPath": "/LS336_BugbotFactory/Maps/",
+          "gemTotal": 200,
+          "checks": [
+            {
+              "type": "gem",
+              "location": "Spyro 3: Bugbot Factory: 25% Gems",
+              "id": 335000,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Bugbot Factory: 50% Gems",
+              "id": 335001,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Bugbot Factory: 75% Gems",
+              "id": 335002,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Bugbot Factory: All Gems",
+              "id": 335003,
+              "threshold": 100
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Bugbot Factory: Anabelle",
+              "id": 335004,
+              "name": "Anabelle",
+              "saveKey": "Anabelle"
+            },
+            {
+              "type": "sparxpower",
+              "location": "Spyro 3: Bugbot Factory: Sparx Chest Breaking (Power)",
+              "id": 335005,
+              "name": "EIT_SparxPower_ChestBreaking"
+            }
+          ]
+        },
+        "Super Bonus Round": {
+          "levelPath": "/LS337_SuperBonusRound/Maps/",
+          "gemTotal": 5000,
+          "checks": [
+            {
+              "type": "gem",
+              "location": "Spyro 3: Super Bonus Round: 25% Gems",
+              "id": 336000,
+              "threshold": 25
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Super Bonus Round: 50% Gems",
+              "id": 336001,
+              "threshold": 50
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Super Bonus Round: 75% Gems",
+              "id": 336002,
+              "threshold": 75
+            },
+            {
+              "type": "gem",
+              "location": "Spyro 3: Super Bonus Round: All Gems",
+              "id": 336003,
+              "threshold": 100
+            },
+            {
+              "type": "egg",
+              "location": "Spyro 3: Super Bonus Round: YinYang",
+              "id": 336004,
+              "name": "YinYang",
+              "saveKey": "YinYang"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

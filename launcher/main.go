@@ -1,0 +1,309 @@
+package main
+
+import (
+	"context"
+	_ "embed"
+	"encoding/json"
+	"errors"
+	"flag"
+	"fmt"
+	"html/template"
+	"log"
+	"net"
+	"net/http"
+	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"sync"
+)
+
+//go:embed index.html
+var indexHTML string
+
+//go:embed htmx.min.js
+var htmxJS []byte
+
+type server struct {
+	mu    sync.Mutex
+	paths Paths
+	tmpl  *template.Template
+	feed  *Feed
+}
+
+type view struct {
+	Paths    Paths
+	Host     string
+	Slot     string
+	Password string
+	Checks   []Check
+	AllOK    bool
+	Flash    string
+	Feed     feedView
+}
+
+func (s *server) configPath() string {
+	return filepath.Join(s.paths.ConfigDir, "config.txt")
+}
+
+// buildView reads current config + verify results into the template model.
+// config.txt is the source of truth for host/slot/password; the launcher's own
+// path overrides are held in s.paths.
+func (s *server) buildView(flash string) view {
+	cfg, err := ReadConfig(s.configPath())
+	if err != nil {
+		cfg = &Config{Values: map[string]string{}}
+		flash = strings.TrimSpace(flash + "  (couldn't read config.txt: " + err.Error() + ")")
+	}
+
+	checks := Verify(s.paths)
+	return view{
+		Paths:    s.paths,
+		Host:     cfg.Get("host", "127.0.0.1:38281"),
+		Slot:     cfg.Get("slot", "SRTPlayer"),
+		Password: cfg.Get("password", ""),
+		Checks:   checks,
+		AllOK:    AllOK(checks),
+		Flash:    strings.TrimSpace(flash),
+		Feed:     s.feed.View(),
+	}
+}
+
+func (s *server) handleRoot(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	flash := ""
+	// read-only marker left by handleReset's redirect; never mutates state.
+	if r.URL.Query().Get("flash") == "reset" {
+		flash = "Folders reset to auto-detected."
+		if msg := r.URL.Query().Get("err"); msg != "" {
+			flash += " (couldn't remember this: " + msg + ")"
+		}
+	}
+	if err := s.tmpl.ExecuteTemplate(w, "page", s.buildView(flash)); err != nil {
+		log.Printf("template execute: %v", err)
+	}
+}
+
+// handleReset re-detects folders and forgets any saved overrides. POST only;
+// any posted fields are ignored. It redirects to the full page so the path
+// fields re-render with the defaults.
+func (s *server) handleReset(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	s.mu.Lock()
+	s.paths = defaultPaths()
+	err := savePaths(s.paths)
+	s.mu.Unlock()
+	target := "/?flash=reset"
+	if err != nil {
+		target += "&err=" + url.QueryEscape(err.Error())
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
+}
+
+// handleApply is the single HTMX endpoint: it applies path overrides + config
+// edits (and optionally launches), then returns the "panel" fragment (flash +
+// refreshed setup checks) for HTMX to swap into #panel.
+func (s *server) handleApply(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	action := r.FormValue("action")
+
+	// path overrides are the launcher's own state; persist so they survive.
+	if v := strings.TrimSpace(r.FormValue("config_dir")); v != "" {
+		s.paths.ConfigDir = v
+	}
+	if v := strings.TrimSpace(r.FormValue("game_win64")); v != "" {
+		s.paths.GameWin64 = v
+	}
+	saveErr := savePaths(s.paths)
+
+	flash := ""
+	switch action {
+	case "recheck":
+		flash = "Setup re-checked."
+	case "save", "launch":
+		// never write over a config.txt we couldn't read: that would wipe
+		// every key the launcher doesn't manage.
+		cfg, err := ReadConfig(s.configPath())
+		if err != nil {
+			flash = "Could not read config.txt, so it was left unchanged: " + err.Error()
+			break
+		}
+		cfg.Set("host", normalizeHost(r.FormValue("host")))
+		cfg.Set("slot", strings.TrimSpace(r.FormValue("slot")))
+		cfg.Set("password", r.FormValue("password"))
+		// the save is picked in-game now; drop an older launcher's file pin
+		cfg.Delete("save_slot")
+		// the game name is fixed in the mod; drop an older launcher's stale key
+		cfg.Delete("game")
+		// keep the keys the launcher doesn't manage sensible if fresh
+		if cfg.Get("spawn_checkd", "") == "" {
+			cfg.Set("spawn_checkd", "1")
+		}
+		if err := cfg.Write(s.configPath()); err != nil {
+			flash = "Could not write config.txt: " + err.Error()
+			break
+		}
+		if action == "launch" {
+			if err := launchGame(); err != nil {
+				flash = "Config saved, but launching the game failed: " + err.Error()
+			} else {
+				flash = "Config saved. Launching Spyro… keep this tab open to follow your checks."
+			}
+		} else {
+			flash = "Config saved to " + s.configPath()
+		}
+	default:
+		flash = "Unknown action."
+	}
+	if saveErr != nil {
+		flash += " (couldn't remember folder overrides: " + saveErr.Error() + ")"
+	}
+
+	if err := s.tmpl.ExecuteTemplate(w, "panel", s.buildView(flash)); err != nil {
+		log.Printf("panel execute: %v", err)
+	}
+}
+
+func (s *server) handleHTMX(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/javascript")
+	_, _ = w.Write(htmxJS)
+}
+
+// handleFeed returns the live check list fragment the page polls.
+func (s *server) handleFeed(w http.ResponseWriter, r *http.Request) {
+	if err := s.tmpl.ExecuteTemplate(w, "feed", s.feed.View()); err != nil {
+		log.Printf("feed execute: %v", err)
+	}
+}
+
+// currentFeedConn is what the feed connects with: config.txt as last saved.
+func (s *server) currentFeedConn() feedConn {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cfg, err := ReadConfig(s.configPath())
+	if err != nil {
+		return feedConn{}
+	}
+	return feedConn{
+		Host:     cfg.Get("host", "127.0.0.1:38281"),
+		Slot:     cfg.Get("slot", ""),
+		Password: cfg.Get("password", ""),
+	}
+}
+
+// launchGame asks Steam to run the game via the steam:// protocol handler,
+// which works the same on Linux and Windows.
+func launchGame() error {
+	return openURL("steam://rungameid/" + appID)
+}
+
+// openURL opens a URL/URI with the host OS's default handler.
+func openURL(u string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", u)
+	case "darwin":
+		cmd = exec.Command("open", u)
+	default:
+		cmd = exec.Command("xdg-open", u)
+	}
+	return cmd.Start()
+}
+
+// launcherStateFile is where path overrides persist between runs. A variable
+// so tests can point it away from the real user config dir.
+var launcherStateFile = defaultStateFile
+
+func defaultStateFile() string {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(dir, "srtap-launcher", "paths.json")
+}
+
+func loadPaths() Paths {
+	p := defaultPaths()
+	f := launcherStateFile()
+	if f == "" {
+		return p
+	}
+	b, err := os.ReadFile(f)
+	if err != nil {
+		return p
+	}
+	var saved Paths
+	if json.Unmarshal(b, &saved) == nil {
+		if saved.ConfigDir != "" {
+			p.ConfigDir = saved.ConfigDir
+		}
+		if saved.GameWin64 != "" {
+			p.GameWin64 = saved.GameWin64
+		}
+	}
+	return p
+}
+
+func savePaths(p Paths) error {
+	f := launcherStateFile()
+	if f == "" {
+		return errors.New("no user config dir")
+	}
+	if err := os.MkdirAll(filepath.Dir(f), 0755); err != nil {
+		return err
+	}
+	b, err := json.MarshalIndent(p, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(f, b, 0644)
+}
+
+func main() {
+	addr := flag.String("addr", "127.0.0.1:0", "listen address (default: random localhost port)")
+	noBrowser := flag.Bool("no-browser", false, "do not open a browser automatically")
+	flag.Parse()
+
+	tmpl, err := template.New("index").Parse(indexHTML)
+	if err != nil {
+		log.Fatalf("parse template: %v", err)
+	}
+
+	s := &server{paths: loadPaths(), tmpl: tmpl, feed: NewFeed()}
+	go s.feed.Run(context.Background(), s.currentFeedConn)
+
+	ln, err := net.Listen("tcp", *addr)
+	if err != nil {
+		log.Fatalf("listen on %s: %v", *addr, err)
+	}
+	uiURL := "http://" + ln.Addr().String()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", s.handleRoot)
+	mux.HandleFunc("/apply", s.handleApply)
+	mux.HandleFunc("/reset", s.handleReset)
+	mux.HandleFunc("/htmx.min.js", s.handleHTMX)
+	mux.HandleFunc("/feed", s.handleFeed)
+
+	fmt.Printf("Spyro Reignited Launcher running at %s\n", uiURL)
+	if !*noBrowser {
+		if err := openURL(uiURL); err != nil {
+			fmt.Printf("(couldn't open a browser automatically: %v — open the URL above manually)\n", err)
+		}
+	}
+	log.Fatal(http.Serve(ln, mux))
+}

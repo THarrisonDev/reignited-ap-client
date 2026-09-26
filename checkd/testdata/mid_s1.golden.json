@@ -1,0 +1,74 @@
+{
+  "dragons": [
+    [
+      "Artisans",
+      "Argus",
+      true
+    ],
+    [
+      "Artisans",
+      "Delbin",
+      true
+    ],
+    [
+      "Artisans",
+      "Nestor",
+      true
+    ],
+    [
+      "Artisans",
+      "Tomas",
+      true
+    ],
+    [
+      "Cliff Town",
+      "Halvor",
+      true
+    ],
+    [
+      "Peace Keepers",
+      "Gunnar",
+      true
+    ],
+    [
+      "Peace Keepers",
+      "Titan",
+      true
+    ],
+    [
+      "Stone Hill",
+      "Astor",
+      true
+    ],
+    [
+      "Stone Hill",
+      "Gavin",
+      true
+    ],
+    [
+      "Stone Hill",
+      "Gildas",
+      true
+    ],
+    [
+      "Stone Hill",
+      "Lindar",
+      true
+    ],
+    [
+      "Town Square",
+      "Alvar",
+      true
+    ],
+    [
+      "Town Square",
+      "Devlin",
+      true
+    ],
+    [
+      "Town Square",
+      "Nils",
+      true
+    ]
+  ]
+}

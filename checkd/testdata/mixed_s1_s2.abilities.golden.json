@@ -1,0 +1,16 @@
+{
+  "abilities": [
+    [
+      "Climb",
+      false
+    ],
+    [
+      "Headbash",
+      false
+    ],
+    [
+      "Swim",
+      false
+    ]
+  ]
+}

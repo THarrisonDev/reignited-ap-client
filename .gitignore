@@ -1,0 +1,28 @@
+# Compiled binaries (anchored: only the built binaries, not the module trees)
+/checkd/checkd
+/launcher/launcher
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Go
+*.test
+*.out
+coverage.txt
+vendor/
+
+# Logs / local state
+*.log
+/*.sav
+*.bak
+
+# UE4SS / game mod artifacts
+ue4ss_mod/**/*.dll
+ue4ss_mod/**/mods/
+Mods/
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp

@@ -1,0 +1,24 @@
+{
+  "dragons": [
+    [
+      "Artisans",
+      "Nestor",
+      true
+    ],
+    [
+      "Artisans",
+      "Tomas",
+      true
+    ],
+    [
+      "Stone Hill",
+      "Astor",
+      true
+    ],
+    [
+      "Stone Hill",
+      "Gildas",
+      true
+    ]
+  ]
+}
