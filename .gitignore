@@ -16,6 +16,7 @@ vendor/
 *.log
 /*.sav
 *.bak
+__pycache__/
 
 # UE4SS / game mod artifacts
 ue4ss_mod/**/*.dll
