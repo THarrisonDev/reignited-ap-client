@@ -1,47 +1,20 @@
 -- SRTAP bridge: Archipelago client inside Spyro Reignited (UE4SS mod).
---
--- Architecture: lua-apclientpp (black-sliver, MIT) speaks AP's WebSocket
--- protocol from inside the game process. UE4SS coroutine contract: the AP
--- client object is constructed (session_tick -> open_session -> connect_ap)
--- and polled from the same LoopAsync callback, i.e. on UE4SS's async Lua
--- thread, the only context the library accepts (constructing or polling it
--- from any other Lua state is a hard crash).
--- Logging: logger.lua holds the log file open in append mode (flushed per
--- line, reopened on a failed write), so closures re-fired by a mod reload
--- still append; each module gets a leveled logger whose tag prefixes every
--- line and whose warn/error lines reach the console without debug=1.
---
--- Game logic sources: docs/falcon_sdk_dump/ (reflected classes) + our
--- apworld's slot data. Dragon checks + the signed dragon reconcile live in
--- spyro1/dragons.lua (Collectable_Dragon_C actors carry Collected_Dragons;
--- identity = save component param[0].paramName). The Spyro 2 orb counter
--- reconcile (spyro2/orbs.lua, debug_extra_orbs) follows received Orb items
--- under spyro2_orb_shuffle. Spyro 1 settings live in slot_data.games.spyro1;
--- slot_data.options is shared.
---
--- Config + logging live in logger.lua (config.txt in the bridge dir; key=
--- value lines: host, slot, password, spawn_checkd, debug). The bridge dir
--- prefix is defined ONCE there (BRIDGE_DIR); every file path below derives
--- from it. Each module gets a leveled logger ([TAG]; info/warn/error reach
--- the console, debug only with debug=1). checkd resolves named checks from
--- the disk save and drops them at checks.json in the bridge dir; the
--- mod ingests + LocationChecks (single AP connection). No game-memory reads for sending.
--- Session gate (session_gate.lua): nothing connects at boot. Once the player
--- is in play on a Spyro 1, Spyro 2 or Spyro 3 save picked from the main menu, the
--- mod writes session.txt (slot/game/token) in the bridge dir, spawns
--- srtap_checkd.exe and builds the AP client; returning to the main menu
--- disconnects and deletes the session file. checkd scans only that save's
--- entry and drops checks.json; the mod's check-drop ingestion sends.
--- Dragons, the dragon reconcile, Spyro 1 level locks and balloonist gates touch Spyro 1 game
--- state, so they run only in Spyro 1 sessions; Spyro 2 and Spyro 3 have
--- their own level-lock modules. Spyro 3 sessions run the filler effects +
--- S3 level locks. DeathLink (death_link.lua) is game-agnostic and ticks in
--- every session.
+-- lua-apclientpp speaks the AP WebSocket protocol from inside the game
+-- process. The client is constructed and polled only from the LoopAsync
+-- callback on UE4SS's async Lua thread; touching it from any other Lua
+-- state is a hard crash.
+-- Config, logging, and BRIDGE_DIR live in logger.lua. checkd scans the
+-- disk save and drops checks.json; the mod ingests it and sends the
+-- checks over the single AP connection.
+-- session_gate.lua decides when a session opens and which game's
+-- watchers run. Game-specific logic lives in spyro1/, spyro2/, and
+-- spyro3/ and runs only in that game's session; DeathLink is
+-- game-agnostic and ticks in every session.
 
 local OK, AP = pcall(require, "lua-apclientpp")
 
--- Scripts/ dir on package.path before the first .lua require (logger, util,
--- regions, and the shared modules all live there)
+-- Put the Scripts/ dir on package.path before the first .lua require;
+-- logger, util, regions, and the shared modules all live there.
 do
     local src = debug and debug.getinfo and debug.getinfo(1, "S")
     local dir = src and src.source and src.source:match("^@(.*[/\\])")
@@ -53,17 +26,19 @@ local log_info, log_error, log_debug = L.log_info, L.log_error, L.log_debug
 local CFG = L.cfg
 local BRIDGE_DIR = L.bridge_dir
 
--- per-module leveled loggers: the tag prefixes every line, warn/error reach
--- the console without debug=1
+-- Per-module leveled loggers: the tag prefixes every line, and warn/error
+-- reach the console without debug=1.
 local DROP_LOG = L.tagged("[DROP]")
 local DRAGONS_LOG = L.tagged("[DRAGONS]")
 local LOCKS_LOG = L.tagged("[LOCKS]")
 local BALLOONS_LOG = L.tagged("[BALLOON]")
 local S2LOCKS_LOG = L.tagged("[LOCKS2]")
 local S3LOCKS_LOG = L.tagged("[LOCKS3]")
+local EGGGATES_LOG = L.tagged("[EGGS3]")
 local FILLERS_LOG = L.tagged("[FILLERS]")
 local ABILITIES_LOG = L.tagged("[ABILITIES]")
 local ORBS2_LOG = L.tagged("[ORBS2]")
+local EGGHUD_LOG = L.tagged("[EGGHUD]")
 local SPARX_LOG = L.tagged("[SPARX]")
 local DATAPKG_LOG = L.tagged("[DATAPKG]")
 local SESSION_LOG = L.tagged("[SESSION]")
@@ -82,7 +57,7 @@ local function spawn_checkd()
         return
     end
     f:close()
-    -- start detaches immediately; the daemon self-dedupes via checkd.hb
+    -- The start detaches immediately; the daemon self-dedupes via checkd.hb.
     local ok, err = pcall(function()
         os.execute('start "srtapd" /b "' .. CHECKD_EXE .. '"')
     end)
@@ -90,8 +65,8 @@ local function spawn_checkd()
 end
 
 local CHECKS_DROP = BRIDGE_DIR .. "checks.json"
--- a session file left by a crashed run would point checkd at a save the
--- player hasn't picked yet
+-- A session file left by a crashed run would point checkd at a save the
+-- player hasn't picked yet.
 local SESSION_FILE = BRIDGE_DIR .. "session.txt"
 os.remove(SESSION_FILE)
 
@@ -100,11 +75,9 @@ if not OK then
     return
 end
 
--- session gate (session_gate.lua) is core, like lua-apclientpp: it decides
--- when a session opens and which game's watchers run (WATCHERS is keyed by its
--- SPYRO1/2/3). There is no useful degraded mode without it, so a load failure
--- is one FATAL line and the mod stops here, before any module or LoopAsync is
--- wired — rather than an inert stub that half-runs the bridge.
+-- session_gate.lua is core, like lua-apclientpp: without it there is no
+-- useful degraded mode, so a load failure is one FATAL line and the mod
+-- stops here before any module or LoopAsync is wired.
 local okSG, SESSION = pcall(require, "session_gate")
 if not okSG or type(SESSION) ~= "table" then
     log_error("FATAL: session gate: require('session_gate') failed (" .. tostring(SESSION) ..
@@ -114,21 +87,21 @@ end
 SESSION.init({log = SESSION_LOG})
 
 -- ---------------------------------------------------------------------------
--- runtime state
+-- Runtime state
 -- ---------------------------------------------------------------------------
-local ap = nil                 -- the lua-apclientpp client (async thread only)
-local connected = false         -- slot_connected..socket_disconnected window
-local name_to_id = {}        -- "Spyro 1: Region: Free Nestor" -> id
+local ap = nil                 -- The lua-apclientpp client (async thread only).
+local connected = false         -- The slot_connected..socket_disconnected window.
+local name_to_id = {}        -- "Spyro 1: Region: Free Nestor" -> id.
 local id_to_name = {}
-local sent_checks = {}       -- id -> true (ever sent this session; shared with spyro1/dragons.lua)
-local session_game = nil     -- game index of the open session (0 = Spyro 1, 1 = Spyro 2, 2 = Spyro 3)
-local checks_blocked = false -- session game isn't in this seed: never send its checks
+local sent_checks = {}       -- id -> true (ever sent this session; shared with spyro1/dragons.lua).
+local session_game = nil     -- Game index of the open session (0 = Spyro 1, 1 = Spyro 2, 2 = Spyro 3).
+local checks_blocked = false -- This session's game isn't in the seed: never send its checks.
 
 local client_version = {0, 6, 7}
 local items_handling = 7
 
 -- ---------------------------------------------------------------------------
--- helpers
+-- Helpers
 -- ---------------------------------------------------------------------------
 local safe = U.safe
 local valid = U.valid
@@ -139,10 +112,10 @@ local function game_state()
     return gs
 end
 
--- loads an optional Scripts/ module with the standard fallback: a
--- missing/broken module logs the error and yields the inert stub. Every field
--- main reads from the module must exist on its stub (test_main_load.lua drives
--- main with every optional module failing to prove it). `prefix` is the exact
+-- Load an optional Scripts/ module with the standard fallback: a missing or
+-- broken module logs the error and yields the inert stub. Every field main
+-- reads from a module must exist on its stub; test_main_load.lua proves it
+-- by driving main with every optional module failing. `prefix` is the exact
 -- error-line head, kept stable per module for log greps.
 local function load_module(name, prefix, what, stub)
     local ok, mod = pcall(require, name)
@@ -151,8 +124,8 @@ local function load_module(name, prefix, what, stub)
     return stub
 end
 
--- location id for a fully-qualified name from slot_data (also injected into
--- spyro1/dragons.lua, where it gates dragon identity acceptance)
+-- Location id for a fully-qualified name from slot_data. Also injected into
+-- spyro1/dragons.lua, where it gates dragon identity acceptance.
 local function loc_id(name)
     return name_to_id[name]
 end
@@ -162,8 +135,8 @@ local function s1_slot_data(sd)
         and sd.games.spyro1 or {}
 end
 
--- location id -> {item, to} from the connect-time LocationScouts; `to` is nil
--- when the item is ours. Sends before the scout reply log without it.
+-- Location id -> {item, to} from the connect-time LocationScouts. `to` is
+-- nil when the item is ours. Sends log before the scout reply arrives.
 local scouted = {}
 
 local function sent_line(id)
@@ -175,12 +148,11 @@ local function sent_line(id)
 end
 
 -- ---------------------------------------------------------------------------
--- module loading (all through load_module; init calls stay at their sites)
+-- Module loading (all through load_module; init calls stay at their sites)
 -- ---------------------------------------------------------------------------
--- check-drop ingestion lives in checks_drop.lua (spec-tested): the Go checkd
--- daemon drops checks.json {"seq":N,"checks":[ids], "names":[...]}; we
--- LocationChecks the surviving ids over the single AP connection. The drop
--- format is owned by checkd (main.go, sendDrop).
+-- checks_drop.lua ingests the checkd drop: the Go daemon writes checks.json
+-- {"seq":N,"checks":[ids],"names":[...]}; we LocationChecks the surviving ids
+-- over the single AP connection. The drop format is owned by checkd.
 local CHECKSDROP = load_module("checks_drop", "checks_drop: require failed",
     "checkd drop ingestion unavailable",
     {init = function() end, reset = function() end, tick = function() end})
@@ -206,10 +178,10 @@ CHECKSDROP.init({
     check_path = CHECKS_DROP,
 })
 
--- Level path -> region name. Loaded from the generated regions.lua (generated
--- by scripts/gen_locations.py from the apworld's Locations.py + level_paths.py;
--- never hand-edit it — audit_locations.py guards drift). It ships beside this
--- file in Scripts/ (already on package.path).
+-- Level path -> region name, from the generated regions.lua. It is
+-- generated by scripts/gen_locations.py from the apworld's Locations.py and
+-- level_paths.py, so never hand-edit it (audit_locations.py guards drift).
+-- It ships beside this file in Scripts/ and is already on package.path.
 local MAP_PATH_TO_REGION = {}
 do
     local okR, regions = pcall(require, "regions")
@@ -224,10 +196,10 @@ do
     end
 end
 
--- Spyro 1 dragons (spyro1/dragons.lua): dragon watcher (named checks from
--- Collectable_Dragon_C actors) + the signed debug_extra_dragons reconcile.
--- Same fallback rule. send_checks wraps the single AP connection; sent_checks
--- is shared with the checks_drop module above.
+-- Spyro 1 dragons (spyro1/dragons.lua): the dragon watcher (named checks from
+-- Collectable_Dragon_C actors) and the signed debug_extra_dragons reconcile.
+-- send_checks wraps the single AP connection; sent_checks is shared with
+-- checks_drop above.
 local DRAGONS = load_module("spyro1.dragons", "dragons: require('spyro1.dragons') failed",
     "dragon watcher + reconcile unavailable",
     {init = function() end, configure = function() end,
@@ -250,56 +222,62 @@ DRAGONS.init({
     end,
 })
 
--- level locks (spyro1/level_locks.lua): portals stay locked until their AP key item
--- arrives. A missing module must not take the bridge down.
+-- Spyro 1 level locks (spyro1/level_locks.lua): portals stay locked until
+-- their AP key item arrives.
 local LOCKS = load_module("spyro1.level_locks", "level locks: require('spyro1.level_locks') failed",
     "portals stay vanilla",
     {init = function() end, configure = function() end, note_item = function() end,
      tick = function() end, status = function() return "unavailable" end})
 LOCKS.init({log = LOCKS_LOG, regions = MAP_PATH_TO_REGION})
 
--- balloonist gates (spyro1/balloonists.lua): Marco's GoalValue is raised to the
--- seed's gate_requirements. Same fallback rule.
+-- Spyro 1 balloonist gates (spyro1/balloonists.lua): Marco's GoalValue is
+-- raised to the seed's gate_requirements.
 local BALLOONS = load_module("spyro1.balloonists", "balloonists: require('spyro1.balloonists') failed",
     "balloonist gates stay vanilla",
     {init = function() end, configure = function() end,
      tick = function() end, status = function() return "unavailable" end})
 BALLOONS.init({log = BALLOONS_LOG, regions = MAP_PATH_TO_REGION})
 
--- level locks (spyro2/level_locks.lua): Spyro 2 portals stay locked until their
--- AP key item arrives. Same fallback rule.
+-- Spyro 2 level locks (spyro2/level_locks.lua): portals stay locked until
+-- their AP key item arrives.
 local S2LOCKS = load_module("spyro2.level_locks", "level locks: require('spyro2.level_locks') failed",
     "portals stay vanilla",
     {init = function() end, configure = function() end, note_item = function() end,
      tick = function() end, status = function() return "unavailable" end})
 S2LOCKS.init({log = S2LOCKS_LOG, regions = MAP_PATH_TO_REGION})
 
--- level locks (spyro3/level_locks.lua): Spyro 3 portals stay locked until their
--- AP key item arrives. Same fallback rule.
+-- Spyro 3 level locks (spyro3/level_locks.lua): portals stay locked until
+-- their AP key item arrives.
 local S3LOCKS = load_module("spyro3.level_locks", "level locks: require('spyro3.level_locks') failed",
     "portals stay vanilla",
     {init = function() end, configure = function() end, note_item = function() end,
      tick = function() end, status = function() return "unavailable" end})
 S3LOCKS.init({log = S3LOCKS_LOG, regions = MAP_PATH_TO_REGION})
 
--- filler items (fillers.lua): Extra Life + Spyro looks. Same fallback rule.
+-- Egg gates (spyro3/egg_gates.lua): Spyro 3's egg portals follow received
+-- Dragon Egg items (the EggRequirement re-tune).
+local EGGGATES = load_module("spyro3.egg_gates", "egg gates: require('spyro3.egg_gates') failed",
+    "egg portals stay vanilla",
+    {init = function() end, configure = function() end, note_item = function() end,
+     tick = function() end, status = function() return "unavailable" end})
+EGGGATES.init({log = EGGGATES_LOG, regions = MAP_PATH_TO_REGION})
+
+-- Filler items (fillers.lua): Extra Life and Spyro looks.
 local FILLERS = load_module("fillers", "fillers: require('fillers') failed",
     "filler items do nothing",
     {init = function() end, configure = function() end, note_item = function() end,
      tick = function() end, status = function() return "unavailable" end})
 FILLERS.init({log = FILLERS_LOG, regions = MAP_PATH_TO_REGION, dir = BRIDGE_DIR})
 
--- ability items (spyro2/abilities.lua): Spyro 2 Money Bags abilities. Same fallback
--- rule.
+-- Ability items (spyro2/abilities.lua): Spyro 2 Money Bags abilities.
 local ABILITIES = load_module("spyro2.abilities", "abilities: require('spyro2.abilities') failed",
     "ability items do nothing",
     {init = function() end, configure = function() end, note_item = function() end,
      tick = function() end, status = function() return "unavailable" end})
 ABILITIES.init({log = ABILITIES_LOG, regions = MAP_PATH_TO_REGION})
 
--- orb reconcile (spyro2/orbs.lua): the game's orb counter follows received
--- Orb items under spyro2_orb_shuffle (signed debug_extra_orbs drive). Same
--- fallback rule.
+-- Orb reconcile (spyro2/orbs.lua): the game's orb counter follows received
+-- Orb items under spyro2_orb_shuffle (signed debug_extra_orbs drive).
 local ORBS2 = load_module("spyro2.orbs", "orbs: require('spyro2.orbs') failed",
     "orb counter stays vanilla",
     {init = function() end, configure = function() end,
@@ -312,24 +290,39 @@ local ORBS2 = load_module("spyro2.orbs", "orbs: require('spyro2.orbs') failed",
      reset = function() end, status = function() return "unavailable" end})
 ORBS2.init({log = ORBS2_LOG})
 
--- Sparx power items (spyro3/sparx_powers.lua): Spyro 3 Sparx realm rewards. Same
--- fallback rule.
+-- Egg HUD reconcile (spyro3/eggs_hud.lua): the S3 egg HUD/Guide Book count
+-- follows received Dragon Egg items under spyro3_egg_shuffle (signed
+-- debug_extra drive). Display only; it never opens a gate (egg_gates.lua's
+-- EggRequirement re-tune does that independently).
+local EGGHUD = load_module("spyro3.eggs_hud", "egg hud: require('spyro3.eggs_hud') failed",
+    "egg HUD counter stays vanilla",
+    {init = function() end, configure = function() end,
+     note_item = function() return false end,
+     is_egg = function() return false end,
+     received = function() return 0 end,
+     last_extra = function() return nil end,
+     arm_backlog = function() end, reset_received = function() end,
+     note_disconnected = function() end, tick = function() end,
+     reset = function() end, status = function() return "unavailable" end})
+EGGHUD.init({log = EGGHUD_LOG})
+
+-- Sparx power items (spyro3/sparx_powers.lua): Spyro 3 Sparx realm rewards.
 local SPARX = load_module("spyro3.sparx_powers", "sparx powers: require('spyro3.sparx_powers') failed",
     "Sparx power items do nothing",
     {init = function() end, configure = function() end, note_item = function() end,
      tick = function() end, status = function() return "unavailable" end})
 SPARX.init({log = SPARX_LOG, regions = MAP_PATH_TO_REGION})
 
--- data-package backlog (data_pkg.lua): the first ReceivedItems batch arrives
--- before the AP data package has loaded, so its names resolve to "Unknown" —
--- and the server never re-delivers it. Same fallback rule.
+-- Data-package backlog (data_pkg.lua): the first ReceivedItems batch arrives
+-- before the AP data package has loaded, so its names resolve to "Unknown",
+-- and the server never re-delivers it.
 local DATAPKG = load_module("data_pkg", "data pkg: require('data_pkg') failed",
     "first-batch items stay unprocessed",
     {init = function() end, reset = function() end,
      note = function() end, tick = function() end})
 
--- goal reporting (goal_watch.lua): GOAL when every required game's goal event
--- item has been received. Same fallback rule.
+-- Goal reporting (goal_watch.lua): GOAL once every required game's goal
+-- event item has been received.
 local GOALWATCH = load_module("goal_watch", "goal watch: require('goal_watch') failed",
     "goal completion is not reported",
     {init = function() end, configure = function() end,
@@ -343,8 +336,8 @@ GOALWATCH.init({
     end,
 })
 
--- DeathLink (death_link.lua): bounce Spyro's deaths / apply incoming death
--- bounces when the slot's death_link option is on. Same fallback rule.
+-- DeathLink (death_link.lua): bounces Spyro's deaths and applies incoming
+-- death bounces when the slot's death_link option is on.
 local DEATHLINK = load_module("death_link", "death link: require('death_link') failed",
     "DeathLink inactive",
     {init = function() end, configure = function() end, on_bounced = function() end,
@@ -360,8 +353,7 @@ DEATHLINK.init({
     me = function() return safe(function() return ap:get_slot() end, "?") end,
 })
 
--- Per-game game logic runs only while the open session is that game's save:
--- dragons/reconcile/S1 locks in Spyro 1 sessions, S2/S3 locks in theirs.
+-- Per-game logic runs only while the open session is that game's save.
 local function s1_session()
     return session_game ~= nil and session_game == SESSION.SPYRO1
 end
@@ -370,10 +362,14 @@ local function s2_session()
     return session_game ~= nil and session_game == SESSION.SPYRO2
 end
 
--- per-session-type watcher dispatch for the poll loop: one game_state()
--- fetch feeds the whole chain. interleave = Spyro 1 order (each tick
--- followed by its own heartbeat); S2/S3 batch: every tick first, then every
--- heartbeat line
+local function s3_session()
+    return session_game ~= nil and session_game == SESSION.SPYRO3
+end
+
+-- Per-session-type watcher dispatch for the poll loop. One game_state()
+-- fetch feeds the whole chain. Spyro 1 interleaves: each tick is followed
+-- by its own heartbeat. Spyro 2 and Spyro 3 batch: every tick first, then
+-- every heartbeat.
 local WATCHERS = {
     [SESSION.SPYRO1] = {
         interleave = true,
@@ -397,8 +393,10 @@ local WATCHERS = {
         },
     },
     [SESSION.SPYRO3] = {
-        ticks = {SPARX, FILLERS, S3LOCKS, DEATHLINK},
+        ticks = {EGGGATES, EGGHUD, SPARX, FILLERS, S3LOCKS, DEATHLINK},
         hbs = {
+            {mod = EGGGATES, tag = "[EGGS3] hb: "},
+            {mod = EGGHUD, tag = "[EGGHUD] hb: "},
             {mod = SPARX, tag = "[SPARX] hb: "},
             {mod = FILLERS, tag = "[FILLERS] hb (spyro3): "},
             {mod = S3LOCKS, tag = "[LOCKS3] hb: "},
@@ -409,7 +407,7 @@ local WATCHERS = {
 
 -- ReceivedItems is cumulative: every packet re-delivers index 0..n, so
 -- consumers are exact-once per AP item index. process_item is the single
--- fan-out for one item (inline or via the data-package backlog replay).
+-- fan-out for one item, inline or via the data-package backlog replay.
 local processed_indices = {}
 local function process_item(name, index)
     if index ~= nil then
@@ -419,9 +417,11 @@ local function process_item(name, index)
     LOCKS.note_item(name)
     S2LOCKS.note_item(name)
     S3LOCKS.note_item(name)
+    EGGGATES.note_item(name)
     FILLERS.note_item(name, index)
     ABILITIES.note_item(name, index)
     ORBS2.note_item(name, index)
+    EGGHUD.note_item(name, index)
     SPARX.note_item(name, index)
     DRAGONS.note_item(name, index)
 end
@@ -438,8 +438,9 @@ DATAPKG.init({
 -- ---------------------------------------------------------------------------
 -- AP handlers
 -- ---------------------------------------------------------------------------
--- NetworkItem on ReceivedItems: player = the slot whose world held the item,
--- location = where in that world (<= 0 for server grants / starting items)
+-- NetworkItem on ReceivedItems: player is the slot whose world held the
+-- item, and location is where in that world (<= 0 for server grants and
+-- starting items).
 local function received_line(info, iname)
     local line = "Received: " .. iname
     local p = info.player
@@ -455,7 +456,7 @@ local function received_line(info, iname)
     return line .. " from " .. from .. (where and (" at " .. where) or "")
 end
 
--- NetworkItem on LocationInfo: player = the RECEIVER of the item
+-- NetworkItem on LocationInfo: player is the receiver of the item.
 local function on_location_info(items)
     local me = safe(function() return ap:get_player_number() end, nil)
     local n = 0
@@ -475,6 +476,7 @@ local function on_items_received(received)
     local names = {}
     local dragons_this_batch = 0
     local orbs_this_batch = 0
+    local eggs_this_batch = 0
     for _, info in ipairs(received or {}) do
         local iname = safe(function() return ap:get_item_name(info.item, CFG.game) end, "?")
         names[#names+1] = iname
@@ -486,11 +488,15 @@ local function on_items_received(received)
         if ORBS2.is_orb(iname) then
             orbs_this_batch = orbs_this_batch + 1
         end
+        if EGGHUD.is_egg(iname) then
+            eggs_this_batch = eggs_this_batch + 1
+        end
     end
     log_debug("items received: " .. #names .. " (" .. table.concat(names, ", ") .. ")")
-    -- reconnect: the cumulative backlog recount re-arms the reconciles
+    -- Reconnect: the cumulative backlog recount re-arms the reconciles.
     DRAGONS.arm_backlog()
     ORBS2.arm_backlog()
+    EGGHUD.arm_backlog()
     if dragons_this_batch > 0 then
         log_debug(string.format(
             "[RECONCILE] Dragon items this batch: %d (running received=%d, last_extra=%s)",
@@ -501,21 +507,27 @@ local function on_items_received(received)
             "[RECONCILE] Orb items this batch: %d (running received=%d, last_extra=%s)",
             orbs_this_batch, ORBS2.received(), tostring(ORBS2.last_extra())))
     end
+    if eggs_this_batch > 0 then
+        log_debug(string.format(
+            "[RECONCILE] Dragon Egg items this batch: %d (running received=%d, last_extra=%s)",
+            eggs_this_batch, EGGHUD.received(), tostring(EGGHUD.last_extra())))
+    end
     GOALWATCH.note_batch(received)
 end
 
 local function on_slot_connected(sd)
     log_info("Connected to " .. CFG.host .. " as " .. CFG.slot)
-    -- reconnect-to-a-different-seed guard: session check state is stale
+    -- A reconnect to a different seed makes the session check state stale.
     for k in pairs(sent_checks) do sent_checks[k] = nil end
-    -- cumulative ReceivedItems re-uses indexes for different items on a new
-    -- seed: the per-index once-guard must reset with the check state
+    -- Cumulative ReceivedItems re-uses indexes for different items on a new
+    -- seed, so the per-index once-guard must reset with the check state.
     processed_indices = {}
-    -- and the dragon count must recount exactly once (a mid-session
-    -- reconnect re-delivers the whole backlog; without the reset every Dragon
-    -- counts twice and the signed drive over-writes the counter)
+    -- The dragon count must recount exactly once: a mid-session reconnect
+    -- re-delivers the whole backlog, and without the reset every Dragon
+    -- counts twice and the signed drive over-writes the counter.
     DRAGONS.reset_received()
     ORBS2.reset_received()
+    EGGHUD.reset_received()
     local n2i = sd.locationNameToId or {}
     local n = 0
     for k, v in pairs(n2i) do
@@ -524,7 +536,7 @@ local function on_slot_connected(sd)
         n = n + 1
     end
     log_debug("locationNameToId loaded: " .. n .. " entries")
-    -- scout every location once so "Sent:" lines can name the item + receiver
+    -- Scout every location once so "Sent:" lines can name the item and receiver.
     scouted = {}
     local scout_ids = {}
     for id in pairs(id_to_name) do scout_ids[#scout_ids+1] = id end
@@ -543,16 +555,18 @@ local function on_slot_connected(sd)
     log_debug("spyro1 options: dragon_shuffle=" .. tostring(opts.dragon_shuffle) ..
         " egg_shuffle=" .. tostring(opts.egg_shuffle))
     if session_game == SESSION.SPYRO3 then
-        log_debug("spyro3 session: gem checks, fillers, S3 level locks, Sparx powers")
+        log_debug("spyro3 session: gem checks, fillers, S3 level locks, egg gates, Sparx powers")
     end
     DRAGONS.configure(sd, s1_session())
     LOCKS.configure(sd)
     BALLOONS.configure(sd)
     S2LOCKS.configure(sd)
     S3LOCKS.configure(sd)
+    EGGGATES.configure(sd)
     FILLERS.configure(sd)
     ABILITIES.configure(sd)
     ORBS2.configure(sd, s2_session())
+    EGGHUD.configure(sd, s3_session())
     SPARX.configure(sd)
     DEATHLINK.configure(sd)
     connected = true
@@ -567,14 +581,15 @@ local function on_room_info()
     if not okS then log_error("could not connect slot " .. CFG.slot .. ": " .. tostring(err)) end
 end
 
--- the library retries a dead server every few seconds; only a drop from a
--- live session is worth showing the player
+-- The library retries a dead server every few seconds; only a drop from a
+-- live session is worth showing the player.
 local function on_socket_error(msg) log_debug("socket error: " .. tostring(msg)) end
 local function on_socket_disconnected()
     if connected then
         connected = false
         DRAGONS.note_disconnected()
         ORBS2.note_disconnected()
+        EGGHUD.note_disconnected()
         log_error("Disconnected from " .. CFG.host .. " (reconnecting)")
     else
         log_debug("socket disconnected")
@@ -591,8 +606,7 @@ end
 local function on_print(msg) log_debug("server print: " .. tostring(msg)) end
 
 -- ---------------------------------------------------------------------------
--- AP session (the async thread owns everything apclientpp; this runs from
--- the LoopAsync poll once the session gate opens)
+-- AP session
 -- ---------------------------------------------------------------------------
 local function connect_ap()
     local okC, inst = pcall(function() return AP("", CFG.game, CFG.host) end)
@@ -614,9 +628,9 @@ local function connect_ap()
     ap:set_items_received_handler(on_items_received)
     ap:set_print_handler(on_print)
 
-    -- the shipped DLL may lack set_bounced_handler (same build gap as the
-    -- data-package changed handler); without it incoming DeathLinks never
-    -- arrive, but our own deaths still bounce
+    -- The shipped DLL may lack set_bounced_handler (same build gap as the
+    -- data-package changed handler). Without it, incoming DeathLinks never
+    -- arrive but our own deaths still bounce.
     if type(ap.set_bounced_handler) == "function" then
         ap:set_bounced_handler(function(cmd)
             safe(function() DEATHLINK.on_bounced(cmd) end)
@@ -626,10 +640,9 @@ local function connect_ap()
         log_debug("bounced handler unavailable (DLL build); incoming DeathLinks inactive")
     end
 
-    -- the backlog replay runs once the data package is valid: prefer the
-    -- library's changed handler; the shipped DLL (votv's v0.6.0 build) may
-    -- lack it, in which case the poll loop's tick is the fallback (max one
-    -- poll late)
+    -- The backlog replay runs once the data package is valid. Prefer the
+    -- library's changed handler; the shipped DLL may lack it, in which case
+    -- the poll loop's tick is the fallback (at most one poll late).
     if type(ap.set_data_package_changed_handler) == "function" then
         ap:set_data_package_changed_handler(function()
             safe(function() DATAPKG.tick(safe(function() return ap:is_data_package_valid() end, false)) end)
@@ -642,11 +655,10 @@ local function connect_ap()
     log_debug("handlers wired; library auto-connects on ctor")
 end
 
--- a fresh session starts from nothing the previous save taught us.
--- Clear these tables in place (not `x = {}`): checks_drop.lua was handed
--- id_to_name by reference at boot, and a reassignment here would silently
--- orphan its copy, leaving it forever empty (every check then reads as
--- "not in this slot's locations" and never reaches the server).
+-- A fresh session starts from nothing the previous save taught us. Clear
+-- these tables in place, not with reassignment: checks_drop.lua was handed
+-- id_to_name by reference at boot, so a reassignment here would orphan its
+-- copy and leave it forever empty.
 local function reset_session_state()
     for k in pairs(name_to_id) do name_to_id[k] = nil end
     for k in pairs(id_to_name) do id_to_name[k] = nil end
@@ -658,6 +670,7 @@ local function reset_session_state()
     DATAPKG.reset()
     DRAGONS.reset()
     ORBS2.reset()
+    EGGHUD.reset()
     GOALWATCH.configure({})
     DEATHLINK.configure({})
 end
@@ -665,7 +678,7 @@ end
 local function open_session(slot, game)
     reset_session_state()
     session_game = game
-    -- a drop checkd wrote for the previous save must not reach this one
+    -- A drop checkd wrote for the previous save must not reach this one.
     os.remove(CHECKS_DROP)
     local f = io.open(SESSION_FILE, "w")
     if f then
@@ -689,7 +702,7 @@ local function close_session()
     log_info("Back at the main menu: disconnected. Pick a save to reconnect.")
 end
 
--- UE4SS out-params can come back table-wrapped (see rec_read_save_collected)
+-- UE4SS can wrap out-params in a table; see rec_read_save_collected.
 local function out_number(v)
     if type(v) == "number" then return v end
     if type(v) == "table" then
@@ -726,34 +739,34 @@ local function session_tick()
     end
 end
 
--- poll loop (async thread) + game watchers
+-- Poll loop (async thread) and game watchers.
 local polls = 0
 LoopAsync(250, function()
     safe(session_tick)
 
-    -- AP poll
+    -- AP poll.
     if ap then
         local okP, errP = pcall(function() ap:poll() end)
-        -- backlog replay fallback for DLL builds without the changed
-        -- handler; must also run when poll() errored (one-shot inside)
+        -- Backlog replay fallback for DLL builds without the changed
+        -- handler; must also run when poll() errored (one-shot inside).
         safe(function() DATAPKG.tick(safe(function() return ap:is_data_package_valid() end, false)) end)
         if not okP then
             log_debug("poll() errored: " .. tostring(errP))
-            -- LoopAsync stops on a true return; one errored poll must not
-            -- kill the session gate + watchers for the rest of the session
+            -- LoopAsync stops on a true return, so one errored poll must not
+            -- kill the session gate and watchers for the rest of the session.
         else
             polls = polls + 1
             if polls % 240 == 0 then log_debug("poll tick " .. polls) end
         end
     end
 
-    -- ingest save-watcher check drops (before the dragon watcher)
+    -- Ingest save-watcher check drops (before the dragon watcher).
     if connected then
         safe(function() CHECKSDROP.tick() end)
     end
 
-    -- game watchers: only while connected + in play on this session's save;
-    -- one game_state() fetch feeds every tick
+    -- Game watchers: only while connected and in play on this session's
+    -- save; one game_state() fetch feeds every tick.
     if connected and session_game ~= nil then
         local gs = game_state()
         local w = gs and WATCHERS[session_game]
