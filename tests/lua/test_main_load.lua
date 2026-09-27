@@ -28,7 +28,8 @@ end
 -- every optional module main loads through load_module (so a new module is
 -- covered without touching this spec), plus regions (its own FATAL path)
 local OPTIONAL = {"regions"}
-for name in read_file(MAIN):gmatch('load_module%("([%w_%.]+)"') do
+-- %s* tolerates a reformatted call that puts the name on its own line
+for name in read_file(MAIN):gmatch('load_module%(%s*"([%w_%.]+)"') do
     OPTIONAL[#OPTIONAL + 1] = name
 end
 
@@ -197,6 +198,32 @@ end)
 case("every optional module stubbed: Spyro 3 session runs end to end", function()
     drive_session(2)
     check(count("[SPARX] hb: unavailable") == 1, "Spyro 3 heartbeat did not read the stub status")
+end)
+
+case("checks_drop still resolves ids after open_session resets id_to_name (regression)", function()
+    local failing = {}
+    for _, name in ipairs(OPTIONAL) do
+        if name ~= "checks_drop" then failing[#failing + 1] = name end
+    end
+    local ok, err = load_main(failing)
+    check(ok, "main.lua raised: " .. tostring(err))
+    check(type(loop_fn) == "function", "LoopAsync not registered")
+    gs_game, gs_state = 0, 3
+    for _ = 1, 3 do loop_fn() end
+    check(ap_obj ~= nil, "session never opened (no AP client)")
+    local h = ap_obj.handlers
+    h.room_info()
+    h.slot_connected({locationNameToId = {["Spyro 1: Artisans: Free Nestor"] = 100011},
+                      included_games = {"spyro1", "spyro2", "spyro3"},
+                      games = {spyro1 = {options = {dragon_shuffle = "dragonsanity"}}}})
+    local drop = assert(io.open(BRIDGE .. "checks.json", "w"))
+    drop:write('{"seq":1,"checks":[100011],"names":["Spyro 1: Artisans: Free Nestor"]}')
+    drop:close()
+    loop_fn()
+    local sent = false
+    for _, c in ipairs(ap_obj.calls) do if c == "LocationChecks" then sent = true end end
+    check(sent, "checks_drop never called LocationChecks for a real location id " ..
+        "(id_to_name was reassigned out from under it in reset_session_state)")
 end)
 
 os.remove(BRIDGE .. "session.txt")

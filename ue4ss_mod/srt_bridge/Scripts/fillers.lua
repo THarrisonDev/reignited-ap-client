@@ -41,6 +41,7 @@ local PAWN_CLASS = "BP_CPS1999_Playable_C"
 local EIT_LIFE = 18
 local STABLE_TICKS = 8      -- x 250ms poll: never write until the level has held 2s
 local JOB_TIMEOUT = 5       -- seconds before an unfinished job is abandoned (and failed-job backoff)
+local MODE_DURATION = 30    -- seconds a Big Head / Flat Spyro grant stays active before it wears off
 
 local COLORS = {
     ["Turn Spyro Red"] = {1, 0, 0},
@@ -67,9 +68,8 @@ local life_indices = {}     -- AP item index -> true (Extra Life, this session)
 local trap_indices = {}     -- AP item index -> true (Damage Trap, this session)
 local lives_received = 0
 local lives_granted = 0     -- persisted per seed+slot
-local look = {color = nil, modes = {}}
-local look_serial = 0       -- bumps on every look change
-local applied = {pawn = nil, serial = 0}
+local look = {color = nil, modes = {}}   -- modes[fn] = expire_at (os.time()); cleared when it wears off
+local applied = {pawn = nil, color = nil, modes = {}}  -- last state actually pushed to this pawn
 local traps_received = 0    -- damage traps: session count (no persistence —
                             -- an unlucky reconnect could re-hit, which is fine for a trap)
 local cur_path, stable_ticks = nil, 0
@@ -175,7 +175,12 @@ local function apply_trap(pawn)
     end
 end
 
-local function run_job(gs, pawn, key, lives, serial, traps)
+-- Only ever asserts a mode/color transition the caller decided is due
+-- (color_due, turn_on, turn_off) — never blindly re-asserts something already
+-- applied to this pawn. Re-calling e.g. ICheatCodeBigHeadMode(true) every time
+-- an unrelated look change fires was clobbering a same-pawn color change
+-- (the pawn's tinted material didn't survive the redundant mode re-assert).
+local function run_job(gs, pawn, lives, traps, color_due, turn_on, turn_off)
     if lives > 0 then
         gs["add item to player inventory"](EIT_LIFE, lives)
         lives_granted = lives_granted + lives
@@ -184,30 +189,43 @@ local function run_job(gs, pawn, key, lives, serial, traps)
             lives, lives == 1 and "life" or "lives", lives_granted))
     end
     if pawn == nil or not valid(pawn) then return end
-    if look.color then
+    local color_retry = false
+    if color_due then
         local idx = nearest(read_tints(pawn), COLORS[look.color])
         if idx == 0 then
             log.warn(look.color .. " skipped: nearest CheatTints entry is 0 (no tint)")
+            applied.color = look.color
         elseif idx then
             local set = gs:SetGlobalFloatValue("code.color", idx)
             pawn:ICheatCodeSetSpyroTintColor()
             log.info(look.color .. " -> code.color " .. idx .. " (set=" .. tostring(set) .. ")")
+            applied.color = look.color
         else
-            log.warn(look.color .. " skipped: CheatTints unreadable")
+            -- CheatTints not readable yet (freshly spawned pawn): leave
+            -- applied.color behind so the next tick retries against this
+            -- same pawn instead of silently giving up until a new one spawns.
+            log.warn(look.color .. " skipped: CheatTints unreadable, will retry")
+            color_retry = true
         end
     end
-    for fn in pairs(look.modes) do
+    for _, fn in ipairs(turn_on) do
         pawn[fn](pawn, true)
         log.info(fn .. "(true)")
+        applied.modes[fn] = true
+    end
+    for _, fn in ipairs(turn_off) do
+        pawn[fn](pawn, false)
+        log.info(fn .. "(false, expired)")
+        applied.modes[fn] = nil
     end
     if traps > 0 and valid(pawn) then
         for _ = 1, traps do apply_trap(pawn) end
     end
-    applied.pawn, applied.serial = key, serial
+    if color_retry then return false end
 end
 
-local function submit(gs, pawn, key, lives, serial, traps)
-    jobs.submit(function() run_job(gs, pawn, key, lives, serial, traps) end)
+local function submit(gs, pawn, lives, traps, color_due, turn_on, turn_off)
+    jobs.submit(function() return run_job(gs, pawn, lives, traps, color_due, turn_on, turn_off) end)
 end
 
 -- ---------------------------------------------------------------------------
@@ -228,8 +246,8 @@ function M.configure(sd)
     state_file = dir .. "fillers_" .. (id:gsub("[^%w_%-]", "_")) .. ".txt"
     life_indices, lives_received = {}, 0
     lives_granted = load_granted()
-    look, look_serial = {color = nil, modes = {}}, 0
-    applied = {pawn = nil, serial = 0}
+    look = {color = nil, modes = {}}
+    applied = {pawn = nil, color = nil, modes = {}}
     trap_indices, traps_received = {}, 0
     log.info(string.format("configured: lives_granted=%d (%s)", lives_granted, state_file))
 end
@@ -240,15 +258,10 @@ function M.note_item(name, index)
         if index ~= nil then life_indices[index] = true end
         lives_received = lives_received + 1
     elseif COLORS[name] then
-        if look.color ~= name then
-            look.color = name
-            look_serial = look_serial + 1
-        end
+        look.color = name
     elseif MODES[name] then
-        if not look.modes[MODES[name]] then
-            look.modes[MODES[name]] = true
-            look_serial = look_serial + 1
-        end
+        -- a duplicate grant restarts the clock rather than stacking
+        look.modes[MODES[name]] = os.time() + MODE_DURATION
     elseif name == TRAP_NAME then
         if index == nil or not trap_indices[index] then
             if index ~= nil then trap_indices[index] = true end
@@ -270,17 +283,40 @@ function M.tick(gs)
     if stable_ticks < STABLE_TICKS and traps_received == 0 then return end
     if not jobs.ready() then return end
 
+    -- wall-clock, independent of the settle gate above: a mode can wear off
+    -- even while nothing else is happening
+    local now = os.time()
+    for fn, expire in pairs(look.modes) do
+        if now >= expire then look.modes[fn] = nil end
+    end
+
     local pawn = safe(function() return FindFirstOf(PAWN_CLASS) end, nil)
     local key = valid(pawn) and actor_key(pawn) or nil
     if key then probe(pawn, gs, key) else pawn = nil end
+    if key ~= nil and key ~= applied.pawn then
+        -- a genuinely new pawn starts with none of our state applied; a
+        -- momentary FindFirstOf miss (key == nil) must not forget what was
+        -- already applied to the still-current pawn
+        applied.pawn, applied.color, applied.modes = key, nil, {}
+    end
+
     local lives = math.max(lives_received - lives_granted, 0)
     local traps = traps_received
-    local look_due = key ~= nil and look_serial > 0 and
-        (applied.pawn ~= key or applied.serial ~= look_serial)
+    local color_due = key ~= nil and look.color ~= nil and look.color ~= applied.color
+    local turn_on, turn_off = {}, {}
+    if key ~= nil then
+        for fn in pairs(look.modes) do
+            if not applied.modes[fn] then turn_on[#turn_on + 1] = fn end
+        end
+        for fn in pairs(applied.modes) do
+            if not look.modes[fn] then turn_off[#turn_off + 1] = fn end
+        end
+    end
+    local look_due = color_due or #turn_on > 0 or #turn_off > 0
     if lives == 0 and traps == 0 and not look_due then return end
     if traps > 0 and pawn == nil then return end   -- hold traps until a pawn exists (never dropped)
     traps_received = 0
-    submit(gs, (look_due or traps > 0) and pawn or nil, key, lives, look_serial, traps)
+    submit(gs, (look_due or traps > 0) and pawn or nil, lives, traps, color_due, turn_on, turn_off)
 end
 
 function M.status()

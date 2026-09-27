@@ -47,7 +47,7 @@ func resolverFor(game int) gameResolver {
 }
 
 func (res *tableResolver) resolve(d *daemon, k checkKey) (string, bool) {
-	if k.kind == "skillpoint" {
+	if k.kind == KindSkillPoint {
 		n, err := strconv.Atoi(k.name)
 		if err != nil {
 			d.logf("unknown %s skill point location: %s (skipped)", res.name, k.name)
@@ -70,7 +70,7 @@ func (res *tableResolver) resolve(d *daemon, k checkKey) (string, bool) {
 
 func (spyro1Resolver) resolve(d *daemon, k checkKey) (string, bool) {
 	switch k.kind {
-	case "egg":
+	case KindEgg:
 		if n, err := strconv.Atoi(k.name); err == nil {
 			if resolved, ok := d.eggLocation(Egg{Region: k.region, Ordinal: n}); ok {
 				return resolved, true
@@ -78,14 +78,14 @@ func (spyro1Resolver) resolve(d *daemon, k checkKey) (string, bool) {
 		}
 		d.logf("unknown egg location: %s #%s (skipped)", k.region, k.name)
 		return "", false
-	case "gem":
+	case KindGem:
 		resolved, ok := d.gemLocation(k)
 		if !ok {
 			d.logf("unknown gem location: %s: %s (skipped)", k.region, k.name)
 			return "", false
 		}
 		return resolved, true
-	case "skillpoint":
+	case KindSkillPoint:
 		if n, err := strconv.Atoi(k.name); err == nil {
 			if resolved, ok := spyro1SkillPoints[n]; ok {
 				return resolved, true
@@ -93,7 +93,7 @@ func (spyro1Resolver) resolve(d *daemon, k checkKey) (string, bool) {
 		}
 		d.logf("unknown skill point location: %s (skipped)", k.name)
 		return "", false
-	case "event":
+	case KindEvent:
 		resolved, ok := spyro1Events[k.region]
 		if !ok {
 			d.logf("unknown event location: %s (skipped)", k.region)

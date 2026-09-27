@@ -21,9 +21,9 @@ func (d *daemon) scanSpyro2(path string, entry []byte) {
 	}
 	var fresh []checkKey
 	for _, named := range []struct {
-		kind    string
+		kind    Kind
 		records []Dragon
-	}{{"orb", orbs}, {"talisman", talismans}, {"boss", bosses}, {"ability", abilities}} {
+	}{{KindOrb, orbs}, {KindTalisman, talismans}, {KindBoss, bosses}, {KindAbility, abilities}} {
 		for _, r := range named.records {
 			if k, ok := d.ingestNamed(named.kind, r); ok {
 				fresh = append(fresh, k)

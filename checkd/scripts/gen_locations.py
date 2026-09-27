@@ -102,18 +102,19 @@ def build_spyro1(engine_data, client: dict) -> dict:
                  "checks": [], "events": []}
         egg_ord = 0
         for c in level["checks"]:
-            kind = c["type"].lower()
+            kind = ENGINE.CheckType(c["type"]).name.lower()
             loc_id = c["id"]
+            plain = c["name"].split(": ", 1)[1]
             if kind == "dragon":
-                entry["checks"].append({"type": "dragon",
-                                        "name": c["name"].split(": Free ", 1)[1],
+                entry["checks"].append({"type": kind,
+                                        "name": plain.removeprefix("Free "),
                                         "location": full(c["name"]), "id": loc_id})
             elif kind == "egg":
                 egg_ord += 1
-                entry["checks"].append({"type": "egg", "ordinal": egg_ord,
+                entry["checks"].append({"type": kind, "ordinal": egg_ord,
                                         "location": full(c["name"]), "id": loc_id})
             elif kind == "skill_point":
-                task = c["name"].split(": ", 1)[1].removesuffix(" (Skill Point)")
+                task = plain.removesuffix(" (Skill Point)")
                 enum = sp_enum(region, task)
                 if enum is None:
                     sys.exit(f"ERROR: spyro1 skill-point {c['name']!r} "
@@ -158,23 +159,21 @@ def build_tabular(game: str, engine_data, client: dict) -> dict:
             sys.exit(f"ERROR: {game} region {region!r} has no levelPath")
         checks = []
         for loc in rows:
-            row = {"type": loc["kind"], "location": loc["name"], "id": loc["id"]}
-            kind = loc["kind"]
-            if kind == "gem":
+            row = {"type": loc["kind"].value, "location": loc["name"], "id": loc["id"]}
+            if loc["kind"].value == "gem":
                 row["threshold"] = loc["threshold"]
-            elif kind == "orb" or kind == "talisman" or kind == "egg":
+            elif loc["kind"].value in ("orb", "talisman", "egg"):
                 row["name"] = loc.get("saveKey", "")
-                if kind == "egg":
+                if loc["kind"].value == "egg":
                     row["saveKey"] = loc.get("saveKey", "")
-            elif kind == "ability":
-                row["ability"] = loc["name"].split(": ")[-1].removesuffix(
-                    " Ability")
-            elif kind == "boss":
-                row["name"] = loc["name"].split(": ")[-1]
+            elif loc["kind"].value == "ability":
+                row["ability"] = loc["plain"].split(": ")[-1].removesuffix(" Ability")
+            elif loc["kind"].value == "boss":
+                row["name"] = loc["plain"].split(": ")[-1]
                 if loc.get("saveKey"):
                     row["saveKey"] = loc["saveKey"]
-            elif kind == "skillpoint":
-                rest = loc["name"].split(": ", 1)[1]
+            elif loc["kind"].value == "skillpoint":
+                rest = loc["plain"]
                 level_display = rest.split(": ", 1)[0]
                 task = rest.split(": ", 1)[1].removesuffix(" (Skill Point)")
                 enum = next((k for k, v in sp_rows.items()
@@ -185,11 +184,8 @@ def build_tabular(game: str, engine_data, client: dict) -> dict:
                              f"does not resolve through SkillPointsTable")
                 row["name"] = task
                 row["enum"] = int(enum)
-            elif kind == "sparxpower":
-                row["name"] = "EIT_SparxPower_" + loc.get(
-                    "saveKey",
-                    loc["name"].split(": ")[-1].replace(" (Power)", "").replace(
-                        "Sparx ", "").replace(" ", ""))
+            elif loc["kind"].value == "sparxpower":
+                row["name"] = "EIT_SparxPower_" + loc["saveKey"]
             checks.append(row)
         regions[region] = {"levelPath": path_of_region[region],
                            "gemTotal": engine_data.gem_totals[region],

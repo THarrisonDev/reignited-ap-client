@@ -28,7 +28,7 @@ func (d *daemon) scanSpyro3(path string, entry []byte) {
 	}
 	var fresh []checkKey
 	for _, e := range eggs {
-		if k, ok := d.ingestNamed("egg", e); ok {
+		if k, ok := d.ingestNamed(KindEgg, e); ok {
 			fresh = append(fresh, k)
 		}
 	}

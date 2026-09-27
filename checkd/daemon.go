@@ -53,14 +53,14 @@ func newDaemon(nameToID map[string]int, eggCatalog map[string][]string, levelGem
 }
 
 func (d *daemon) eggKey(e Egg) checkKey {
-	return checkKey{"egg", e.Region, strconv.Itoa(e.Ordinal)}
+	return checkKey{KindEgg, e.Region, strconv.Itoa(e.Ordinal)}
 }
 
 // ingestNamed ingests one named record's state (dragons, orbs, talismans,
 // bosses, abilities, Spyro 3 eggs): a collected record not yet known becomes
 // fresh; an uncollected one seeds known=false so the baseline log counts it.
 // Returns the key when it is fresh.
-func (d *daemon) ingestNamed(kind string, r Dragon) (checkKey, bool) {
+func (d *daemon) ingestNamed(kind Kind, r Dragon) (checkKey, bool) {
 	k := checkKey{kind, r.Region, r.Name}
 	if r.Collected {
 		if !d.known[k] {
@@ -76,7 +76,7 @@ func (d *daemon) ingestNamed(kind string, r Dragon) (checkKey, bool) {
 }
 
 func (d *daemon) gemKey(region, label string) checkKey {
-	return checkKey{"gem", region, label}
+	return checkKey{KindGem, region, label}
 }
 
 // gemLocation resolves a gem threshold key to "<prefix><Region>: <label>". Fails
@@ -242,7 +242,7 @@ func (d *daemon) spFlip(cur []int, game int) []checkKey {
 			continue
 		}
 		d.spKnown[v] = true
-		out = append(out, checkKey{"skillpoint", "", strconv.Itoa(v)})
+		out = append(out, checkKey{KindSkillPoint, "", strconv.Itoa(v)})
 	}
 	return out
 }
@@ -252,7 +252,7 @@ func (d *daemon) spFlip(cur []int, game int) []checkKey {
 // so there is no known=false seeding and no un-learning; the first sighting
 // ingests existing state (baseline backfill), the rule the S1 eggs follow.
 func (d *daemon) eventFlip(region string) []checkKey {
-	k := checkKey{"event", region, ""}
+	k := checkKey{KindEvent, region, ""}
 	if d.known[k] {
 		return nil
 	}
@@ -275,7 +275,7 @@ func (d *daemon) sparxFlip(cur []string) []checkKey {
 			continue
 		}
 		d.sparxKnown[name] = true
-		out = append(out, checkKey{"sparx", "", name})
+		out = append(out, checkKey{KindSparx, "", name})
 	}
 	return out
 }

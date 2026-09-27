@@ -89,7 +89,10 @@ local function new_pawn(opts)
     P.actor = setmetatable({}, { __index = function(_, k)
         if k == "IsValid" then return function() return true end end
         if k == "GetAddress" then return function() return P.addr end end
-        if k == "CheatTints" then return tints end
+        if k == "CheatTints" then
+            if opts and opts.no_tints then return nil end
+            return tints
+        end
         if k == "GetOuter" then return function()
             assert(game_thread, "GetOuter off the game thread")
             return P.health_outer or P.actor
@@ -263,6 +266,72 @@ test("color picks the nearest CheatTints entry; latest color wins", function()
     F.note_item("Turn Spyro Black", 2)
     ticks(F, 1)
     assert(world.pawn.tint == 6, "got tint " .. tostring(world.pawn.tint))
+end)
+
+test("unreadable CheatTints retries against the same pawn instead of giving up until reload", function()
+    local F = fresh()
+    F.configure(SD)
+    world.pawn = new_pawn({ no_tints = true })
+    F.note_item("Turn Spyro Red", 0)
+    settle(F)
+    local warns = 0
+    for _, l in ipairs(lines) do
+        if l:find("CheatTints unreadable", 1, true) then warns = warns + 1 end
+    end
+    assert(warns == 1, "expected one warn before the job backs off, got " .. warns)
+    now = now + 6
+    ticks(F, 1)
+    warns = 0
+    for _, l in ipairs(lines) do
+        if l:find("CheatTints unreadable", 1, true) then warns = warns + 1 end
+    end
+    assert(warns == 2, "expected a retry against the same pawn after backoff, got " .. warns)
+end)
+
+test("a second color change on the same pawn applies without a new pawn", function()
+    local F = fresh()
+    F.configure(SD)
+    F.note_item("Turn Spyro Black", 0)
+    F.note_item("Big Head Mode", 1)
+    settle(F)
+    assert(world.pawn.tint == 6, "first color: " .. tostring(world.pawn.tint))
+    assert(world.pawn.modes.ICheatCodeBigHeadMode == true, "big head not applied")
+    F.note_item("Turn Spyro Green", 2)
+    ticks(F, 1)
+    assert(world.pawn.tint == 5, "second color did not apply live: " .. tostring(world.pawn.tint))
+    assert(world.pawn.modes.ICheatCodeBigHeadMode == true, "big head mode was lost on an unrelated color change")
+end)
+
+test("Big Head / Flat Spyro wear off on their own after MODE_DURATION", function()
+    local F = fresh()
+    F.configure(SD)
+    F.note_item("Big Head Mode", 0)
+    F.note_item("Flat Spyro Mode", 1)
+    settle(F)
+    assert(world.pawn.modes.ICheatCodeBigHeadMode == true, "big head not applied")
+    assert(world.pawn.modes.ICheatCodeFlatSpyroMode == true, "flat spyro not applied")
+    now = now + 31
+    ticks(F, 1)
+    assert(world.pawn.modes.ICheatCodeBigHeadMode == false, "big head did not wear off")
+    assert(world.pawn.modes.ICheatCodeFlatSpyroMode == false, "flat spyro did not wear off")
+    local s = F.status()
+    assert(not s:find("BigHeadMode", 1, true) and not s:find("FlatSpyroMode", 1, true),
+        "status still reports expired modes: " .. s)
+end)
+
+test("a duplicate mode grant restarts its clock instead of stacking", function()
+    local F = fresh()
+    F.configure(SD)
+    F.note_item("Big Head Mode", 0)
+    settle(F)
+    assert(world.pawn.modes.ICheatCodeBigHeadMode == true)
+    now = now + 20
+    F.note_item("Big Head Mode", 1)
+    now = now + 20
+    ticks(F, 1)
+    -- 40s since the first grant (would have expired), but only 20s since the
+    -- second: still on
+    assert(world.pawn.modes.ICheatCodeBigHeadMode == true, "duplicate grant did not restart the timer")
 end)
 
 test("a new pawn after a level load gets the look re-applied", function()

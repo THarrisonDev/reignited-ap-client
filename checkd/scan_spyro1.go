@@ -26,7 +26,7 @@ func (d *daemon) scanSpyro1(path string, entry []byte, saveLen int) {
 
 	var fresh []checkKey
 	for _, dr := range dragons {
-		if k, ok := d.ingestNamed("dragon", dr); ok {
+		if k, ok := d.ingestNamed(KindDragon, dr); ok {
 			fresh = append(fresh, k)
 		}
 	}
@@ -62,11 +62,11 @@ func (d *daemon) scanSpyro1(path string, entry []byte, saveLen int) {
 				continue
 			}
 			switch k.kind {
-			case "egg":
+			case KindEgg:
 				eCollected++
-			case "dragon":
+			case KindDragon:
 				dCollected++
-			case "event":
+			case KindEvent:
 				completions++
 			}
 		}

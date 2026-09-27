@@ -14,8 +14,10 @@
 -- Game logic sources: docs/falcon_sdk_dump/ (reflected classes) + our
 -- apworld's slot data. Dragon checks + the signed dragon reconcile live in
 -- spyro1/dragons.lua (Collectable_Dragon_C actors carry Collected_Dragons;
--- identity = save component param[0].paramName). Spyro 1 settings live in
--- slot_data.games.spyro1; slot_data.options is shared.
+-- identity = save component param[0].paramName). The Spyro 2 orb counter
+-- reconcile (spyro2/orbs.lua, debug_extra_orbs) follows received Orb items
+-- under spyro2_orb_shuffle. Spyro 1 settings live in slot_data.games.spyro1;
+-- slot_data.options is shared.
 --
 -- Config + logging live in logger.lua (config.txt in the bridge dir; key=
 -- value lines: host, slot, password, spawn_checkd, debug). The bridge dir
@@ -61,6 +63,7 @@ local S2LOCKS_LOG = L.tagged("[LOCKS2]")
 local S3LOCKS_LOG = L.tagged("[LOCKS3]")
 local FILLERS_LOG = L.tagged("[FILLERS]")
 local ABILITIES_LOG = L.tagged("[ABILITIES]")
+local ORBS2_LOG = L.tagged("[ORBS2]")
 local SPARX_LOG = L.tagged("[SPARX]")
 local DATAPKG_LOG = L.tagged("[DATAPKG]")
 local SESSION_LOG = L.tagged("[SESSION]")
@@ -294,6 +297,21 @@ local ABILITIES = load_module("spyro2.abilities", "abilities: require('spyro2.ab
      tick = function() end, status = function() return "unavailable" end})
 ABILITIES.init({log = ABILITIES_LOG, regions = MAP_PATH_TO_REGION})
 
+-- orb reconcile (spyro2/orbs.lua): the game's orb counter follows received
+-- Orb items under spyro2_orb_shuffle (signed debug_extra_orbs drive). Same
+-- fallback rule.
+local ORBS2 = load_module("spyro2.orbs", "orbs: require('spyro2.orbs') failed",
+    "orb counter stays vanilla",
+    {init = function() end, configure = function() end,
+     note_item = function() return false end,
+     is_orb = function() return false end,
+     received = function() return 0 end,
+     last_extra = function() return nil end,
+     arm_backlog = function() end, reset_received = function() end,
+     note_disconnected = function() end, tick = function() end,
+     reset = function() end, status = function() return "unavailable" end})
+ORBS2.init({log = ORBS2_LOG})
+
 -- Sparx power items (spyro3/sparx_powers.lua): Spyro 3 Sparx realm rewards. Same
 -- fallback rule.
 local SPARX = load_module("spyro3.sparx_powers", "sparx powers: require('spyro3.sparx_powers') failed",
@@ -348,6 +366,10 @@ local function s1_session()
     return session_game ~= nil and session_game == SESSION.SPYRO1
 end
 
+local function s2_session()
+    return session_game ~= nil and session_game == SESSION.SPYRO2
+end
+
 -- per-session-type watcher dispatch for the poll loop: one game_state()
 -- fetch feeds the whole chain. interleave = Spyro 1 order (each tick
 -- followed by its own heartbeat); S2/S3 batch: every tick first, then every
@@ -365,9 +387,10 @@ local WATCHERS = {
         },
     },
     [SESSION.SPYRO2] = {
-        ticks = {ABILITIES, FILLERS, S2LOCKS, DEATHLINK},
+        ticks = {ABILITIES, ORBS2, FILLERS, S2LOCKS, DEATHLINK},
         hbs = {
             {mod = ABILITIES, tag = "[ABILITIES] hb: "},
+            {mod = ORBS2, tag = "[ORBS2] hb: "},
             {mod = FILLERS, tag = "[FILLERS] hb (spyro2): "},
             {mod = S2LOCKS, tag = "[LOCKS2] hb: "},
             {mod = DEATHLINK, tag = "[DEATHLINK] hb (spyro2): "},
@@ -398,6 +421,7 @@ local function process_item(name, index)
     S3LOCKS.note_item(name)
     FILLERS.note_item(name, index)
     ABILITIES.note_item(name, index)
+    ORBS2.note_item(name, index)
     SPARX.note_item(name, index)
     DRAGONS.note_item(name, index)
 end
@@ -450,6 +474,7 @@ end
 local function on_items_received(received)
     local names = {}
     local dragons_this_batch = 0
+    local orbs_this_batch = 0
     for _, info in ipairs(received or {}) do
         local iname = safe(function() return ap:get_item_name(info.item, CFG.game) end, "?")
         names[#names+1] = iname
@@ -458,14 +483,23 @@ local function on_items_received(received)
         if DRAGONS.is_dragon(iname) then
             dragons_this_batch = dragons_this_batch + 1
         end
+        if ORBS2.is_orb(iname) then
+            orbs_this_batch = orbs_this_batch + 1
+        end
     end
     log_debug("items received: " .. #names .. " (" .. table.concat(names, ", ") .. ")")
-    -- reconnect: the cumulative backlog recount re-arms the reconcile
+    -- reconnect: the cumulative backlog recount re-arms the reconciles
     DRAGONS.arm_backlog()
+    ORBS2.arm_backlog()
     if dragons_this_batch > 0 then
         log_debug(string.format(
             "[RECONCILE] Dragon items this batch: %d (running received=%d, last_extra=%s)",
             dragons_this_batch, DRAGONS.received(), tostring(DRAGONS.last_extra())))
+    end
+    if orbs_this_batch > 0 then
+        log_debug(string.format(
+            "[RECONCILE] Orb items this batch: %d (running received=%d, last_extra=%s)",
+            orbs_this_batch, ORBS2.received(), tostring(ORBS2.last_extra())))
     end
     GOALWATCH.note_batch(received)
 end
@@ -481,6 +515,7 @@ local function on_slot_connected(sd)
     -- reconnect re-delivers the whole backlog; without the reset every Dragon
     -- counts twice and the signed drive over-writes the counter)
     DRAGONS.reset_received()
+    ORBS2.reset_received()
     local n2i = sd.locationNameToId or {}
     local n = 0
     for k, v in pairs(n2i) do
@@ -517,6 +552,7 @@ local function on_slot_connected(sd)
     S3LOCKS.configure(sd)
     FILLERS.configure(sd)
     ABILITIES.configure(sd)
+    ORBS2.configure(sd, s2_session())
     SPARX.configure(sd)
     DEATHLINK.configure(sd)
     connected = true
@@ -538,6 +574,7 @@ local function on_socket_disconnected()
     if connected then
         connected = false
         DRAGONS.note_disconnected()
+        ORBS2.note_disconnected()
         log_error("Disconnected from " .. CFG.host .. " (reconnecting)")
     else
         log_debug("socket disconnected")
@@ -605,15 +642,22 @@ local function connect_ap()
     log_debug("handlers wired; library auto-connects on ctor")
 end
 
--- a fresh session starts from nothing the previous save taught us
+-- a fresh session starts from nothing the previous save taught us.
+-- Clear these tables in place (not `x = {}`): checks_drop.lua was handed
+-- id_to_name by reference at boot, and a reassignment here would silently
+-- orphan its copy, leaving it forever empty (every check then reads as
+-- "not in this slot's locations" and never reaches the server).
 local function reset_session_state()
-    name_to_id, id_to_name, scouted = {}, {}, {}
+    for k in pairs(name_to_id) do name_to_id[k] = nil end
+    for k in pairs(id_to_name) do id_to_name[k] = nil end
+    for k in pairs(scouted) do scouted[k] = nil end
     for k in pairs(sent_checks) do sent_checks[k] = nil end
     session_game, checks_blocked = nil, false
     processed_indices = {}
     CHECKSDROP.reset()
     DATAPKG.reset()
     DRAGONS.reset()
+    ORBS2.reset()
     GOALWATCH.configure({})
     DEATHLINK.configure({})
 end
