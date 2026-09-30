@@ -424,6 +424,7 @@ local function process_item(name, index)
     EGGHUD.note_item(name, index)
     SPARX.note_item(name, index)
     DRAGONS.note_item(name, index)
+    BANNER.note_item(name)
 end
 
 DATAPKG.init({
