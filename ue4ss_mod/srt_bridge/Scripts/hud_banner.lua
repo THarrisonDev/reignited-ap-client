@@ -1,16 +1,27 @@
--- hud_banner.lua: bottom-of-screen banner for received items. Uses the
--- fanfare widget's own display window, proven in fanfare_test (Sept 2026,
--- docs/fanfare_text.md): HUD.ShowFanfare(EFFT_Dragon=1, "Nestinor") starts a
--- real banner; ~100ms later (write landed and stuck at 100ms, 250, ..., 8s
--- in the probe) "message text" is overwritten with our FText and the Base
--- TextBlock too — the banner shows the custom string for the rest of the
--- window. Direct ShowFanfare(name) text does NOT work (name hits a dragon
--- lookup table); raw SetText without a fanfare has no window.
+-- hud_banner.lua: shows each received item on the game's fanfare banner at
+-- the bottom of the screen.
 --
--- API: init(opts), note_item(name), status().
--- note_item queues; the runner shows one banner at a time (latest wins on a
--- backlog, earliest dropped). All game access inside ONE ExecuteInGameThread
--- job per banner (crash lessons in the probe mod source).
+-- The fanfare widget is the only banner we can put custom text on. So we fire
+-- a normal dragon fanfare (the name just has to satisfy a lookup table) and
+-- overwrite its message text right after; the widget then keeps showing our
+-- string for the rest of its window. Calling ShowFanfare with our own text
+-- doesn't work, and SetText on its own has no window to live in. See
+-- docs/fanfare_text.md for how this was figured out.
+--
+-- init{log, display}   display is how long each banner stays up (default 3s)
+-- note_item(name)      queue a received item to show
+-- note_sent(text)      queue an outgoing-send line to show
+-- tick()               called by the host poll loop
+-- status()             counters for the heartbeat log
+--
+-- Received and sent share one fanfare window. A received item is what the
+-- player just did, so it always shows before anything sent; sent lines only
+-- appear once the received queue is empty, and a batch of sends collapses to
+-- its newest line so a big collection can't flood the HUD.
+--
+-- One banner at a time. The next one waits for the current one to finish its
+-- display window, otherwise the text gets restarted before you can read it.
+-- If a lot pile up we just keep the newest.
 
 local M = {}
 
@@ -19,13 +30,17 @@ local U = require("util")
 
 local log = logger.tagged("[BANNER]")
 local jobs = U.job_runner{log = function() return log end}
-local queue = {}            -- strings, FIFO
-local queued, shown, failed = 0, 0, 0
+
+local queue = {}                          -- received item names waiting to show
+local sent_queue = {}                     -- outgoing-send lines waiting to show
+local queued, shown, failed = 0, 0, 0     -- running totals
+local sent_queued, sent_shown = 0, 0      -- outgoing-send totals
+local display = 3                         -- seconds each banner stays up
+local last_shown = 0                      -- when the current banner went up
+local epoch = 0                           -- show counter, used to drop stale redos
 
 local EFFT_DRAGON = 1
-
--- KismetTextLibrary default object: Conv_StringToText source
-local kt_lib = nil
+local kt_lib = nil                        -- cached KismetTextLibrary
 
 local function get_kt_lib()
     if U.valid(kt_lib) then return kt_lib end
@@ -46,7 +61,7 @@ local function get_widget()
     return U.safe(function() return FindFirstOf("UI_FanFareMessage_C") end, nil)
 end
 
-local function apply_write(fmw, kt, text)
+local function apply_write(fmw, kt, text, my_epoch)
     local ftext = U.safe(function() return kt:Conv_StringToText(text) end, nil)
     if not ftext then
         log.warn("no FText conversion — banner shows canned text: " .. text)
@@ -62,11 +77,12 @@ local function apply_write(fmw, kt, text)
         failed = failed + 1
         log.warn("banner write failed: " .. text)
     end
-    -- +2s re-assert: a following anim event that re-renders before our
-    -- write is caught in the probe; re-write once for convergence
+    -- the widget redraws once more as its animation kicks in, which can wipe
+    -- what we just wrote, so check back in a couple of seconds and redo it
     if type(ExecuteWithDelay) == "function" then
         ExecuteWithDelay(2000, function()
             ExecuteInGameThread(function()
+                if my_epoch ~= epoch then return end   -- a newer banner has it now
                 local cur = U.safe(function()
                     return fmw["message text"]:ToString() end, nil)
                 if cur == text then return end
@@ -78,7 +94,7 @@ local function apply_write(fmw, kt, text)
     return true
 end
 
--- one banner show: fanfare -> 100ms -> property+TextBlock write
+-- Fire a fanfare, then swap in our text once it's on screen.
 local function show(text)
     local hud = get_hud()
     if not hud then
@@ -95,44 +111,55 @@ local function show(text)
         log.warn("no KismetTextLibrary — banner dropped: " .. text)
         return false
     end
-    -- start a real banner (dragon rescue path, name goes to table)
+    epoch = epoch + 1
+    last_shown = os.time()
+    local my_epoch = epoch
+    -- "Nestinor" is only here to get past the dragon-name lookup
     U.safe(function() hud.ShowFanfare(EFFT_DRAGON, "Nestinor") end)
-    -- write at +100ms (proven floor in the probe); one timer hop, then the
-    -- game thread — same shape as the probe's proven serial pattern
+    -- wait for it to render before overwriting (10ms is enough, 100ms is
+    -- safe), still on the game thread
     if type(ExecuteWithDelay) ~= "function" then
-        -- no timers: write immediately (may be eaten by the binding; the
-        -- +2s re-assert below still converges)
-        apply_write(fmw, kt, text)
+        apply_write(fmw, kt, text, my_epoch)
         return true
     end
     ExecuteWithDelay(100, function()
-        ExecuteInGameThread(function() apply_write(fmw, kt, text) end)
+        ExecuteInGameThread(function() apply_write(fmw, kt, text, my_epoch) end)
     end)
     return true
 end
 
-
--- drain: one banner per ready() job slot; a backlog keeps only the latest
--- (older banners would just queue the same fanfare repeatedly)
+-- Show the next banner if one is due. We hold off until the current banner's
+-- display window is over, otherwise a new fanfare restarts the widget and the
+-- text never gets a chance to show. Received items outrank sent lines; each
+-- queue collapses to its newest entry when it backs up.
 local function drain()
-    if not jobs.ready() or #queue == 0 then return end
-    local text = table.remove(queue, 1)
+    if #queue == 0 and #sent_queue == 0 then return end
+    if not jobs.ready() then return end
+    if os.time() - last_shown < display then return end
+    local from_sent = #queue == 0
+    local q = from_sent and sent_queue or queue
+    local text = table.remove(q, 1)
     jobs.submit(function()
         local ok = show(text)
-        if #queue > 2 then
-            -- collapse: keep only the newest backlog entry — older banners
-            -- would just replay the same fanfare back to back
-            local dropped = #queue - 1
-            local latest = table.remove(queue)
-            queue = { latest }
+        if #q > 2 then
+            -- replaying old fanfares back to back just flashes, so skip to
+            -- the newest one instead
+            local dropped = #q - 1
+            local latest = table.remove(q)
+            -- keep only the newest, mutated in place (a plain `queue = {}`
+            -- would leave the caller's upvalue pointing at the old table)
+            for i = #q, 1, -1 do q[i] = nil end
+            q[1] = latest
             log.warn("banner backlog collapsed, dropped " .. dropped)
         end
-        return ok and true or false      -- false triggers runner backoff
+        if from_sent and ok then sent_shown = sent_shown + 1 end
+        return ok and true or false      -- false makes the runner back off
     end, {desc = "banner job", fail = "banner apply failed"})
 end
 
 function M.init(opts)
     log = logger.leveled("[BANNER]", opts and opts.log)
+    if opts and type(opts.display) == "number" then display = opts.display end
 end
 
 function M.tick()
@@ -146,9 +173,19 @@ function M.note_item(name)
     drain()
 end
 
+function M.note_sent(text)
+    if type(text) ~= "string" or text == "" then return end
+    sent_queued = sent_queued + 1
+    sent_queue[#sent_queue + 1] = text
+    -- no immediate drain: a received item noted just after this must show
+    -- first, so let tick() (or the next note_item) pick sent lines up once
+    -- the received queue is empty.
+end
+
 function M.status()
-    return string.format("queued=%d shown=%d failed=%d waiting=%d",
-        queued, shown, failed, #queue)
+    return string.format(
+        "queued=%d shown=%d failed=%d waiting=%d sent=%d sent_queued=%d sent_waiting=%d",
+        queued, shown, failed, #queue, sent_shown, sent_queued, #sent_queue)
 end
 
 return M

@@ -40,6 +40,7 @@ local ABILITIES_LOG = L.tagged("[ABILITIES]")
 local ORBS2_LOG = L.tagged("[ORBS2]")
 local EGGHUD_LOG = L.tagged("[EGGHUD]")
 local SPARX_LOG = L.tagged("[SPARX]")
+local BANNER_LOG = L.tagged("[BANNER]")
 local DATAPKG_LOG = L.tagged("[DATAPKG]")
 local SESSION_LOG = L.tagged("[SESSION]")
 local GOAL_LOG = L.tagged("[GOAL]")
@@ -96,6 +97,7 @@ local id_to_name = {}
 local sent_checks = {}       -- id -> true (ever sent this session; shared with spyro1/dragons.lua).
 local session_game = nil     -- Game index of the open session (0 = Spyro 1, 1 = Spyro 2, 2 = Spyro 3).
 local checks_blocked = false -- This session's game isn't in the seed: never send its checks.
+local BANNER = nil           -- hud_banner module; assigned below, read by sent_line at call time.
 
 local client_version = {0, 6, 7}
 local items_handling = 7
@@ -139,11 +141,16 @@ end
 -- nil when the item is ours. Sends log before the scout reply arrives.
 local scouted = {}
 
+-- BANNER is loaded after this helper but assigned before any send can fire,
+-- so the closure reads it at call time without a forward-declaration warning.
 local function sent_line(id)
     local line = "Sent: " .. (id_to_name[id] or ("location " .. id))
     local s = scouted[id]
     if not s then return line end
-    if s.to then return line .. " -> " .. s.item .. " for " .. s.to end
+    if s.to then
+        BANNER.note_sent("To " .. s.to .. ": " .. s.item)
+        return line .. " -> " .. s.item .. " for " .. s.to
+    end
     return line .. " -> your " .. s.item
 end
 
@@ -313,6 +320,16 @@ local SPARX = load_module("spyro3.sparx_powers", "sparx powers: require('spyro3.
      tick = function() end, status = function() return "unavailable" end})
 SPARX.init({log = SPARX_LOG, regions = MAP_PATH_TO_REGION})
 
+-- HUD banner (hud_banner.lua): shows each received item on the fanfare
+-- banner ("Rescued {name}" window) as "You found: <item>". sent_line feeds
+-- outgoing items ("To <player>: <item>") into the same banner, received-first.
+BANNER = load_module("hud_banner", "hud banner: require('hud_banner') failed",
+    "received items will not show on the HUD banner",
+    {init = function() end, note_item = function() end, note_sent = function() end,
+     tick = function() end,
+     status = function() return "unavailable" end})
+BANNER.init({log = BANNER_LOG})
+
 -- Data-package backlog (data_pkg.lua): the first ReceivedItems batch arrives
 -- before the AP data package has loaded, so its names resolve to "Unknown",
 -- and the server never re-delivers it.
@@ -373,31 +390,34 @@ end
 local WATCHERS = {
     [SESSION.SPYRO1] = {
         interleave = true,
-        ticks = {DRAGONS, LOCKS, BALLOONS, FILLERS, DEATHLINK},
+        ticks = {DRAGONS, LOCKS, BALLOONS, FILLERS, DEATHLINK, BANNER},
         hbs = {
             {mod = DRAGONS, tag = "[DRAGONS] hb: "},
             {mod = LOCKS, tag = "[LOCKS] hb: "},
             {mod = BALLOONS, tag = "[BALLOON] hb: "},
             {mod = FILLERS, tag = "[FILLERS] hb: "},
             {mod = DEATHLINK, tag = "[DEATHLINK] hb: "},
+            {mod = BANNER, tag = "[BANNER] hb: "},
         },
     },
     [SESSION.SPYRO2] = {
-        ticks = {ABILITIES, ORBS2, FILLERS, S2LOCKS, DEATHLINK},
+        ticks = {ABILITIES, ORBS2, FILLERS, S2LOCKS, DEATHLINK, BANNER},
         hbs = {
             {mod = ABILITIES, tag = "[ABILITIES] hb: "},
             {mod = ORBS2, tag = "[ORBS2] hb: "},
             {mod = FILLERS, tag = "[FILLERS] hb (spyro2): "},
             {mod = S2LOCKS, tag = "[LOCKS2] hb: "},
             {mod = DEATHLINK, tag = "[DEATHLINK] hb (spyro2): "},
+            {mod = BANNER, tag = "[BANNER] hb (spyro2): "},
         },
     },
     [SESSION.SPYRO3] = {
-        ticks = {EGGGATES, EGGHUD, SPARX, FILLERS, S3LOCKS, DEATHLINK},
+        ticks = {EGGGATES, EGGHUD, SPARX, FILLERS, S3LOCKS, DEATHLINK, BANNER},
         hbs = {
             {mod = EGGGATES, tag = "[EGGS3] hb: "},
             {mod = EGGHUD, tag = "[EGGHUD] hb: "},
             {mod = SPARX, tag = "[SPARX] hb: "},
+            {mod = BANNER, tag = "[BANNER] hb: "},
             {mod = FILLERS, tag = "[FILLERS] hb (spyro3): "},
             {mod = S3LOCKS, tag = "[LOCKS3] hb: "},
             {mod = DEATHLINK, tag = "[DEATHLINK] hb (spyro3): "},

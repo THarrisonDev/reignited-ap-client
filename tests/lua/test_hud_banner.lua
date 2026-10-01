@@ -170,5 +170,57 @@ do
         banner.status())
 end
 
+-- scenario 5: a sent line shows on the banner
+do
+    local widget = setup()
+    local lines = {}
+    banner.init({log = function(l) lines[#lines + 1] = l end})
+    banner.note_sent("To Bob: Nestor's Key")
+    for _ = 1, 30 do fake_now = fake_now + 1
+        banner.tick()
+        run_game_thread()
+        run_timers()
+    end
+    check("s5 sent text written", ftexts[#ftexts] == "To Bob: Nestor's Key",
+        tostring(ftexts[#ftexts]))
+    check("s5 sent counted", banner.status():find("sent=1") ~= nil, banner.status())
+end
+
+-- scenario 6: a received item outranks a sent line queued before it
+do
+    local widget = setup()
+    local lines = {}
+    banner.init({log = function(l) lines[#lines + 1] = l end})
+    banner.note_sent("To Bob: Orb")
+    banner.note_item("You found: Dragon")
+    for _ = 1, 30 do fake_now = fake_now + 1
+        banner.tick()
+        run_game_thread()
+        run_timers()
+    end
+    check("s6 received shows first", ftexts[1] == "You found: Dragon", tostring(ftexts[1]))
+    check("s6 sent follows", ftexts[#ftexts] == "To Bob: Orb", tostring(ftexts[#ftexts]))
+end
+
+-- scenario 7: a sent backlog collapses to its newest line
+do
+    local widget = setup()
+    local lines = {}
+    banner.init({log = function(l) lines[#lines + 1] = l end})
+    for i = 1, 5 do banner.note_sent("To Bob: Item " .. i) end
+    for _ = 1, 30 do fake_now = fake_now + 1
+        banner.tick()
+        run_game_thread()
+        run_timers()
+    end
+    check("s7 first shown", ftexts[1] == "To Bob: Item 1", tostring(ftexts[1]))
+    check("s7 newest collapsed in", ftexts[#ftexts] == "To Bob: Item 5", tostring(ftexts[#ftexts]))
+    check("s7 collapse logged",
+        table.concat(lines, "\n"):find("backlog collapsed", 1, true) ~= nil,
+        table.concat(lines, "\n"))
+    check("s7 sent backlog empty", banner.status():find("sent_waiting=0") ~= nil,
+        banner.status())
+end
+
 print(failures == 0 and "hud_banner spec: OK" or ("hud_banner spec: " .. failures .. " failures"))
 os.exit(failures == 0 and 0 or 1)
