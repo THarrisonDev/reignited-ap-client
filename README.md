@@ -6,6 +6,27 @@ everything that runs on the player's machine: a UE4SS Lua mod that bridges
 the game, a Go daemon that scans game state, and a launcher that ties it all
 together.
 
+## Responsible AI Usage Disclosure
+
+This project was written while leveraging open-weight large
+language models, primarily self-hosted with open source tools.
+All usage happened within a controlled development workflow and
+was narrowly spec'd by the developer. This workflow has been
+provided including all tools and processes. It can be found in each
+project in the [PROCESS.md](https://github.com/THarrisonDev/reignited-ap/blob/main/PROCESS.md) on root.
+
+Remember, these things are tools meant to EMPOWER you never stop thinking.
+
+ **Brains > Bots <3**
+ -Tim
+
+Contributors are held to the same expectation. AI-assisted contributions are
+welcome, but the human author owns the result: correctness, legibility,
+tests, and the decision to merge. Say so in your pull request — disclosure is
+there to keep review honest, not to reject a change. We will not be accepting
+any code generated in a blind agentic manner and will automatically reject any
+PRs directly attributed to AI tools.
+
 ## Components
 
 ### `ue4ss_mod/`
