@@ -1,13 +1,6 @@
--- Session gate: the AP session belongs to the save the player picks.
---
--- Nothing connects while the game sits at its main menu, so the player can
--- delete, start or continue any save there first. The gate opens once the
--- gamestate has been InPlay for a couple of ticks and the active save slot is
--- readable; it closes again when the game returns to the main menu. main.lua
--- owns what opening/closing does (session file, checkd, AP client).
---
--- Pure logic: the caller passes the gamestate's theCurrentGameState value and
--- a reader for (slot, game), so the spec runs without UE4SS.
+-- session_gate: opens the AP session only while the game is in play with a
+-- readable, supported save slot, and closes it at the main menu.
+-- Pure logic: the caller passes the gamestate value and a slot reader.
 
 local logger = require("logger")
 
@@ -26,11 +19,13 @@ local KEYS = {[0] = "spyro1", [1] = "spyro2", [2] = "spyro3"}
 local NAMES = {[0] = "Spyro the Dragon", [1] = "Spyro 2", [2] = "Spyro 3"}
 local SUPPORTED = {[0] = true, [1] = true, [2] = true}
 
+--- Return the apworld game key for a game index, or nil.
 function M.game_key(g) return KEYS[g] end
+--- Return the player-facing game name for a game index.
 function M.game_name(g) return NAMES[g] or ("game " .. tostring(g)) end
 
--- Is this session's game in the seed? Old seeds carry no included_games and
--- are Spyro 1 only.
+--- Return whether game index g is in the seed. Old seeds carry no
+--- included_games and are Spyro 1 only.
 function M.is_included(slot_data, g)
     local key = KEYS[g]
     if key == nil then return false end
@@ -48,25 +43,28 @@ local slot, game = nil, nil
 local play_ticks = 0
 local warned = nil     -- last refusal logged this menu cycle (log once)
 
+--- Reset the per-menu-cycle tick and warn-once state.
 local function reset_cycle()
     play_ticks = 0
     warned = nil
 end
 
+--- Install the injected logger and close the gate.
 function M.init(opts)
     log = logger.leveled("[SESSION]", opts and opts.log)
     open, slot, game = false, nil, nil
     reset_cycle()
 end
 
+--- Warn under key at most once per menu cycle.
 local function warn_once(key, line)
     if warned == key then return end
     warned = key
     log.warn(line)
 end
 
--- tick(state, read_slot) -> "open", slot, game | "close" | nil
--- read_slot() returns the active (slot, game) indices or nil when unreadable.
+--- Advance the gate from the gamestate; return "open", slot, game, "close",
+--- or nil. read_slot returns the active (slot, game) indices or nil.
 function M.tick(state, read_slot)
     if type(state) ~= "number" then return nil end
     if state == M.MAIN_MENU then
@@ -100,8 +98,10 @@ function M.tick(state, read_slot)
     return "open", s, g
 end
 
+--- Return whether the gate is open.
 function M.is_open() return open end
 
+--- Return a one-line gate state for the heartbeat.
 function M.status()
     if open then return string.format("open(slot=%d game=%d)", slot, game) end
     return "waiting for save selection"

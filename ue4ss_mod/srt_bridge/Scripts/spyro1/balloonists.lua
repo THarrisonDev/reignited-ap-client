@@ -1,27 +1,13 @@
--- balloonists (Spyro 1): enforce the seed's balloonist gates
--- (slot_data.games.spyro1.gate_requirements: homeworld -> {type, needed}).
--- CNS1127_MarcoTheBalloonist_C is the only balloonist class; each instance
--- carries LevelPath (destination), GoalType (EInventoryItemType) and
--- GoalValue. SelectorSetup runs on player overlap and compares the inventory
--- count of GoalType against GoalValue (docs/game_state_control.md §9.5.1), so
--- raising GoalValue to the seed's number makes the game enforce it. Values
--- are only ever raised: vanilla seeds send the vanilla numbers (no-op).
+-- balloonists (Spyro 1): enforce the seed's balloonist gates by raising each
+-- Marco's GoalValue to the seed's requirement (slot_data.games.spyro1.
+-- gate_requirements). Values are only ever raised, so vanilla seeds send the
+-- vanilla numbers (no-op). See docs/game_state_control.md §9.5.1.
 --
--- Marcos stream in seconds after a homeworld load and every load spawns fresh
--- actors, so the tick polls and tracks state per actor, reset on level change.
--- Destinations match by LS1xx code (Marco's LevelPath spelling can differ
--- from the current-level path).
+-- Every write runs inside one ExecuteInGameThread job at a time; the async
+-- tick only reads and decides (U.job_runner).
 --
--- THREADING: every write runs inside ONE ExecuteInGameThread job at a time;
--- the async tick only reads and decides, and submits nothing while a job is
--- in flight (U.job_runner: abandoned after 5s; a thrown job backs off 5s
--- rather than resubmitting every tick). A write that reads back wrong is not a
--- failed job: it is retried next poll (WARN throttled). No game-thread API =
--- no writes.
---
--- API (main.lua): init{log, regions}, configure(slot_data) on slot connect,
--- tick(gamestate) from the poll loop, status() for the heartbeat. log is a
--- leveled logger (tagged [BALLOON]) or the spec's collector function.
+-- API (main.lua): init{log, regions}, configure(slot_data), tick(gamestate),
+-- status().
 
 local U = require("util")
 local logger = require("logger")
@@ -48,6 +34,8 @@ local cur_path, stable_ticks = nil, 0
 local marcos = {}           -- actor address -> {dest, raised, mismatch, bad}
 local jobs = U.job_runner{log = function() return log end, timeout = JOB_TIMEOUT}
 
+--- Raise m's GoalValue to gate.needed when it is below, reading back to
+--- confirm; st records success or a throttled bad-write count.
 local function run_job(m, st, gate)
     if not U.valid(m) then return end
     local old = U.prop(m, "GoalValue")
@@ -66,12 +54,14 @@ local function run_job(m, st, gate)
     end
 end
 
+--- Submit the gate raise for m as a single game-thread job.
 local function submit(m, st, gate)
     jobs.submit(function() run_job(m, st, gate) end,
         {desc = "raise job for " .. st.dest, fail = "raise " .. st.dest})
 end
 
--- submits a job for this Marco if its gate is below the seed's; true if it did
+--- Submit a raise job when this Marco's gate is below the seed's; return true
+--- when it did.
 local function plan_marco(m, key, dest, gate)
     local st = marcos[key]
     if not st then
@@ -99,6 +89,7 @@ local function plan_marco(m, key, dest, gate)
     return false
 end
 
+--- Initialize the region/LS-code maps and write capability from opts {log, regions}.
 function M.init(opts)
     log = logger.leveled("[BALLOON]", opts and opts.log)
     regions = (opts and opts.regions) or {}
@@ -113,6 +104,7 @@ function M.init(opts)
     end
 end
 
+--- Build the enabled gate set from slot_data's gate_requirements.
 function M.configure(sd)
     local games = sd and type(sd.games) == "table" and sd.games or {}
     local sg = type(games.spyro1) == "table" and games.spyro1 or {}
@@ -132,6 +124,7 @@ function M.configure(sd)
     log.info(string.format("configured: enabled=%s gates=%d", tostring(enabled), ngates))
 end
 
+--- Poll the current homeworld's Marco actors and plan at most one gate raise.
 function M.tick(gs)
     local path = U.safe(function() return gs["current level"]:ToString() end, nil)
     if path ~= cur_path then
@@ -154,6 +147,8 @@ function M.tick(gs)
     end
 end
 
+--- Return the heartbeat status line: enabled, gate count and raises here.
+--- @return string
 function M.status()
     local raised = 0
     for _, st in pairs(marcos) do

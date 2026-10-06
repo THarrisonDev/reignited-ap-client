@@ -1,36 +1,17 @@
--- death_link: AP DeathLink. When the slot's death_link option is on, Spyro's
--- own deaths bounce to the other DeathLink players, and an incoming DeathLink
--- bounce kills Spyro here.
---
--- The kill is the damage-trap lever at full strength: the pawn's GAS health
--- attribute set (U.find_health_set -> HealthCurrent) written to 0 — the game
--- kills Spyro itself at 0 (docs/game_state_control.md). Echo protection works
--- both ways: a bounce whose source is our own slot (or whose time is not newer
--- than our last bounce) is ignored, and the death our induced kill causes is
--- suppressed so it never bounces back out. A kill whose write does not stick
--- is dropped (WARN), never retried — a missed death link is acceptable, a
--- kill loop is not.
---
--- THREADING (fillers lesson): the async tick only reads and decides; all
--- writes run inside ONE ExecuteInGameThread job at a time (U.job_runner).
--- A thrown kill job backs the runner off; the kill itself is never requeued
--- (pending_kill is cleared at submit).
+-- death_link: AP DeathLink — Spyro's own deaths bounce to the other DeathLink
+-- players, and an incoming bounce kills Spyro here with the full-strength
+-- damage-trap lever (pawn health set HealthCurrent -> 0). Echo protection runs
+-- both ways. See docs/game_state_control.md.
 --
 -- Pure logic: send/now/me are injected (main wires ap:Bounce,
 -- ap:get_server_time, ap:get_slot); the spec runs without UE4SS.
---
--- API (main.lua): init{log, send, now, me}, configure(slot_data) on slot
--- connect, on_bounced(cmd) for every Bounced packet, tick(gamestate) from
--- the poll loop, status() for the heartbeat. log is a leveled logger (tagged
--- [DEATHLINK]) or the spec's collector function; the kill/bounce records
--- (info) and all warnings reach the console.
 
 local U = require("util")
 local logger = require("logger")
 
 local M = {}
 
-local PAWN_CLASS = "BP_CPS1999_Playable_C"
+local PAWN_CLASS = "BP_CPS1999_Playable_C"  -- Spyro's player pawn blueprint
 local JOB_TIMEOUT = 5       -- seconds before an unfinished job is abandoned (and failed-job backoff)
 
 local log = logger.tagged("[DEATHLINK]")
@@ -52,6 +33,8 @@ local num = U.prop
 -- ---------------------------------------------------------------------------
 -- game-thread work (only ever called from inside a job)
 -- ---------------------------------------------------------------------------
+--- Write pawn's health to 0, marking the induced death as suppressed; a
+--- readback that does not stick drops the kill and clears the suppression.
 local function run_kill(pawn)
     if not valid(pawn) then return end
     local set = U.find_health_set(pawn)
@@ -71,6 +54,7 @@ local function run_kill(pawn)
     end
 end
 
+--- Submit a kill job for pawn; a thrown job starts the runner's backoff.
 local function submit(pawn)
     jobs.submit(function() run_kill(pawn) end, {fail = "kill failed"})
 end
@@ -78,6 +62,8 @@ end
 -- ---------------------------------------------------------------------------
 -- API
 -- ---------------------------------------------------------------------------
+--- Wire the injected logger and send/now/me callables, and detect the
+--- game-thread write API.
 function M.init(opts)
     log = logger.leveled("[DEATHLINK]", opts and opts.log)
     send = (opts and opts.send) or send
@@ -86,6 +72,7 @@ function M.init(opts)
     can_write = type(ExecuteInGameThread) == "function"
 end
 
+--- Read the death_link option from slot data and reset per-session state.
 function M.configure(sd)
     enabled = type(sd) == "table" and type(sd.options) == "table"
         and sd.options.death_link == 1
@@ -94,6 +81,8 @@ function M.configure(sd)
     log.info("configured: enabled=" .. tostring(enabled))
 end
 
+--- Queue a kill for a DeathLink-tagged bounce unless it is our own echo or
+--- older than our last bounce.
 function M.on_bounced(cmd)
     if not enabled then return end
     if type(cmd) ~= "table" or type(cmd.data) ~= "table" or type(cmd.tags) ~= "table" then
@@ -118,6 +107,8 @@ function M.on_bounced(cmd)
     log.info("death from " .. tostring(data.source or "?") .. " — kill pending")
 end
 
+--- Poll the pawn: apply a pending kill, then bounce a fresh player death
+--- (unless it is our own suppressed induced death).
 function M.tick(gs)
     local pawn = safe(function() return FindFirstOf(PAWN_CLASS) end, nil)
     if not valid(pawn) then return end
@@ -148,6 +139,7 @@ function M.tick(gs)
     dead = is_dead
 end
 
+--- Return a one-line heartbeat summary of the module's state.
 function M.status()
     return string.format("enabled=%s dead=%s pending=%s suppressed=%s",
         tostring(enabled), tostring(dead), tostring(pending_kill), tostring(suppress))

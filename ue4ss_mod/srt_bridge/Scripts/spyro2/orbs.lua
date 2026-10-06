@@ -1,29 +1,16 @@
--- spyro2 orbs: the signed debug_extra_orbs reconcile (spyro2_orb_shuffle);
--- spec = tests/lua/test_orbs.lua. Orb checks themselves are checkd's (the
--- save's EIT_S2GreenOrb records); this module only drives the counter so
--- the game's orb doors (Ocean 3 / Metro 6 / Cloud Temples 15 / Metropolis
--- 25 / professor 8 / Ripto 40) open on received Orb items, the Spyro 1
--- dragon pattern (spyro1/dragons.lua).
---
--- Game surface (kismet FalconGameState.txt; the dragon siblings are
--- live-proven, the orbs call is their +0x558 sibling):
---   reads   gs["current level"]:ToString(),
---           get inventory collected count(23, "", true, out)  (EIT_S2GreenOrb)
---   writes  gs["debug - add s2 orbs"](extra, true) with the raw property
---           fallback gs["debug_extra_orbs"] = extra (int32, SDK +0x558)
---   send    none (checkd owns orb check reporting)
--- Threading: async poll thread, gated on a stable playable level like
--- dragons.lua (writes on the load screen hardlock).
+-- spyro2 orbs: the signed debug_extra_orbs reconcile (spyro2_orb_shuffle;
+-- spec = tests/lua/test_orbs.lua). Drives the orb counter so the game's orb
+-- doors open on received Orb items, following the Spyro 1 dragon pattern
+-- (spyro1/dragons.lua). Orb checks themselves are checkd's (the save's
+-- EIT_S2GreenOrb records). Threading: async poll thread, gated on a stable
+-- playable level like dragons.lua (writes on the load screen hardlock).
 --
 -- API (main.lua): init{log}, configure(slot_data, in_s2_session),
 -- note_item(name, index), is_orb(name), received(), last_extra(),
 -- arm_backlog(), reset_received(), note_disconnected(), tick(gs), reset(),
--- status(). UNPROVEN live: that type-23 readback anchors and that the orb
--- doors read save+extra — the live-boot checklist covers both; a readback
--- that never anchors logs one WARN and the module stays inert (vanilla
--- counters, logic still routes the doors through items — server-side the
--- apworld is the truth, so worst case a door is "stuck" with orbs in the
--- counter already matching).
+-- status(). UNPROVEN live: that the type-23 readback anchors and that the orb
+-- doors read save+extra; a readback that never anchors leaves the module inert
+-- (vanilla counters, server-side logic still routes the doors through items).
 
 local U = require("util")
 local logger = require("logger")
@@ -60,6 +47,7 @@ local rec = {
     readback_ok = false,     -- any successful in-level readback (type probe)
 }
 
+--- Arm the reconcile and log the slot-connect debug line.
 local function rec_arm()
     rec.armed = true
     log.debug(string.format(
@@ -67,6 +55,8 @@ local function rec_arm()
         rec.received, tostring(rec.save_collected)))
 end
 
+--- Mark the drive invalid after a world transition, so the next stable tick
+--- re-asserts the target (the game zeroes the field at transitions).
 local function rec_note_level_change()
     if rec.last_extra ~= nil or rec.reasserts_pending > 0 then
         rec.reasserts_pending = rec.reasserts_pending + 1
@@ -76,6 +66,9 @@ local function rec_note_level_change()
     end
 end
 
+--- Make one reconcile decision and write, returning the extra written or nil.
+--- cur_level is the caller's playable-level path (nil = not playable).
+--- @return number|nil
 local function rec_tick(cur_level, gs)
     if not rec.armed or not rec.sync_orbs then
         rec.last_skip_reason = "disarmed"
@@ -139,6 +132,8 @@ local function rec_tick(cur_level, gs)
     return ok and extra or nil
 end
 
+--- Return the one-line reconcile status for the poll heartbeat.
+--- @return string
 local function rec_status()
     if not rec.armed then return "disarmed" end
     if not rec.sync_orbs then return "vanilla(off)" end
@@ -148,8 +143,9 @@ local function rec_status()
         rec.reasserts_pending, rec.reasserts, rec.drift_corrections)
 end
 
--- pure orb save-record count (excludes debug_extra). May come back
--- table-wrapped (UE4SS out-param quirk) — unwrap .value.
+--- Read the pure orb save-record count, excluding debug_extra; unwrap the
+--- UE4SS out-param table wrapper. Returns nil when unreadable.
+--- @return number|nil
 local function rec_read_save_collected(gs)
     local out = {}
     local ok = pcall(function() gs["get inventory collected count"](ORB_SAVE_TYPE, "", true, out) end)
@@ -163,6 +159,9 @@ local function rec_read_save_collected(gs)
     return nil
 end
 
+--- Anchor save_collected on the first playable-level read and re-sync it on
+--- confirmed drift, healing missed rescues without touching rec.received. A
+--- disagreeing read is applied only on a second consecutive agreement.
 local function rec_anchor_baseline(gs, map_path)
     if not U.valid(gs) then return end
     if not (map_path and map_path ~= "") then return end
@@ -204,9 +203,11 @@ local function rec_anchor_baseline(gs, map_path)
     end
 end
 
--- exact-once per AP item index: ReceivedItems is cumulative, so every packet
--- re-delivers index 0..n. Returns true when the index was new.
 local seen_index = {}   -- AP item index -> true
+
+--- Count a received Orb once per AP item index; ReceivedItems is cumulative,
+--- so every packet re-delivers index 0..n. Return true when new.
+--- @return boolean
 function M.note_item(name, index)
     if index ~= nil then
         if seen_index[index] then return false end
@@ -218,35 +219,40 @@ function M.note_item(name, index)
     return true
 end
 
+--- Return whether name is the shared Orb item.
+--- @return boolean
 function M.is_orb(name) return name == ITEM_ORB end
+
+--- Return the number of Orb items received this session.
+--- @return number
 function M.received() return rec.received end
+
+--- Return the last extra value written, or nil.
+--- @return number|nil
 function M.last_extra() return rec.last_extra end
 
--- reconnect: zero the received count so the cumulative backlog recount is
--- exact-once (a mid-session reconnect re-delivers every Orb)
+--- Zero the received count on reconnect so the cumulative backlog recount is
+--- exact-once (a mid-session reconnect re-delivers every Orb).
 function M.reset_received()
     rec.received = 0
     seen_index = {}
 end
 
--- arming: fresh sessions arm at slot-connect (M.configure); a RECONNECT
--- re-arms here on the first post-reconnect ReceivedItems batch — counting
--- starts from 0 exactly when the recount begins
+--- Re-arm on the first post-reconnect ReceivedItems batch, so counting starts
+--- from 0 exactly when the recount begins.
 function M.arm_backlog()
     if rec.sync_orbs and not rec.armed then
         rec_arm()
     end
 end
 
--- no reconcile writes while disconnected; re-armed by arm_backlog
+--- Stop reconcile writes while disconnected; arm_backlog re-arms.
 function M.note_disconnected()
     rec.armed = false
 end
 
--- slot connect: reconcile config + the "[RECONCILE] slot config:" log line
--- + arming (at slot-connect, NOT backlog: a fresh seed grants zero items so
--- no ReceivedItems packet may ever arrive; the drive field is a
--- session-scoped overlay and the target is exact from the readback baseline)
+--- Read the orb_shuffle option from slot data, arm when in a Spyro 2 session,
+--- and log the slot config.
 function M.configure(slot_data, in_s2_session)
     local opts = {}
     if slot_data and type(slot_data.games) == "table" and type(slot_data.games.spyro2) == "table" then
@@ -267,6 +273,7 @@ end
 local hb_ticks = 0
 local rec_last_level = nil   -- last PLAYABLE map path seen (level-change detect)
 
+--- Run one poll: detect level changes, then baseline readback and reconcile.
 function M.tick(gs)
     if not U.valid(gs) then return end
     local map_path = U.safe(function() return gs["current level"]:ToString() end, nil)
@@ -300,9 +307,11 @@ function M.tick(gs)
     end
 end
 
+--- Return the reconcile status line.
+--- @return string
 function M.status() return rec_status() end
 
--- a fresh session starts from nothing the previous save taught us
+--- Reset per-session reconcile state.
 function M.reset()
     rec.received, rec.save_collected, rec.baseline_set, rec.armed = 0, 0, false, false
     rec.last_extra, rec.reasserts_pending, rec.stable_ticks = nil, 0, 0
@@ -314,6 +323,7 @@ function M.reset()
     seen_index = {}
 end
 
+--- Bind the logger from opts {log}.
 function M.init(opts)
     log = logger.leveled("[ORBS2]", opts and opts.log)
 end

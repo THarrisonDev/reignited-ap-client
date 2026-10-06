@@ -1,22 +1,8 @@
--- goal_watch: client-side goal reporting. Slot data lists the required games
--- and each game's goal_location (the id of its completion event location —
--- "Spyro 1: Gnasty Gnorc Defeated", "Spyro 2: Ripto's Arena: Ripto Defeated").
--- When the event item for every required goal location has been received,
--- the client reports GOAL once (APClient.ClientStatus.GOAL).
---
--- Detection is id-based and self-healing: ReceivedItems re-delivers the full
--- backlog on every reconnect, so a drop or restart never misses the goal.
--- All_DRAGONS-style goals expose goal_location = 0 (no single verifiable
--- event); a required game without one keeps goal reporting off with a debug
--- note — the server-side generation is still correct, only the client report
--- is silent.
---
--- Pure logic: the caller wires send() (StatusUpdate) and log (leveled,
--- tagged [GOAL] — the ERROR line reaches the console); the spec runs without
--- UE4SS.
---
--- API (main.lua): configure(slot_data) on slot connect, note_batch(received)
--- per ReceivedItems packet, status() for debugging, sent() for tests.
+-- goal_watch: reports GOAL once every required game's goal_location event has
+-- been received. Detection is id-based and self-healing (ReceivedItems
+-- re-delivers the full backlog on reconnect); a required game exposing no
+-- goal_location keeps client goal reporting off.
+-- Pure logic: send() (StatusUpdate) and log are injected.
 
 local logger = require("logger")
 
@@ -28,15 +14,18 @@ local pending = {}   -- goal location id -> true (not yet received)
 local goals = {}     -- required game key -> goal location id
 local sent = false
 
+--- Return whether v is a usable goal location id.
 local function usable_id(v)
     return type(v) == "number" and v > 0
 end
 
+--- Install the injected logger and goal sender.
 function M.init(opts)
     log = logger.leveled("[GOAL]", opts and opts.log)
     send = (opts and opts.send) or send
 end
 
+--- Build the pending-goal set from slot data's required games.
 function M.configure(sd)
     pending, goals = {}, {}
     sent = false
@@ -62,6 +51,7 @@ function M.configure(sd)
     end
 end
 
+--- Clear goal locations seen in received, then report GOAL when all are in.
 function M.note_batch(received)
     for gid in pairs(pending) do
         for _, info in ipairs(received or {}) do
@@ -86,6 +76,7 @@ function M.note_batch(received)
     return ok
 end
 
+--- Return a one-line sent/waiting state for debugging.
 function M.status()
     local waiting = {}
     for gid in pairs(pending) do waiting[#waiting+1] = tostring(gid) end
@@ -94,6 +85,7 @@ function M.status()
         #waiting > 0 and table.concat(waiting, ",") or "none")
 end
 
+--- Return whether GOAL has been reported.
 function M.sent() return sent end
 
 return M

@@ -1,42 +1,8 @@
--- inventory_grants_core: the shared implementation behind the per-game
--- global-inventory item modules (spyro2/abilities.lua, spyro3/sparx_powers.lua).
--- One factory, parameterized by game config; the wrappers only supply: log
--- tag, item name -> EInventoryType table, slot-data option reader, status
--- short names and the log wording.
---
--- Reignited stores these as global-inventory records: unowned
--- collected=False param 0.0, owned collected=True param 1.0. The gamestate's
--- inventory UFunctions route types 30-33 and 45-49 to update param count on
--- the gamestate's own save object (docs/game_state_control.md §9.1), so:
---   grant:    add item to player inventory(EIT, 1)     (fillers-proven shape)
---   revoke:   remove from player inventory(EIT, 1)
---   readback: get player inventory item count(EIT, false, out) — pure save
---   state for these types (no debug_extra_* fields exist for them).
--- Only the types in the wrapper's table are ever read or written.
---
--- When the option is on, the owned flag of each item is forced to match the
--- received set: the vanilla grant (a Money Bags purchase, a Sparx realm
--- completion) cannot be prevented at the source, so it flips the flag on, the
--- reconcile writes it back off within a poll tick or two, and a one-shot WARN
--- tells the player why. Once the AP item arrives, the flag sticks on for real.
--- Option off = the module does nothing.
---
--- THREADING (level_locks/fillers lesson): the async tick only reads and
--- decides; all writes run inside ONE ExecuteInGameThread job at a time, each
--- write preceded by a fresh game-thread readback. Writes wait for a known
--- level that has held STABLE_TICKS; a level change clears the applied memory
--- so the drive is re-asserted (the game re-restores state at transitions).
--- U.job_runner: an unrun job is abandoned after JOB_TIMEOUT; a job that threw
--- or had a failed readback/write backs off JOB_TIMEOUT. A failed revoke is
--- recorded per item and that revoke is not attempted again (neither decided
--- nor written) until configure starts a new session; the item's grant, once
--- received, still lands.
---
--- API (via the per-game module): init{log, regions}, configure(slot_data) on
--- slot connect, note_item(name, index) per received item, tick(gamestate)
--- from the poll loop, status() for the heartbeat. log is a leveled logger
--- (tagged by cfg.tag) or the spec's collector function; warn/error reach the
--- console.
+-- inventory_grants_core: factory behind the per-game global-inventory item
+-- modules (spyro2/abilities.lua, spyro3/sparx_powers.lua). It forces each
+-- item's owned flag to match the received set via the gamestate inventory
+-- UFunctions, reconciling vanilla grants back off until the AP item arrives
+-- (docs/game_state_control.md §9.1).
 
 local U = require("util")
 local logger = require("logger")
@@ -44,6 +10,8 @@ local logger = require("logger")
 local STABLE_TICKS = 8      -- x 250ms poll: never write until the level has held 2s
 local JOB_TIMEOUT = 5       -- seconds before an unfinished job is abandoned (and failed-job backoff)
 
+--- Build a global-inventory item module for one game.
+--- @return table
 local function new(cfg)
     -- cfg: {tag = "[ABILITIES]", items = {name = eit},
     --        option = function(slot_data) -> bool, flag = "sanity" (status/log),
@@ -72,19 +40,23 @@ local function new(cfg)
     local safe = U.safe
     local num = U.prop
 
+    --- Return the owned flag target (1 owned, 0 not) for name.
     local function target_for(name)
         return has_received[name] and 1 or 0
     end
 
-    -- a revoke that already failed this session is never retried
+    --- Return the target to drive name to, or nil when cur already matches it
+    --- or a revoke already failed this session (never retried).
     local function drive(name, cur)
         local target = target_for(name)
         if cur == target or (target == 0 and revoke_failed[name]) then return nil end
         return target
     end
 
-    -- one item's fresh readback + write, game thread. Returns "ok" when a
-    -- write landed, "failed" when a readback or write failed, nil otherwise.
+    --- Read back and, if needed, write one item's owned flag on the game
+    --- thread.
+    --- @return string|nil "ok" when a write landed, "failed" on readback/write
+    ---   failure, nil otherwise.
     local function run_item(gs, name, eit)
         local out = {}
         local okR = pcall(function() gs["get player inventory item count"](eit, false, out) end)
@@ -117,7 +89,8 @@ local function new(cfg)
         return "ok"
     end
 
-    -- false (any item failed) backs the runner off
+    --- Run every item's write; returning false (any item failed) backs the
+    --- runner off.
     local function run_job(gs)
         local all_ok = true
         for name, eit in pairs(ITEMS) do
@@ -126,10 +99,13 @@ local function new(cfg)
         return all_ok
     end
 
+    --- Submit the batch reconcile job for gs to the game-thread runner.
     local function submit(gs)
         jobs.submit(function() return run_job(gs) end)
     end
 
+    --- Wire the injected logger and region map, and detect the game-thread
+    --- write API.
     function M.init(opts)
         log = logger.leveled(TAG, opts and opts.log)
         regions = (opts and opts.regions) or {}
@@ -139,6 +115,7 @@ local function new(cfg)
         end
     end
 
+    --- Read this game's option from slot data and reset per-session state.
     function M.configure(sd)
         enabled = cfg.option(sd) and true or false
         received, has_received, applied, warned, revoke_failed = {}, {}, {}, {}, {}
@@ -146,6 +123,7 @@ local function new(cfg)
         log.info(string.format("configured: %s=%s", cfg.flag, tostring(enabled)))
     end
 
+    --- Mark a received AP item as owned for this session (deduped by index).
     function M.note_item(name, index)
         if ITEMS[name] == nil then return end
         if index ~= nil and received[index] then return end
@@ -154,6 +132,9 @@ local function new(cfg)
         log.debug(string.format("%s received (index %s)", name, tostring(index)))
     end
 
+    --- Poll gs: once the level is known and stable, decide which items drift
+    --- from their target and submit a reconcile job (with a one-shot early
+    --- WARN per item).
     function M.tick(gs)
         if not can_write or not enabled then return end
         local path = safe(function() return gs["current level"]:ToString() end, nil)
@@ -191,6 +172,7 @@ local function new(cfg)
         if mismatch then submit(gs) end
     end
 
+    --- Return a one-line heartbeat summary of received items and the option.
     function M.status()
         local parts = {}
         for name in pairs(ITEMS) do

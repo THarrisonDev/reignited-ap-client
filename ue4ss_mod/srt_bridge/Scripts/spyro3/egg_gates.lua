@@ -1,34 +1,7 @@
--- egg_gates (Spyro 3): the game's egg portals follow received Dragon Egg
--- items (spyro3_egg_shuffle). Each portal/gate controller in an S3 homeworld
--- carries a plain writable EggRequirement int, and this module writes
--- EggRequirement = max(0, vanilla - received Dragon Eggs) each tick; it never
--- raises a value. A vanilla 10 gate with 3 received Eggs therefore opens at 7
--- caught eggs. When the write brings the requirement to 0, the module also
--- calls Open(QuestActions) once: catching an egg is the only native trigger
--- that re-checks a gate, so a fully-covered requirement would otherwise sit
--- there forever. Open() does not itself re-check EggRequirement, so it must
--- only be called once the write has already brought the requirement to 0.
--- The requirement display keeps showing the vanilla number regardless; only
--- the actual gating moves.
---
--- Slot data (egg_gates) keys requirements by region display name, but
--- controllers carry TargetName (the engine id, e.g. "LS304_MoltenCrater").
--- `init` derives target_to_region from the path keys of the same regions.lua
--- table, and `tick` translates through it before indexing `vanilla`.
---
--- Only S3 homeworlds are scanned; the realm-side return portals carry no
--- requirements, and Super Bonus Round's GemRequirement stays vanilla.
--- Actors are fresh every homeworld load, so the tuned table resets on level
--- change and the write re-lands.
---
--- Threading: every write runs inside one ExecuteInGameThread job at a time.
--- The async tick only reads and decides, and submits nothing while a job is
--- in flight (U.job_runner). No game-thread API means no writes.
---
--- API (main.lua): init{log, regions}, configure(slot_data) on slot connect,
--- note_item(name) per received item, tick(gamestate) from the poll loop, and
--- status() for the heartbeat. log is a leveled logger (tagged [EGGS3]) or the
--- spec's collector function.
+-- egg_gates (Spyro 3): lower each S3 homeworld egg portal's EggRequirement as
+-- Dragon Egg items are received (spyro3_egg_shuffle), forcing the gate open
+-- once the write reaches 0; the displayed requirement stays vanilla. Writes
+-- run one at a time on the game thread. See docs/game_state_control.md.
 
 local U = require("util")
 local logger = require("logger")
@@ -41,6 +14,7 @@ local HOMEWORLDS = {
     ["Evening Lake"] = true, ["Midnight Mountain"] = true,
 }
 
+--- Build a fresh egg-gates module instance.
 local function new()
     local M = {}
 
@@ -59,17 +33,20 @@ local function new()
     local tuned = {}            -- Actor address -> {region, done, bad}.
     local jobs = U.job_runner{log = function() return log end, timeout = JOB_TIMEOUT}
 
+    --- Return the gate requirement after subtracting received Dragon Eggs,
+    --- floored at 0.
+    --- @return number
     local function target_for(region)
         local t = vanilla[region] - received
         if t < 0 then return 0 end
         return t
     end
 
-    -- Open() forces the state transition unconditionally and does not itself
-    -- re-check EggRequirement. A partial write deliberately leaves the rest
-    -- to the player actually catching eggs, so this must only run once the
-    -- write has already brought the requirement to 0.
+    --- Force the portal's Open() transition at requirement 0.
     local function force_open(c, region)
+        -- Open() forces the state transition unconditionally and does not itself
+        -- re-check EggRequirement, so this must only run once the write has
+        -- already brought the requirement to 0.
         local actions = U.safe(function() return c.QuestActions end, nil)
         if not U.valid(actions) then
             log.warn(region .. " egg gate at 0 but QuestActions unreadable; not forcing open")
@@ -83,6 +60,8 @@ local function new()
         end
     end
 
+    --- Write one controller's EggRequirement down to target on the game thread,
+    --- forcing the gate open when it reaches 0.
     local function run_job(c, st, region)
         if not U.valid(c) then return end
         local want = target_for(region)
@@ -116,13 +95,15 @@ local function new()
         end
     end
 
+    --- Submit the game-thread tune job for one controller.
     local function submit(c, st, region)
         jobs.submit(function() run_job(c, st, region) end,
             {desc = "tune job for " .. region, fail = "tune " .. region})
     end
 
-    -- Submit a job for this controller if its requirement is above target.
-    -- Return true if it did.
+    --- Submit a tune job when the controller's requirement is above target;
+    --- return whether one was submitted.
+    --- @return boolean
     local function plan_controller(c, key, region)
         local st = tuned[key]
         if not st then
@@ -142,6 +123,8 @@ local function new()
         return false
     end
 
+    --- Set the logger and regions, deriving TargetName -> region from the path
+    --- keys, and probe for ExecuteInGameThread.
     function M.init(opts)
         log = logger.leveled("[EGGS3]", opts and opts.log)
         regions = (opts and opts.regions) or {}
@@ -156,6 +139,8 @@ local function new()
         end
     end
 
+    --- Load per-region vanilla requirements and enable the module when
+    --- egg_shuffle is on.
     function M.configure(sd)
         local games = sd and type(sd.games) == "table" and sd.games or {}
         local sg = type(games.spyro3) == "table" and games.spyro3 or {}
@@ -174,6 +159,7 @@ local function new()
             tostring(enabled), nvanilla, tostring(opts.egg_shuffle)))
     end
 
+    --- Count a received Dragon Egg item.
     function M.note_item(name)
         if name == "Spyro 3: Dragon Egg" then
             received = received + 1
@@ -181,6 +167,8 @@ local function new()
         end
     end
 
+    --- Reset tuned state on level change, then submit one tune job for a
+    --- matching homeworld egg-gate controller.
     function M.tick(gs)
         local path = U.safe(function() return gs["current level"]:ToString() end, nil)
         if path ~= cur_path then
@@ -209,6 +197,8 @@ local function new()
         end
     end
 
+    --- Return one heartbeat line of counts.
+    --- @return string
     function M.status()
         local done, bad = 0, 0
         for _, st in pairs(tuned) do

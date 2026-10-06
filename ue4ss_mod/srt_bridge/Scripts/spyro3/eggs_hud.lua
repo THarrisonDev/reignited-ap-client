@@ -1,19 +1,8 @@
--- eggs_hud (Spyro 3): signed debug_extra reconcile for the S3 egg HUD
--- (spyro3_egg_shuffle), same shape as spyro2/orbs.lua and spyro1/dragons.lua.
--- Display only: the debug counter moves the shown count but not the pure
--- save record that the egg gates read, so it can never open a door. It just
--- keeps the HUD at "eggs your items account for" instead of "eggs you
--- personally caught".
---
--- Game surface (FalconGameState.hpp): reads gs["current level"] and
--- "get inventory collected count"(29, "", true, out); writes
--- gs["debug - add s3 eggs"](extra, true) with fallback
--- gs["debug extra s3 eggs"] = extra (int32, SDK +0x5AC). Sends nothing,
--- because eggs are checkd's. Runs on the poll thread, gated on a stable
--- playable level (writes on the load screen hardlock).
---
--- API (main.lua): init{log}, configure(slot_data, in_s3_session),
--- note_item(name, index), tick(gs), reset(), status().
+-- eggs_hud (Spyro 3): drive the signed debug-extra egg counter so the HUD
+-- matches the received Dragon Egg items (spyro3_egg_shuffle). Display only:
+-- it leaves the pure save record the egg gates read untouched, so it can never
+-- open a door. Writes on the poll thread, gated on a stable playable level
+-- (writes on the load screen hardlock).
 
 local U = require("util")
 local logger = require("logger")
@@ -50,6 +39,7 @@ local rec = {
     readback_ok = false,
 }
 
+--- Arm the reconcile and log the slot-connect state.
 local function rec_arm()
     rec.armed = true
     log.debug(string.format(
@@ -57,6 +47,7 @@ local function rec_arm()
         rec.received, tostring(rec.save_collected)))
 end
 
+--- Mark the counter drive invalid after a level change so it is re-asserted.
 local function rec_note_level_change()
     if rec.last_extra ~= nil or rec.reasserts_pending > 0 then
         rec.reasserts_pending = rec.reasserts_pending + 1
@@ -66,6 +57,9 @@ local function rec_note_level_change()
     end
 end
 
+--- Write the extra-egg counter when it changed and the level is stable;
+--- return the applied value or nil when skipped.
+--- @return number|nil
 local function rec_tick(cur_level, gs)
     if not rec.armed or not rec.sync_eggs then
         rec.last_skip_reason = "disarmed"
@@ -129,6 +123,8 @@ local function rec_tick(cur_level, gs)
     return ok and extra or nil
 end
 
+--- Return one heartbeat line of reconcile state.
+--- @return string
 local function rec_status()
     if not rec.armed then return "disarmed" end
     if not rec.sync_eggs then return "vanilla(off)" end
@@ -138,8 +134,10 @@ local function rec_status()
         rec.reasserts_pending, rec.reasserts, rec.drift_corrections)
 end
 
--- Pure egg save-record count; excludes debug_extra. UE4SS sometimes wraps
--- the out-param in a table; unwrap .value when it does.
+--- Return the pure egg save-record count, or nil when unreadable. Excludes
+--- debug_extra; UE4SS sometimes wraps the out-param in a table, so unwrap
+--- .value when it does.
+--- @return number|nil
 local function rec_read_save_collected(gs)
     local out = {}
     local ok = pcall(function() gs["get inventory collected count"](EGG_SAVE_TYPE, "", true, out) end)
@@ -153,6 +151,8 @@ local function rec_read_save_collected(gs)
     return nil
 end
 
+--- Anchor the save-record baseline and re-sync on two consecutive drifted
+--- reads.
 local function rec_anchor_baseline(gs, map_path)
     if not U.valid(gs) then return end
     if not (map_path and map_path ~= "") then return end
@@ -197,6 +197,9 @@ end
 -- Exact-once per AP item index: ReceivedItems is cumulative, and each packet
 -- re-delivers indexes 0..n, so only count new ones.
 local seen_index = {}   -- AP item index -> true.
+
+--- Count a Dragon Egg item once per AP item index.
+--- @return boolean
 function M.note_item(name, index)
     if index ~= nil then
         if seen_index[index] then return false end
@@ -208,12 +211,20 @@ function M.note_item(name, index)
     return true
 end
 
+--- Return whether name is the Dragon Egg item.
+--- @return boolean
 function M.is_egg(name) return name == ITEM_EGG end
+--- Return the number of Dragon Egg items received.
+--- @return number
 function M.received() return rec.received end
+--- Return the last counter value written, or nil.
+--- @return number|nil
 function M.last_extra() return rec.last_extra end
 
+--- Zero the received count for the exact-once backlog recount.
 -- Reconnects zero the received count so the cumulative backlog recount
 -- stays exact-once.
+--- Zero the received count for the exact-once backlog recount.
 function M.reset_received()
     rec.received = 0
     seen_index = {}
@@ -221,6 +232,7 @@ end
 
 -- Fresh sessions arm at slot-connect (M.configure); a reconnect re-arms
 -- here on the first post-reconnect ReceivedItems batch.
+--- Re-arm on the first post-reconnect ReceivedItems batch.
 function M.arm_backlog()
     if rec.sync_eggs and not rec.armed then
         rec_arm()
@@ -228,11 +240,12 @@ function M.arm_backlog()
 end
 
 -- Do not write while disconnected; arm_backlog re-arms on reconnect.
+--- Disarm writing while disconnected.
 function M.note_disconnected()
     rec.armed = false
 end
 
--- Fresh sessions arm at slot-connect; reconnects re-arm via arm_backlog.
+--- Read egg_shuffle from slot data and arm a fresh S3 session.
 function M.configure(slot_data, in_s3_session)
     local opts = {}
     if slot_data and type(slot_data.games) == "table" and type(slot_data.games.spyro3) == "table" then
@@ -252,6 +265,7 @@ end
 local hb_ticks = 0
 local rec_last_level = nil   -- Last playable map path seen, for level-change detection.
 
+--- Anchor the baseline, drive the counter, and emit the periodic heartbeat.
 function M.tick(gs)
     if not U.valid(gs) then return end
     local map_path = U.safe(function() return gs["current level"]:ToString() end, nil)
@@ -285,9 +299,11 @@ function M.tick(gs)
     end
 end
 
+--- Return one heartbeat line of reconcile state.
+--- @return string
 function M.status() return rec_status() end
 
--- A fresh session starts with no knowledge of the previous save.
+--- Clear all reconcile state for a fresh session with no save knowledge.
 function M.reset()
     rec.received, rec.save_collected, rec.baseline_set, rec.armed = 0, 0, false, false
     rec.last_extra, rec.reasserts_pending, rec.stable_ticks = nil, 0, 0
@@ -299,6 +315,7 @@ function M.reset()
     seen_index = {}
 end
 
+--- Set the leveled logger.
 function M.init(opts)
     log = logger.leveled("[EGGHUD]", opts and opts.log)
 end

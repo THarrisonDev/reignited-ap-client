@@ -1,28 +1,8 @@
--- level_locks_core: the shared implementation behind the per-game
--- spyroN/level_locks.lua modules. One factory, parameterized by game config;
--- the wrappers only supply: game key, log-tag, homeworld sets, portal class.
--- The tag is per game ([LOCKS] / [LOCKS2] / [LOCKS3]) so a line names its
--- game without reading the status prefix.
---
--- Levers and ordering are live-proven (docs/game_state_control.md §9.5.1):
--- PortalTransporter_C:setPortalEnabled(false) stops transport and drops the
--- destination preview; the floating 3D name is rebuilt as "LOCKED". Glyphs
--- spawned by REMAKE text start hidden and only enabling the portal reveals
--- them, so:
---   lock:     disable -> REMAKE "LOCKED" -> reveal glyphs
---   reassert: disable -> reveal glyphs (the game re-enables a portal when
---             Spyro's exit-from-portal sequence finishes)
---   unlock:   REMAKE original name -> enable
---
--- THREADING (live hardlock 2026-09-13): every portal write runs inside ONE
--- ExecuteInGameThread job at a time; the async tick only reads and decides,
--- and submits nothing while a job is in flight (U.job_runner: abandoned after
--- JOB_TIMEOUT; a thrown job backs off JOB_TIMEOUT instead of being resubmitted
--- and logging ERROR every tick). No game-thread API = no writes at all.
---
--- API (via the per-game module): init{log, regions}, configure(slot_data) on
--- slot connect, note_item(name) per received item, tick(gamestate) from the
--- poll loop, status() for the heartbeat.
+-- level_locks_core: factory behind the per-game spyroN/level_locks.lua
+-- modules. It locks homeworld portals whose level key item is still missing,
+-- re-asserting the lock when the game re-enables a portal, and unlocks when
+-- the key arrives. Levers and ordering are live-proven
+-- (docs/game_state_control.md §9.5.1).
 
 local U = require("util")
 local logger = require("logger")
@@ -32,10 +12,11 @@ local STABLE_TICKS = 8      -- x 250ms poll: never write until the level has hel
 local GRACE_SECONDS = 3     -- after connect, wait this long for the item backlog
 local JOB_TIMEOUT = 5       -- seconds before an unfinished job is abandoned (and failed-job backoff)
 
+--- Build a level-lock module for one game.
+--- @return table
 local function new(cfg)
-    -- cfg: {game = "spyro1", tag = "[LOCKS]" (log-tag), label = " (spyro2)" (configure log),
-    --        prefix = "spyro2 " (status), homeworlds = {..},
-    --        target_homes = {..} or nil, portal_class = "PortalTransporter_C"}
+    -- cfg: {game, tag (log-tag), label (configure log), prefix (status),
+    --        homeworlds, target_homes or nil, portal_class}
     -- target_homes: a portal whose target region is a homeworld is never
     -- locked — homeworld-to-homeworld transitions stay open (locking a
     -- homeworld's own return portal could trap the player). nil = no skip
@@ -57,6 +38,7 @@ local function new(cfg)
     local portals = {}          -- actor address -> {region, name, locked, reasserts}
     local jobs = U.job_runner{log = function() return log end, timeout = JOB_TIMEOUT}
 
+    --- Return p's portal name component when it is valid, else nil.
     local function name_comp(p)
         local c = U.safe(function() return p["PortalNameComponent"] end, nil)
         if U.valid(c) then return c end
@@ -66,9 +48,12 @@ local function new(cfg)
     -- -----------------------------------------------------------------------
     -- game-thread work (only ever called from inside a job)
     -- -----------------------------------------------------------------------
+    --- Unhide every glyph character attached to comp (freshly remade ones
+    --- spawn hidden).
     local function reveal_glyphs(comp)
         local arr = U.safe(function() return comp["Characters"] end, nil)
         if arr == nil then return end
+        --- Unhide actor a when it is valid.
         local function reveal(a)
             if U.valid(a) then pcall(function() a:SetActorHiddenInGame(false) end) end
         end
@@ -81,7 +66,7 @@ local function new(cfg)
         end
     end
 
-    -- rebuild the floating name with the component's own scale/width
+    --- Rebuild comp's floating name as text, using its own scale and char width.
     local function remake(comp, text)
         local scale = U.prop(comp, "Scale")
         local width = U.prop(comp, "default char width")
@@ -93,6 +78,7 @@ local function new(cfg)
         if not ok then log.warn("relabel to '" .. text .. "' failed: " .. tostring(err)) end
     end
 
+    --- Apply a lock, reassert or unlock write to portal p for state st.
     local function run_job(p, st, kind)
         if not U.valid(p) then return end
         local comp = name_comp(p)
@@ -122,6 +108,7 @@ local function new(cfg)
         if labelled then reveal_glyphs(comp) end
     end
 
+    --- Submit the portal write job for kind to the game-thread runner.
     local function submit(p, st, kind)
         jobs.submit(function() run_job(p, st, kind) end,
             {desc = kind .. " job for " .. st.region, fail = kind .. " " .. st.region})
@@ -130,6 +117,8 @@ local function new(cfg)
     -- -----------------------------------------------------------------------
     -- decisions (async thread: reads only)
     -- -----------------------------------------------------------------------
+    --- Return whether region should be locked: enabled, key not yet held, and
+    --- past the post-connect grace so the item backlog can arrive first.
     local function should_lock(region)
         if not enabled then return false end
         local key = level_keys[region]
@@ -138,7 +127,7 @@ local function new(cfg)
         return items_seen or (connected_at ~= nil and os.time() - connected_at >= GRACE_SECONDS)
     end
 
-    -- submits a job for this portal if it needs one; returns true if it did
+    --- Submit a job for this portal if it needs one; return true if it did.
     local function plan_portal(p, key, region)
         local st = portals[key]
         if not st then
@@ -162,6 +151,8 @@ local function new(cfg)
     -- -----------------------------------------------------------------------
     -- API
     -- -----------------------------------------------------------------------
+    --- Wire the injected logger and region map, build the portal-code index,
+    --- and detect the game-thread write API.
     function M.init(opts)
         log = logger.leveled(cfg.tag or "[LOCKS]", opts and opts.log)
         regions = (opts and opts.regions) or {}
@@ -176,6 +167,8 @@ local function new(cfg)
         end
     end
 
+    --- Read this game's level keys and option from slot data and reset
+    --- per-session state.
     function M.configure(sd)
         local games = sd and type(sd.games) == "table" and sd.games or {}
         local sg = type(games[cfg.game]) == "table" and games[cfg.game] or {}
@@ -193,6 +186,7 @@ local function new(cfg)
             cfg.label, tostring(enabled), lockable, tostring(opts.level_locks)))
     end
 
+    --- Mark a received level key item as held for this session.
     function M.note_item(name)
         items_seen = true
         if type(name) ~= "string" or held[name] then return end
@@ -205,6 +199,7 @@ local function new(cfg)
         end
     end
 
+    --- Poll gs: once in a stable homeworld, plan one portal write per tick.
     function M.tick(gs)
         local path = U.safe(function() return gs["current level"]:ToString() end, nil)
         if path ~= cur_path then
@@ -231,6 +226,7 @@ local function new(cfg)
         end
     end
 
+    --- Return a one-line heartbeat summary of keys held and portals locked.
     function M.status()
         local keys = 0
         for _, key in pairs(level_keys) do

@@ -1,32 +1,11 @@
--- logger: leveled logging + config for the bridge (split out of main.lua).
+-- logger: leveled logging and config for the bridge (split out of main.lua).
 -- Every line lands in bridge.log; info/warn/error also reach the UE4SS
--- console, debug only when config debug=1. UE4SS print does not append a
--- newline, so each console line carries one.
---
--- Line shapes:
---   direct  (log_info/...): file <HH:MM:SS> <head><msg>, console
---           [SRTAP] <word><msg> — heads: "" / "WARN  "/"WARN " / "ERROR " /
---           "debug "/"(debug) "
---   tagged  (logger.tagged): the level word sits between the tag and the
---           message, once, on every surface:
---           file <HH:MM:SS> [TAG] WARN msg · console [SRTAP] [TAG] WARN msg ·
---           debug file <HH:MM:SS> debug [TAG] msg · debug console
---           [SRTAP] (debug) [TAG] msg
---
--- The log file is held open in append mode between lines (flushed per
--- write); a failed write closes and reopens the handle, so a mod reload
--- re-firing old closures still appends correctly (append mode has no
--- position to go stale).
---
--- BRIDGE_DIR is defined here — the single bridge path prefix in the Scripts/
--- tree; main.lua derives every bridge file path from it.
+-- console, debug only when config debug=1. BRIDGE_DIR is defined here — the
+-- single bridge path prefix in the Scripts/ tree; main.lua derives every
+-- bridge file path from it.
 --
 -- Config: C:/srtap_bridge/config.txt (key=value lines), loaded at require
--- time (as it always was):
---   host=ws://127.0.0.1:38281
---   slot=SRTPlayer
---   password=
---   debug=0          (1 = show debug lines in the UE4SS console)
+-- time. See the defaults on M.cfg below.
 
 local M = {}
 
@@ -42,6 +21,9 @@ local WORD = {info = "", warn = "WARN ", error = "ERROR ", debug = ""}
 
 local log_fh = nil    -- append handle, kept open between lines
 
+--- Append one stamped line to the log file, reopening the handle once if it
+--- went bad (reloaded state, deleted file). Silently gives up when the file
+--- cannot be opened, so the console keeps working.
 local function write_line(head, line)
     local stamped = os.date("%H:%M:%S ") .. head .. line .. "\n"
     local f = log_fh
@@ -57,25 +39,31 @@ local function write_line(head, line)
     pcall(function() f:write(stamped) f:flush() end)
 end
 
--- emit(level, file_head, console_head, line)
+--- Write line to the file under head, then to the UE4SS console unless it is
+--- a debug line while DEBUG is off.
 local function emit(level, file_head, console_head, line)
     write_line(file_head, line)
     if level == "debug" and not DEBUG then return end
     print("[SRTAP] " .. console_head .. line .. "\n")
 end
 
+--- Log at info level (file and console).
 function M.log_info(l) emit("info", "", "", tostring(l)) end
+--- Log at warn level (file and console).
 function M.log_warn(l) emit("warn", "WARN  ", "WARN ", tostring(l)) end
+--- Log at error level (file and console).
 function M.log_error(l) emit("error", "ERROR ", "ERROR ", tostring(l)) end
+--- Log at debug level (file always, console only when config debug=1).
 function M.log_debug(l) emit("debug", "debug ", "(debug) ", tostring(l)) end
 
--- A leveled logger for one module: every line is prefixed with tag (plus a
--- WARN/ERROR word for those levels); info/warn/error always reach the
--- console, debug only when config debug=1. sink (the specs) replaces the
--- file+console router: it receives every composed line as one string.
---
--- Composed line = tag .. " " .. ("WARN "/"ERROR " for those levels) .. message.
+--- Return a leveled logger whose every line is prefixed with tag (plus a
+--- WARN/ERROR word for those levels). sink, used by the specs, receives each
+--- composed line as one string instead of the file+console router.
+--- @param tag string
+--- @param sink function|nil
+--- @return table
 function M.tagged(tag, sink)
+    --- Compose one line for level and route it to sink or the real logger.
     local function emit_at(level, msg)
         local line = tag .. " " .. WORD[level] .. tostring(msg)
         if sink then sink(line) return end
@@ -93,10 +81,11 @@ function M.tagged(tag, sink)
     }
 end
 
--- init-time adapter: production passes a leveled logger (main.lua builds one
--- per module with tagged), the specs pass a plain collector function (it
--- receives every composed line), and a missing one falls back to the real
--- router under this tag.
+--- Return log_opt when it is a logger table, else wrap it: a function becomes
+--- a tagged sink (the specs), and nil falls back to the real router.
+--- @param tag string
+--- @param log_opt table|function|nil
+--- @return table
 function M.leveled(tag, log_opt)
     if type(log_opt) == "table" then return log_opt end
     return M.tagged(tag, type(log_opt) == "function" and log_opt or nil)
@@ -110,6 +99,7 @@ M.cfg = {
     spawn_checkd = "1",
 }
 
+--- Read config.txt into M.cfg (host, slot, password, spawn_checkd) and DEBUG.
 local function load_config()
     local f = io.open(BRIDGE_DIR .. "config.txt", "r")
     if not f then return end

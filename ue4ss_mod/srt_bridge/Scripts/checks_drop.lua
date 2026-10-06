@@ -1,20 +1,10 @@
--- checks_drop.lua: ingests the Go checkd daemon's check drops.
+-- checks_drop: ingest the Go checkd daemon's check drops.
 --
--- checkd scans the session save's entry and drops checks.json at
--- C:/srtap_bridge/checks.json shaped {"seq":N,"checks":[ids],"names":[...]}.
--- This module reads it with hand-rolled parsing for EXACTLY this shape (no
--- general JSON, no reflection), dedups against the ids ever sent this
--- session, FILTERS OUT ids that are not in this slot's locationNameToId
--- (option-disabled checks: gem checks / skillpoint checks off — checkd is
--- option-blind, it resolves through the full generated locations.json),
--- then hands the remainder to the host's send callback. The drop format is
--- owned by checkd (client/checkd/main.go, sendDrop).
---
--- init{connect_gate, log, on_send, id_to_name, sent_checks, check_path}:
--- injects everything; nothing else is read from the environment at tick
--- time, so the spec harness can drive it deterministically. log is a leveled
--- logger (tagged [DROP]) or the spec's collector function; the parse-warning
--- and failed-send lines reach the console.
+-- Reads C:/srtap_bridge/checks.json (owned by checkd, client/checkd/main.go
+-- sendDrop) with hand-rolled parsing for exactly its {"seq":N,"checks":[ids],
+-- "names":[...]} shape, drops ids absent from this slot's locationNameToId
+-- (checkd is option-blind, so option-disabled checks resolve here), dedups
+-- against the ids already sent, and passes the rest to the host's send callback.
 
 local logger = require("logger")
 
@@ -28,6 +18,8 @@ local _gate, _log, _send, _id_to_name, _sent_checks, _check_path
 
 local M = {}
 
+--- Inject the host's callbacks and dependencies and reset ingest state.
+--- @param opts table {connect_gate, log, on_send, id_to_name, sent_checks, check_path}
 function M.init(opts)
     _gate = opts.connect_gate
     _log = logger.leveled("[DROP]", opts.log)
@@ -38,16 +30,17 @@ function M.init(opts)
     drop_last_seq, drop_errs, drop_last_dedup_seq = nil, 0, nil
 end
 
+--- Clear the ingested-seq and parse-error counters.
 function M.reset()
     drop_last_seq = nil
     drop_errs = 0
     drop_last_dedup_seq = nil
 end
 
--- tick(): poll the drop file once. Ingest semantics:
---   parse error -> 3 consecutive errors quarantine the file as .bad
---   valid empty batch / stale seq / all-already-sent -> consumed silently
---   filtered ids (absent from id_to_name) never reach on_send
+-- Ingest semantics: a parse error (3 consecutive quarantines the file as .bad);
+-- a valid empty batch, stale seq or all-already-sent batch is consumed silently;
+-- ids absent from id_to_name never reach on_send.
+--- Poll the drop file once and send any new in-slot checks.
 function M.tick()
     if not _gate() then return end
     local f = io.open(_check_path, "r")

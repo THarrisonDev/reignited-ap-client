@@ -8,34 +8,34 @@ import (
 	"strconv"
 )
 
+// dropPayload is the wire format of a checks.json drop: a monotonic sequence
+// together with the resolved location IDs and their names.
 type dropPayload struct {
 	Seq    int      `json:"seq"`
 	Checks []int    `json:"checks"`
 	Names  []string `json:"names"`
 }
 
-// gameResolver resolves check keys to location names for one game, logging
-// and failing ("") for keys its tables do not address.
+// gameResolver resolves a check key to a location name for one game. It
+// returns false, after logging, for a key the game's tables do not address.
 type gameResolver interface {
 	resolve(d *daemon, k checkKey) (string, bool)
 }
 
-// tableResolver resolves check keys for a table-driven game (Spyro 2 and 3):
-// every kind goes through the game's checkKey map, skill points through its
-// enum table. The name prefixes the unknown-key logs.
+// tableResolver resolves Spyro 2 and 3 keys from prebuilt per-game maps. Its
+// name field prefixes the unknown-key log messages.
 type tableResolver struct {
 	name string
 	locs map[checkKey]string
 	sps  map[int]string
 }
 
-// spyro1Resolver resolves Spyro 1 keys: eggs by per-level ordinal through
-// eggCatalog, gems through nameToID, skill points through the enum table,
-// completion events by region through spyro1Events, and dragons (every other kind) as "<prefix><Region>: Free <Name>".
+// spyro1Resolver resolves Spyro 1 keys from the S1 tables. Any kind without a
+// table is treated as a region-prefixed dragon location.
 type spyro1Resolver struct{}
 
-// resolverFor returns the session game's resolver; game 0 (a Spyro 1 session
-// or the idle daemon) resolves S1-style.
+// resolverFor returns the resolver for the session's game. Game 0, whether a
+// Spyro 1 session or the idle daemon, resolves Spyro 1-style.
 func resolverFor(game int) gameResolver {
 	switch game {
 	case 1:
@@ -46,6 +46,9 @@ func resolverFor(game int) gameResolver {
 	return spyro1Resolver{}
 }
 
+// resolve returns the location name for a key, sending skill points through
+// the numeric enum table and every other kind through the per-game check map.
+// It logs and returns false for a key that is absent.
 func (res *tableResolver) resolve(d *daemon, k checkKey) (string, bool) {
 	if k.kind == KindSkillPoint {
 		n, err := strconv.Atoi(k.name)
@@ -68,6 +71,10 @@ func (res *tableResolver) resolve(d *daemon, k checkKey) (string, bool) {
 	return resolved, true
 }
 
+// resolve returns the location name for a Spyro 1 key, dispatching eggs, gems,
+// skill points and completion events to their tables. Every other kind is a
+// dragon, named from its region. It logs and returns false for a key that is
+// absent.
 func (spyro1Resolver) resolve(d *daemon, k checkKey) (string, bool) {
 	switch k.kind {
 	case KindEgg:
@@ -104,8 +111,8 @@ func (spyro1Resolver) resolve(d *daemon, k checkKey) (string, bool) {
 	return locationPrefix + k.region + ": Free " + k.name, true
 }
 
-// game is the session's game index, 0 when no session is open (the S1
-// resolver covers both: S1 sessions and the idle daemon).
+// game returns the session's game index, or 0 when no session is open. Both a
+// Spyro 1 session and the idle daemon report 0 and use the Spyro 1 resolver.
 func (d *daemon) game() int {
 	if d.session == nil {
 		return 0
@@ -113,10 +120,11 @@ func (d *daemon) game() int {
 	return d.session.game
 }
 
-// sendDrop resolves keys (after any pending ones a failed write left behind)
-// and writes them as one checks.json drop. Keys that do not resolve are
-// logged and dropped for good; if the write fails, the resolved keys go back
-// to d.pending so the next poll retries them (resetScan clears it).
+// sendDrop resolves keys, together with any pending ones left by a failed
+// write, and writes them as a single checks.json drop. A key that does not
+// resolve is logged and discarded; if the write itself fails, the resolved
+// keys are kept in d.pending so the next poll retries them. resetScan clears
+// that field.
 func (d *daemon) sendDrop(keys []checkKey) {
 	d.dropTried = true
 	if len(d.pending) > 0 {
@@ -161,8 +169,8 @@ func (d *daemon) sendDrop(keys []checkKey) {
 	}
 }
 
-// writeDrop writes one drop payload atomically (tmp file + rename) and counts
-// it.
+// writeDrop writes a drop payload atomically, via a temporary file followed by
+// a rename, and records it in the daemon's counters.
 func (d *daemon) writeDrop(ids []int, names []string) error {
 	seq := d.lastSeq + 1
 	b, err := json.Marshal(dropPayload{Seq: seq, Checks: ids, Names: names})

@@ -1,24 +1,6 @@
--- level_locks (Spyro 3): mirrors spyro2/level_locks.lua via the shared
--- level_locks_core.lua — same levers (setPortalEnabled, REMAKE "LOCKED",
--- glyph reveal) and the same game-thread discipline. Spyro 3 shape:
---   * no PortalTransporter_S3 class: its level portals are ABasePortal_C
---     subclasses (AS3BalloonTransporter_C, AS3RocketTransporter_C,
---     AS3WhirligigTransporter_C, ABalloon_TargetPoint_C, ...), so
---     FindAllOf("BasePortal_C") finds them (and everything else standing
---     in the level — the PartnerPortalName parse filters)
---   * portals are scanned only inside the 4 S3 homeworlds; return portals
---     standing in realms are never touched
---   * TARGET_HOMES: a portal whose target region is a homeworld is never
---     locked — the homeworld transport actors (balloon/whirligig/rocket)
---     point at the next homeworld's LevelStart, so the skip covers them
---     (Midnight Mountain has no onward transport)
---   * slot data: sd.games.spyro3.options.level_locks +
---     sd.games.spyro3.level_keys (all 33 sub-levels; NO precollected key —
---     the spawn level Sunrise Spring is a homeworld)
---
--- API (main.lua): init{log, regions}, configure(slot_data) on slot connect,
--- note_item(name) per received item, tick(gamestate) from the poll loop,
--- status() for the heartbeat.
+-- level_locks (Spyro 3): lock unreceived sub-level portals inside the S3
+-- homeworlds, via the shared level_locks_core.lua (levers and threading there).
+-- See docs/game_gates.md.
 
 local core = require("level_locks_core")
 
@@ -32,7 +14,10 @@ return core.new({
     tag = "[LOCKS3]",
     label = " (spyro3)",
     prefix = "spyro3 ",
+    -- S3 has no PortalTransporter_S3: its portals are BasePortal_C subclasses.
     portal_class = "BasePortal_C",
     homeworlds = HOMEWORLDS,
+    -- Never lock a portal targeting a homeworld; the balloon/whirligig/rocket
+    -- actors point at the next homeworld's LevelStart, so this covers them.
     target_homes = HOMEWORLDS,
 })

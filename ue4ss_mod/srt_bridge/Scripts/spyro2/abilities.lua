@@ -1,18 +1,16 @@
 -- abilities (Spyro 2): apply received Money Bags ability items and neutralize
 -- vanilla Money Bags purchases while the ability is unowned in AP, via the
 -- shared inventory_grants_core.lua (levers, threading and design notes there).
--- Spyro 2 shape:
---   * EIT_Climbing 30, EIT_Headbash 31, EIT_Swimming 32; EIT_Superflame (33)
---     is FORBIDDEN here: it is the Dragon Shores 100% completion reward,
---     never a Money Bags purchase
---   * there is no Money Bags payment surface in the SDK dump (the NPC is
---     Blueprint-only): paying early flips the flag on, the reconcile writes
---     it back off, and the gems may still be spent — the WARN says why
---   * slot data: sd.games.spyro2.options.moneybags_abilities (1 or "sanity")
+-- Spyro 2 shape: EIT_Climbing 30, EIT_Headbash 31, EIT_Swimming 32;
+-- EIT_Superflame (33) is deliberately absent — it is the Dragon Shores 100%
+-- completion reward, never a Money Bags purchase. There is no Money Bags
+-- payment surface in the SDK dump (the NPC is Blueprint-only), so paying early
+-- flips the flag on, the reconcile writes it back off, and the gems may still
+-- be spent. Slot data: sd.games.spyro2.options.moneybags_abilities (1 or
+-- "sanity").
 --
--- API (main.lua): init{log, regions}, configure(slot_data) on slot connect,
--- note_item(name, index) per received item, tick(gamestate) from the poll
--- loop, status() for the heartbeat.
+-- API (main.lua): init{log, regions}, configure(slot_data), note_item(name,
+-- index), tick(gamestate), status().
 
 local core = require("inventory_grants_core")
 
