@@ -10,7 +10,14 @@ DIST    := dist
 
 WINDOWS_TARGETS := GOOS=windows GOARCH=amd64
 
-.PHONY: all vet lint test build build-windows package-mod dist regen audit lua-tests clean
+.PHONY: all vet lint test build build-windows package-mod deploy deploy-mod deploy-checkd dist regen audit lua-tests clean
+
+# Paths the deploy target writes into, defaulted for a standard Steam install
+# on this Linux/Proton box. `make deploy` needs no arguments; override a path
+# only if your install lives elsewhere.
+GAME_WIN64 ?= $(HOME)/.local/share/Steam/steamapps/common/Spyro Reignited Trilogy/Falcon/Binaries/Win64
+BRIDGE_DIR ?= $(HOME)/.local/share/Steam/steamapps/compatdata/996580/pfx/drive_c/srtap_bridge
+MOD_DEST   := $(GAME_WIN64)/Mods/srt_bridge
 
 LUA_TESTS := $(wildcard tests/lua/*.lua)
 
@@ -85,6 +92,40 @@ $(DIST)/srt_bridge.zip: $(shell find ue4ss_mod/srt_bridge -type f)
 	cp -f ue4ss_mod/lua-apclientpp.dll $(DIST)/srt_bridge/Mods/srt_bridge/Scripts/
 	cd $(DIST)/srt_bridge && zip -q -r ../srt_bridge.zip Mods
 	@echo "packaged $(DIST)/srt_bridge.zip"
+
+# Install everything for a game session: build the Windows checkd, drop it
+# into the bridge folder (backing up the old one), and copy the Lua mod into
+# the game's Mods folder. Run `make deploy` after changing Lua or checkd.
+deploy: deploy-mod deploy-checkd
+
+# Lua mod -> <game>/Mods/srt_bridge. Copies over the installed tree and leaves
+# unrelated files alone (the player's config.txt, logs). Adds the AP client DLL
+# and its license when present in ue4ss_mod/.
+deploy-mod:
+	@test -d "$(GAME_WIN64)" || { echo "ERROR: game not found at $(GAME_WIN64) (override GAME_WIN64=...)" >&2; exit 1; }
+	mkdir -p "$(MOD_DEST)"
+	cp -R ue4ss_mod/srt_bridge/. "$(MOD_DEST)/"
+	@if [ -f ue4ss_mod/lua-apclientpp.dll ]; then \
+		cp -f ue4ss_mod/lua-apclientpp.dll "$(MOD_DEST)/Scripts/"; \
+		cp -f ue4ss_mod/api/LICENSE "$(MOD_DEST)/Scripts/lua-apclientpp-license.txt"; \
+		echo "mod    -> $(MOD_DEST)"; \
+	else \
+		echo "mod    -> $(MOD_DEST) (no DLL; add ue4ss_mod/lua-apclientpp.dll to ship it)"; \
+	fi
+
+# Windows checkd -> the bridge folder the mod spawns it from. Keeps a
+# timestamped backup of the previous srtap_checkd.exe, matching the .bak-*
+# files already there.
+deploy-checkd: checkd/srtap_checkd.exe
+	@test -d "$(BRIDGE_DIR)" || { echo "ERROR: bridge folder not found at $(BRIDGE_DIR) (override BRIDGE_DIR=...)" >&2; exit 1; }
+	mkdir -p "$(BRIDGE_DIR)"
+	@if [ -f "$(BRIDGE_DIR)/srtap_checkd.exe" ]; then \
+		bak="$(BRIDGE_DIR)/srtap_checkd.exe.bak-$$(date +%Y%m%d-%H%M%S)"; \
+		cp -f "$(BRIDGE_DIR)/srtap_checkd.exe" "$$bak"; \
+		echo "backup -> $$bak"; \
+	fi
+	cp -f checkd/srtap_checkd.exe "$(BRIDGE_DIR)/srtap_checkd.exe"
+	@echo "checkd -> $(BRIDGE_DIR)/srtap_checkd.exe"
 
 # Full release bundle (see ../world/RELEASE.md for the release order).
 dist: build-windows package-mod
