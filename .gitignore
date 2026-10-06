@@ -12,6 +12,9 @@
 coverage.txt
 vendor/
 
+# Build output (make dist/package)
+/dist/
+
 # Logs / local state
 *.log
 /*.sav
