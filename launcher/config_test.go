@@ -12,8 +12,8 @@ func TestReadConfigMissingFileIsEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("missing file must not error: %v", err)
 	}
-	if len(c.Values) != 0 {
-		t.Fatalf("missing file must yield empty config, got %v", c.Values)
+	if len(c.values) != 0 {
+		t.Fatalf("missing file must yield empty config, got %v", c.values)
 	}
 	if got := c.Get("host", "default"); got != "default" {
 		t.Fatalf("Get default: got %q", got)
@@ -26,9 +26,7 @@ func TestConfigRoundTripPreservesUnknownKeys(t *testing.T) {
 	orig := "host=ws://old:38281\n" +
 		"slot=OldName\n" +
 		"password=secret\n" +
-		"game=Spyro Reignited Trilogy\n" +
 		"spawn_checkd=1\n" +
-		"save_slot=106\n" +
 		"experimental_flag=42\n" // a key the launcher doesn't manage
 	if err := os.WriteFile(path, []byte(orig), 0644); err != nil {
 		t.Fatal(err)
@@ -41,7 +39,6 @@ func TestConfigRoundTripPreservesUnknownKeys(t *testing.T) {
 	// launcher edits the fields it owns
 	c.Set("host", "wss://archipelago.gg:443")
 	c.Set("slot", "NewName")
-	c.Delete("save_slot") // an older launcher's file pin
 
 	if err := c.Write(path); err != nil {
 		t.Fatal(err)
@@ -55,10 +52,8 @@ func TestConfigRoundTripPreservesUnknownKeys(t *testing.T) {
 		"host":              "wss://archipelago.gg:443",
 		"slot":              "NewName",
 		"password":          "secret",
-		"game":              "Spyro Reignited Trilogy",
 		"spawn_checkd":      "1",
-		"save_slot":         "<absent>", // deleted
-		"experimental_flag": "42",       // preserved, not dropped
+		"experimental_flag": "42", // preserved, not dropped
 	}
 	for k, v := range want {
 		if got.Get(k, "<absent>") != v {
@@ -96,8 +91,8 @@ func TestNormalizeHost(t *testing.T) {
 	}
 }
 
-func TestRenderHasNoCanonicalGameSlot(t *testing.T) {
-	c := &Config{Values: map[string]string{}}
+func TestRenderExtrasFollowCanonicalKeys(t *testing.T) {
+	c := &Config{values: map[string]string{}}
 	c.Set("experimental_flag", "42")
 	c.Set("game", "Spyro Reignited Trilogy")
 	c.Set("spawn_checkd", "1")

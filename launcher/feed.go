@@ -192,13 +192,13 @@ func dialFeed(ctx context.Context, host string) (*websocket.Conn, error) {
 func feedURLs(host string) []string {
 	h := normalizeHost(host)
 	if h == "" {
-		h = "127.0.0.1:38281"
+		h = defaultHost
 	}
 	if strings.HasPrefix(h, "ws://") || strings.HasPrefix(h, "wss://") {
 		return []string{h}
 	}
 	if _, _, err := net.SplitHostPort(h); err != nil {
-		h += ":38281"
+		h += ":" + defaultPort
 	}
 	return []string{"wss://" + h, "ws://" + h}
 }
@@ -322,12 +322,17 @@ func (s *apSession) onConnected(raw json.RawMessage) {
 		}
 	}
 	s.checked = map[int64]bool{}
-	for _, id := range m.Checked {
-		s.checked[id] = true
-	}
+	s.mergeChecked(m.Checked)
 	s.total = len(m.Checked) + len(m.Missing)
 	s.feed.setChecks(len(s.checked), s.total)
 	s.feed.setStatus(true, "Connected as "+s.cfg.Slot+".")
+}
+
+// mergeChecked marks the given location IDs as checked, ignoring duplicates.
+func (s *apSession) mergeChecked(ids []int64) {
+	for _, id := range ids {
+		s.checked[id] = true
+	}
 }
 
 func (s *apSession) onRoomUpdate(raw json.RawMessage) {
@@ -339,9 +344,7 @@ func (s *apSession) onRoomUpdate(raw json.RawMessage) {
 		return
 	}
 	s.setPlayers(m.Players)
-	for _, id := range m.Checked {
-		s.checked[id] = true
-	}
+	s.mergeChecked(m.Checked)
 	if s.total > 0 {
 		s.feed.setChecks(len(s.checked), s.total)
 	}

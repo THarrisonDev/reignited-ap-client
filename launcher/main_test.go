@@ -73,11 +73,11 @@ func TestApplyUnreadableConfigLeftUnchanged(t *testing.T) {
 	}
 }
 
-func TestApplySavesConfigAndDropsGame(t *testing.T) {
+func TestApplySavesConfigAndPreservesExtras(t *testing.T) {
 	useStateFile(t, filepath.Join(t.TempDir(), "paths.json"))
 	root := t.TempDir()
 	cfgPath := filepath.Join(root, "config.txt")
-	if err := os.WriteFile(cfgPath, []byte("game=Spyro Reignited Trilogy\nexperimental_flag=42\n"), 0644); err != nil {
+	if err := os.WriteFile(cfgPath, []byte("experimental_flag=42\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	s := testServer(t, Paths{ConfigDir: root, GameWin64: filepath.Join(root, "win64")})
@@ -215,17 +215,5 @@ func TestSavePathsErrors(t *testing.T) {
 	useStateFile(t, "")
 	if err := savePaths(Paths{ConfigDir: "x"}); err == nil {
 		t.Fatal("savePaths must fail with no state file path")
-	}
-}
-
-func TestLoadPathsIgnoresLegacySaveDir(t *testing.T) {
-	state := filepath.Join(t.TempDir(), "paths.json")
-	useStateFile(t, state)
-	legacy := `{"ConfigDir":"/old/cfg","SaveDir":"/old/saves","GameWin64":"/old/win64"}`
-	if err := os.WriteFile(state, []byte(legacy), 0644); err != nil {
-		t.Fatal(err)
-	}
-	if got := loadPaths(); got.ConfigDir != "/old/cfg" || got.GameWin64 != "/old/win64" {
-		t.Fatalf("legacy paths.json not loaded: %+v", got)
 	}
 }

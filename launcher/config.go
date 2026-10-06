@@ -32,14 +32,14 @@ func normalizeHost(raw string) string {
 // keys so the launcher never drops settings it doesn't manage (e.g.
 // spawn_checkd) when it rewrites host/slot/password.
 type Config struct {
-	Values map[string]string
+	values map[string]string
 	order  []string // keys in first-seen order, for stable rewrite of extras
 }
 
 // ReadConfig parses config.txt. A missing file yields an empty Config (not an
 // error) — the launcher's whole job is to create it the first time.
 func ReadConfig(path string) (*Config, error) {
-	c := &Config{Values: map[string]string{}}
+	c := &Config{values: map[string]string{}}
 	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -65,7 +65,7 @@ func ReadConfig(path string) (*Config, error) {
 
 // Get returns the value for key, or def when absent.
 func (c *Config) Get(key, def string) string {
-	if v, ok := c.Values[key]; ok {
+	if v, ok := c.values[key]; ok {
 		return v
 	}
 	return def
@@ -73,15 +73,10 @@ func (c *Config) Get(key, def string) string {
 
 // Set assigns a key, remembering first-seen order for stable rewrites.
 func (c *Config) Set(key, val string) {
-	if _, ok := c.Values[key]; !ok {
+	if _, ok := c.values[key]; !ok {
 		c.order = append(c.order, key)
 	}
-	c.Values[key] = val
-}
-
-// Delete removes a key, e.g. one an older launcher wrote that nothing reads.
-func (c *Config) Delete(key string) {
-	delete(c.Values, key)
+	c.values[key] = val
 }
 
 // render serializes the config: canonical keys first, then preserved extras.
@@ -89,7 +84,7 @@ func (c *Config) render() string {
 	seen := map[string]bool{}
 	var b strings.Builder
 	emit := func(k string) {
-		if v, ok := c.Values[k]; ok && !seen[k] {
+		if v, ok := c.values[k]; ok && !seen[k] {
 			seen[k] = true
 			b.WriteString(k + "=" + v + "\n")
 		}

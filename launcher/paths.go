@@ -10,6 +10,14 @@ import (
 // compatdata prefix on Linux and the game launch URL.
 const appID = "996580"
 
+// Connection defaults shared by the config view and the feed. A host with no
+// scheme is completed by normalizeHost/feedURLs; the port matches Archipelago's.
+const (
+	defaultHost = "127.0.0.1:38281"
+	defaultPort = "38281"
+	defaultSlot = "SRTPlayer"
+)
+
 // Paths holds every filesystem location the launcher touches. All fields are
 // resolved best-effort by defaultPaths() and are meant to be overridable from
 // the UI, because Steam libraries can live on any drive and the config dir

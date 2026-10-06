@@ -48,22 +48,39 @@ func (s *server) configPath() string {
 	return filepath.Join(s.paths.ConfigDir, "config.txt")
 }
 
+// readConn is what the feed connects with: config.txt as last saved. An
+// unreadable config yields the same blank connection the feed idles on.
+func (s *server) readConn() (feedConn, error) {
+	cfg, err := ReadConfig(s.configPath())
+	if err != nil {
+		return feedConn{Host: defaultHost}, err
+	}
+	return feedConn{
+		Host:     cfg.Get("host", defaultHost),
+		Slot:     cfg.Get("slot", ""),
+		Password: cfg.Get("password", ""),
+	}, nil
+}
+
 // buildView reads current config + verify results into the template model.
 // config.txt is the source of truth for host/slot/password; the launcher's own
 // path overrides are held in s.paths.
 func (s *server) buildView(flash string) view {
-	cfg, err := ReadConfig(s.configPath())
+	conn, err := s.readConn()
 	if err != nil {
-		cfg = &Config{Values: map[string]string{}}
 		flash = strings.TrimSpace(flash + "  (couldn't read config.txt: " + err.Error() + ")")
 	}
 
+	slot := conn.Slot
+	if slot == "" {
+		slot = defaultSlot
+	}
 	checks := Verify(s.paths)
 	return view{
 		Paths:    s.paths,
-		Host:     cfg.Get("host", "127.0.0.1:38281"),
-		Slot:     cfg.Get("slot", "SRTPlayer"),
-		Password: cfg.Get("password", ""),
+		Host:     conn.Host,
+		Slot:     slot,
+		Password: conn.Password,
 		Checks:   checks,
 		AllOK:    AllOK(checks),
 		Flash:    strings.TrimSpace(flash),
@@ -129,42 +146,12 @@ func (s *server) handleApply(w http.ResponseWriter, r *http.Request) {
 	}
 	saveErr := savePaths(s.paths)
 
-	flash := ""
+	var flash string
 	switch action {
 	case "recheck":
 		flash = "Setup re-checked."
 	case "save", "launch":
-		// never write over a config.txt we couldn't read: that would wipe
-		// every key the launcher doesn't manage.
-		cfg, err := ReadConfig(s.configPath())
-		if err != nil {
-			flash = "Could not read config.txt, so it was left unchanged: " + err.Error()
-			break
-		}
-		cfg.Set("host", normalizeHost(r.FormValue("host")))
-		cfg.Set("slot", strings.TrimSpace(r.FormValue("slot")))
-		cfg.Set("password", r.FormValue("password"))
-		// the save is picked in-game now; drop an older launcher's file pin
-		cfg.Delete("save_slot")
-		// the game name is fixed in the mod; drop an older launcher's stale key
-		cfg.Delete("game")
-		// keep the keys the launcher doesn't manage sensible if fresh
-		if cfg.Get("spawn_checkd", "") == "" {
-			cfg.Set("spawn_checkd", "1")
-		}
-		if err := cfg.Write(s.configPath()); err != nil {
-			flash = "Could not write config.txt: " + err.Error()
-			break
-		}
-		if action == "launch" {
-			if err := launchGame(); err != nil {
-				flash = "Config saved, but launching the game failed: " + err.Error()
-			} else {
-				flash = "Config saved. Launching Spyro… keep this tab open to follow your checks."
-			}
-		} else {
-			flash = "Config saved to " + s.configPath()
-		}
+		flash = s.applyConnection(r, action == "launch")
 	default:
 		flash = "Unknown action."
 	}
@@ -175,6 +162,34 @@ func (s *server) handleApply(w http.ResponseWriter, r *http.Request) {
 	if err := s.tmpl.ExecuteTemplate(w, "panel", s.buildView(flash)); err != nil {
 		log.Printf("panel execute: %v", err)
 	}
+}
+
+// applyConnection merges the posted host/slot/password into config.txt and
+// returns the flash text. It never rewrites a config.txt it could not read, so
+// keys the launcher does not manage are preserved. When launch is set it also
+// starts the game through Steam.
+func (s *server) applyConnection(r *http.Request, launch bool) string {
+	cfg, err := ReadConfig(s.configPath())
+	if err != nil {
+		return "Could not read config.txt, so it was left unchanged: " + err.Error()
+	}
+	cfg.Set("host", normalizeHost(r.FormValue("host")))
+	cfg.Set("slot", strings.TrimSpace(r.FormValue("slot")))
+	cfg.Set("password", r.FormValue("password"))
+	// keep the keys the launcher doesn't manage sensible if fresh
+	if cfg.Get("spawn_checkd", "") == "" {
+		cfg.Set("spawn_checkd", "1")
+	}
+	if err := cfg.Write(s.configPath()); err != nil {
+		return "Could not write config.txt: " + err.Error()
+	}
+	if !launch {
+		return "Config saved to " + s.configPath()
+	}
+	if err := launchGame(); err != nil {
+		return "Config saved, but launching the game failed: " + err.Error()
+	}
+	return "Config saved. Launching Spyro… keep this tab open to follow your checks."
 }
 
 func (s *server) handleHTMX(w http.ResponseWriter, r *http.Request) {
@@ -189,19 +204,12 @@ func (s *server) handleFeed(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// currentFeedConn is what the feed connects with: config.txt as last saved.
-func (s *server) currentFeedConn() feedConn {
+// currentConn reads the saved connection under the lock, for the feed goroutine.
+func (s *server) currentConn() feedConn {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	cfg, err := ReadConfig(s.configPath())
-	if err != nil {
-		return feedConn{}
-	}
-	return feedConn{
-		Host:     cfg.Get("host", "127.0.0.1:38281"),
-		Slot:     cfg.Get("slot", ""),
-		Password: cfg.Get("password", ""),
-	}
+	c, _ := s.readConn()
+	return c
 }
 
 // launchGame asks Steam to run the game via the steam:// protocol handler,
@@ -284,7 +292,7 @@ func main() {
 	}
 
 	s := &server{paths: loadPaths(), tmpl: tmpl, feed: NewFeed()}
-	go s.feed.Run(context.Background(), s.currentFeedConn)
+	go s.feed.Run(context.Background(), s.currentConn)
 
 	ln, err := net.Listen("tcp", *addr)
 	if err != nil {
