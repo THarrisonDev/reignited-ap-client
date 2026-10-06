@@ -45,6 +45,11 @@ local gs = setmetatable({}, { __index = function(_, k)
         world.floats[key] = v
         return true
     end end
+    -- game signature: GetGlobalFloatValue(FString Key, float& Value)
+    if k == "GetGlobalFloatValue" then return function(_, key, out)
+        out.Value = world.floats[key] or 0
+        return true
+    end end
 end })
 
 -- default purple first, like a real tint table would plausibly start
@@ -105,6 +110,10 @@ local function new_pawn(opts)
         if k == "ICheatCodeBigHeadMode" or k == "ICheatCodeFlatSpyroMode" then return function(_, on)
             assert(game_thread, k .. " called off the game thread")
             P.modes[k] = on
+            -- the game mirrors the cheat in its own global float
+            world.floats[k == "ICheatCodeBigHeadMode" and "code.bighead" or "code.flat"] = on and 1 or 0
+            -- and, on enable, rebuilds the mesh material, dropping any tint
+            if on then P.tint, world.floats["code.color"] = nil, 0 end
         end end
     end })
     return P
@@ -332,6 +341,103 @@ test("a duplicate mode grant restarts its clock instead of stacking", function()
     -- 40s since the first grant (would have expired), but only 20s since the
     -- second: still on
     assert(world.pawn.modes.ICheatCodeBigHeadMode == true, "duplicate grant did not restart the timer")
+end)
+
+test("a color wears off to default after COLOR_DURATION", function()
+    local F = fresh()
+    F.configure(SD)
+    F.note_item("Turn Spyro Red", 0)
+    settle(F)
+    assert(world.pawn.tint == 1, "color not applied: " .. tostring(world.pawn.tint))
+    now = now + 31
+    ticks(F, 1)
+    assert(world.pawn.tint == 0, "color did not revert: " .. tostring(world.pawn.tint))
+    assert(world.floats["code.color"] == 0, "code.color not reset")
+    local s = F.status()
+    assert(s:find("look=default", 1, true), "status still reports the expired color: " .. s)
+end)
+
+test("a duplicate color grant restarts its clock instead of reverting", function()
+    local F = fresh()
+    F.configure(SD)
+    F.note_item("Turn Spyro Red", 0)
+    settle(F)
+    now = now + 20
+    F.note_item("Turn Spyro Red", 1)
+    now = now + 20
+    ticks(F, 1)
+    assert(world.pawn.tint == 1, "color reverted despite a fresh grant")
+end)
+
+test("a new color mid-window supersedes, then its own timer reverts", function()
+    local F = fresh()
+    F.configure(SD)
+    F.note_item("Turn Spyro Red", 0)
+    settle(F)
+    assert(world.pawn.tint == 1, "red not applied")
+    now = now + 20
+    F.note_item("Turn Spyro Green", 1)
+    ticks(F, 1)
+    assert(world.pawn.tint == 5, "green did not supersede: " .. tostring(world.pawn.tint))
+    -- 40s after red's grant (red's window is over) but only 20s into green's
+    now = now + 20
+    ticks(F, 1)
+    assert(world.pawn.tint == 5, "green reverted on red's old clock")
+    now = now + 11
+    ticks(F, 1)
+    assert(world.pawn.tint == 0, "green did not revert on its own clock: " .. tostring(world.pawn.tint))
+end)
+
+test("a color the game cleared is re-asserted on the next tick", function()
+    local F = fresh()
+    F.configure(SD)
+    F.note_item("Turn Spyro Red", 0)
+    settle(F)
+    assert(world.pawn.tint == 1, "color not applied: " .. tostring(world.pawn.tint))
+    -- the game wipes the tint mid-level (death/respawn/cutscene): code.color
+    -- back to 0, same pawn
+    world.floats["code.color"] = 0
+    world.pawn.tint = nil
+    ticks(F, 1)
+    assert(world.floats["code.color"] == 1, "code.color not re-asserted: " .. tostring(world.floats["code.color"]))
+    assert(world.pawn.tint == 1, "color not re-applied on the same pawn: " .. tostring(world.pawn.tint))
+end)
+
+test("a mode the game dropped is re-asserted on the next tick", function()
+    local F = fresh()
+    F.configure(SD)
+    F.note_item("Big Head Mode", 0)
+    settle(F)
+    assert(world.pawn.modes.ICheatCodeBigHeadMode == true)
+    -- the game resets the cheat mid-level (same pawn): its global drops too
+    world.pawn.modes.ICheatCodeBigHeadMode = false
+    world.floats["code.bighead"] = 0
+    ticks(F, 1)
+    assert(world.pawn.modes.ICheatCodeBigHeadMode == true, "big head not re-asserted")
+end)
+
+test("a mode grant never clobbers a color granted in the same job", function()
+    local F = fresh()
+    F.configure(SD)
+    F.note_item("Turn Spyro Black", 0)
+    F.note_item("Big Head Mode", 1)
+    settle(F)
+    -- whichever order run_job wrote them, code.color must still name the color
+    assert(world.floats["code.color"] == 6, "mode clobbered the color: " .. tostring(world.floats["code.color"]))
+    assert(world.pawn.tint == 6, "tint lost to a mode: " .. tostring(world.pawn.tint))
+end)
+
+test("a new pawn after a color expires does not get the old color", function()
+    local F = fresh()
+    F.configure(SD)
+    F.note_item("Turn Spyro Green", 0)
+    settle(F)
+    now = now + 31
+    ticks(F, 1)
+    level = "/LS101_ArtisansHome/Maps/"
+    world.pawn = new_pawn()
+    settle(F)
+    assert(world.pawn.tint == nil, "expired color leaked to a new pawn: " .. tostring(world.pawn.tint))
 end)
 
 test("a new pawn after a level load gets the look re-applied", function()
