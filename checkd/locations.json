@@ -1849,7 +1849,7 @@
               "location": "Spyro 2: Idol Springs: Land on Idol (Skill Point)",
               "id": 202007,
               "name": "Land on Idol",
-              "enum": 15
+              "enum": 19
             }
           ]
         },
@@ -1971,7 +1971,7 @@
               "location": "Spyro 2: Hurricos: All Windmills (Skill Point)",
               "id": 204008,
               "name": "All Windmills",
-              "enum": 17
+              "enum": 18
             }
           ]
         },
@@ -2086,7 +2086,7 @@
               "location": "Spyro 2: Aquaria Towers: All Seaweed (Skill Point)",
               "id": 206008,
               "name": "All Seaweed",
-              "enum": 18
+              "enum": 15
             }
           ]
         },
@@ -2105,7 +2105,7 @@
               "location": "Spyro 2: Crush's Dungeon: Perfect (Skill Point)",
               "id": 207001,
               "name": "Perfect",
-              "enum": 20
+              "enum": 23
             }
           ]
         },
@@ -2124,7 +2124,7 @@
               "location": "Spyro 2: Ocean Speedway: Under 1:10 (Skill Point)",
               "id": 208001,
               "name": "Under 1:10",
-              "enum": 19
+              "enum": 27
             }
           ]
         },
@@ -2451,7 +2451,7 @@
               "location": "Spyro 2: Scorch: All Trees (Skill Point)",
               "id": 214007,
               "name": "All Trees",
-              "enum": 23
+              "enum": 20
             }
           ]
         },
@@ -2512,7 +2512,7 @@
               "location": "Spyro 2: Fracture Hills: 3 Laps of Supercharge (Skill Point)",
               "id": 215008,
               "name": "3 Laps of Supercharge",
-              "enum": 24
+              "enum": 17
             }
           ]
         },
@@ -2633,14 +2633,14 @@
               "location": "Spyro 2: Gulp's Overlook: Perfect (Skill Point)",
               "id": 218001,
               "name": "Perfect",
-              "enum": 27
+              "enum": 29
             },
             {
               "type": "skillpoint",
               "location": "Spyro 2: Gulp's Overlook: Hit Ripto (Skill Point)",
               "id": 218002,
               "name": "Hit Ripto",
-              "enum": 28
+              "enum": 30
             }
           ]
         },
@@ -2659,7 +2659,7 @@
               "location": "Spyro 2: Icy Speedway: Under 1:15 (Skill Point)",
               "id": 219001,
               "name": "Under 1:15",
-              "enum": 25
+              "enum": 24
             }
           ]
         },
@@ -2949,7 +2949,7 @@
               "location": "Spyro 2: Ripto's Arena: Perfect (Skill Point)",
               "id": 226001,
               "name": "Perfect",
-              "enum": 30
+              "enum": 25
             }
           ]
         },
@@ -2968,7 +2968,7 @@
               "location": "Spyro 2: Canyon Speedway: Under 1:10 (Skill Point)",
               "id": 227001,
               "name": "Under 1:10",
-              "enum": 29
+              "enum": 28
             }
           ]
         }

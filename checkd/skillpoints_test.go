@@ -226,6 +226,35 @@ func TestSkillPointTables(t *testing.T) {
 	t.Log("enum tables cover 1..14/15..30/31..50, all resolving: OK")
 }
 
+// TestSkillPointTablesSpyro2Order pins the Spyro 2 enum -> location mapping.
+// The SkillPointsTable page order is not the ESkillPoint enum order for S2, so
+// the table alone cannot be trusted to order the rows.
+func TestSkillPointTablesSpyro2Order(t *testing.T) {
+	want := map[int]string{
+		15: "Spyro 2: Aquaria Towers: All Seaweed (Skill Point)",
+		16: "Spyro 2: Colossus: Perfect in Hockey (Skill Point)",
+		17: "Spyro 2: Fracture Hills: 3 Laps of Supercharge (Skill Point)",
+		18: "Spyro 2: Hurricos: All Windmills (Skill Point)",
+		19: "Spyro 2: Idol Springs: Land on Idol (Skill Point)",
+		20: "Spyro 2: Scorch: All Trees (Skill Point)",
+		21: "Spyro 2: Skelos Badlands: Catbat Quartet (Skill Point)",
+		22: "Spyro 2: Skelos Badlands: All Cacti (Skill Point)",
+		23: "Spyro 2: Crush's Dungeon: Perfect (Skill Point)",
+		24: "Spyro 2: Icy Speedway: Under 1:15 (Skill Point)",
+		25: "Spyro 2: Ripto's Arena: Perfect (Skill Point)",
+		26: "Spyro 2: Metro Speedway: Under 1:15 (Skill Point)",
+		27: "Spyro 2: Ocean Speedway: Under 1:10 (Skill Point)",
+		28: "Spyro 2: Canyon Speedway: Under 1:10 (Skill Point)",
+		29: "Spyro 2: Gulp's Overlook: Perfect (Skill Point)",
+		30: "Spyro 2: Gulp's Overlook: Hit Ripto (Skill Point)",
+	}
+	for v, loc := range want {
+		if got := spyro2SkillPoints[v]; got != loc {
+			t.Errorf("spyro2 enum %d = %q, want %q", v, got, loc)
+		}
+	}
+}
+
 // spTestNames builds the synthetic enum -> location table used by the daemon
 // tests below, plus the nameToID extension for it.
 func spTestNames(game int) (map[int]string, map[string]int) {
