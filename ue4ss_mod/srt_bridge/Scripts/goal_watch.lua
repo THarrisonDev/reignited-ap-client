@@ -1,3 +1,7 @@
+-- Author: Tim Harrison
+-- Created: 2026-09-26
+-- Updated: 2026-10-11
+
 -- goal_watch: reports GOAL once every required game's goal_location event has
 -- been received. Detection is id-based and self-healing (ReceivedItems
 -- re-delivers the full backlog on reconnect); a required game exposing no

@@ -1,3 +1,7 @@
+-- Author: Tim Harrison
+-- Created: 2026-09-27
+-- Updated: 2026-10-11
+
 -- Spec for client/ue4ss_mod/srt_bridge/Scripts/spyro3/eggs_hud.lua. The
 -- module has no actor watcher (checkd owns egg checks), so this covers the
 -- signed debug_extra reconcile drive only. Run from the client repo root:

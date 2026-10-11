@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# Author: Tim Harrison
+# Created: 2026-09-26
+# Updated: 2026-10-11
+
 """Guard: the generated client files match what gen_locations.py would produce.
 
 Regenerates client/checkd/locations.json and the mod's regions.lua in memory

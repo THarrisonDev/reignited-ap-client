@@ -1,3 +1,7 @@
+-- Author: Tim Harrison
+-- Created: 2026-09-26
+-- Updated: 2026-10-11
+
 -- Stub-based spec for client/ue4ss_mod/srt_bridge/Scripts/spyro1/level_locks.lua.
 -- Fakes the UE4SS surfaces the module touches (FindAllOf, portal actors, the
 -- PortalNameComponent glyph actors, ExecuteInGameThread) with the behaviour

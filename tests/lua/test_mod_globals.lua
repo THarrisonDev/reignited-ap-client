@@ -1,3 +1,7 @@
+-- Author: Tim Harrison
+-- Created: 2026-09-26
+-- Updated: 2026-10-11
+
 -- Mod scripts must never reach a local by its global name.
 --
 -- A `local function f` called above its definition compiles to a global

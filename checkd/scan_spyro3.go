@@ -1,3 +1,7 @@
+// Author: Tim Harrison
+// Created: 2026-09-26
+// Updated: 2026-10-11
+
 package main
 
 // scanSpyro3 is the Spyro 3 poll body: named egg records (the dragon name in

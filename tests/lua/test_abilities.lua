@@ -1,3 +1,7 @@
+-- Author: Tim Harrison
+-- Created: 2026-09-26
+-- Updated: 2026-10-11
+
 -- Stub-based spec for client/ue4ss_mod/srt_bridge/Scripts/spyro2/abilities.lua.
 -- Fakes the gamestate's ability inventory UFunctions (add/remove/get player
 -- inventory item count for EIT types 30-33). ExecuteInGameThread only QUEUES

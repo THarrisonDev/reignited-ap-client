@@ -1,3 +1,7 @@
+-- Author: Tim Harrison
+-- Created: 2026-09-26
+-- Updated: 2026-10-11
+
 -- SRTAP bridge: the Archipelago client that runs inside Spyro Reignited via
 -- UE4SS. It owns the single AP connection, opens a session per picked save,
 -- and dispatches the per-game watchers. Config, logging and BRIDGE_DIR live in

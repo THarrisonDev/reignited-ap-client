@@ -1,3 +1,7 @@
+-- Author: Tim Harrison
+-- Created: 2026-09-27
+-- Updated: 2026-10-11
+
 -- egg_gates (Spyro 3): lower each S3 homeworld egg portal's EggRequirement as
 -- Dragon Egg items are received (spyro3_egg_shuffle), forcing the gate open
 -- once the write reaches 0; the displayed requirement stays vanilla. Writes

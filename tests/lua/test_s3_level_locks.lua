@@ -1,3 +1,7 @@
+-- Author: Tim Harrison
+-- Created: 2026-09-26
+-- Updated: 2026-10-11
+
 -- Stub-based spec for client/ue4ss_mod/srt_bridge/Scripts/spyro3/level_locks.lua.
 -- Mirrors test_s2_level_locks.lua: fakes ExecuteInGameThread (queue +
 -- pump with the game-thread flag), portal actors, glyph actors. Every portal

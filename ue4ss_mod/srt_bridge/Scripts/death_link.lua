@@ -1,3 +1,7 @@
+-- Author: Tim Harrison
+-- Created: 2026-09-26
+-- Updated: 2026-10-11
+
 -- death_link: AP DeathLink — Spyro's own deaths bounce to the other DeathLink
 -- players, and an incoming bounce kills Spyro here with the full-strength
 -- damage-trap lever (pawn health set HealthCurrent -> 0). Echo protection runs

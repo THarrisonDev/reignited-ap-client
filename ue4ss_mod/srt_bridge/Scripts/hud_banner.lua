@@ -1,3 +1,7 @@
+-- Author: Tim Harrison
+-- Created: 2026-09-29
+-- Updated: 2026-10-11
+
 -- hud_banner.lua: shows each received item on the game's fanfare banner at
 -- the bottom of the screen.
 --

@@ -1,3 +1,7 @@
+-- Author: Tim Harrison
+-- Created: 2026-09-27
+-- Updated: 2026-10-11
+
 -- eggs_hud (Spyro 3): drive the signed debug-extra egg counter so the HUD
 -- matches the received Dragon Egg items (spyro3_egg_shuffle). Display only:
 -- it leaves the pure save record the egg gates read untouched, so it can never

@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# Author: Tim Harrison
+# Created: 2026-09-26
+# Updated: 2026-10-11
+
 """Generate the synthetic FalconSave fixtures checkd's tests run against.
 
 Every fixture is constructed from scratch with pygvas (no real save data):

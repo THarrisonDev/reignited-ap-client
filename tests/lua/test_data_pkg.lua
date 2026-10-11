@@ -1,3 +1,7 @@
+-- Author: Tim Harrison
+-- Created: 2026-09-26
+-- Updated: 2026-10-11
+
 -- Spec for client/ue4ss_mod/srt_bridge/Scripts/data_pkg.lua.
 -- Fakes process/resolve/log; exercises the connect-time backlog: items whose
 -- names are "Unknown"/"?" before the AP data package loads park as

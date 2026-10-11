@@ -1,3 +1,7 @@
+-- Author: Tim Harrison
+-- Created: 2026-09-26
+-- Updated: 2026-10-11
+
 -- Spec for client/ue4ss_mod/srt_bridge/Scripts/session_gate.lua: the AP
 -- session opens only once the player is in play on a Spyro 1, Spyro 2 or
 -- Spyro 3 save, and closes at the main menu.

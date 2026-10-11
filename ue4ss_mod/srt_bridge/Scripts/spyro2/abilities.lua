@@ -1,3 +1,7 @@
+-- Author: Tim Harrison
+-- Created: 2026-09-26
+-- Updated: 2026-10-11
+
 -- abilities (Spyro 2): apply received Money Bags ability items and neutralize
 -- vanilla Money Bags purchases while the ability is unowned in AP, via the
 -- shared inventory_grants_core.lua (levers, threading and design notes there).

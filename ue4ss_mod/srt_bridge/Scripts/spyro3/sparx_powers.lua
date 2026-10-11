@@ -1,3 +1,7 @@
+-- Author: Tim Harrison
+-- Created: 2026-09-26
+-- Updated: 2026-10-11
+
 -- sparx_powers (Spyro 3): apply received Sparx power items and neutralize the
 -- vanilla Sparx realm completion reward while the power is unowned in AP, via
 -- the shared inventory_grants_core.lua (levers and threading there).

@@ -1,3 +1,7 @@
+-- Author: Tim Harrison
+-- Created: 2026-09-26
+-- Updated: 2026-10-11
+
 -- inventory_grants_core: factory behind the per-game global-inventory item
 -- modules (spyro2/abilities.lua, spyro3/sparx_powers.lua). It forces each
 -- item's owned flag to match the received set via the gamestate inventory

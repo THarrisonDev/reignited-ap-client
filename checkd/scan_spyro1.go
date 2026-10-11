@@ -1,3 +1,7 @@
+// Author: Tim Harrison
+// Created: 2026-09-26
+// Updated: 2026-10-11
+
 package main
 
 // scanSpyro1 is the Spyro 1 poll body: dragon, egg, gem-total, skill-point and

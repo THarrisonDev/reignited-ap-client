@@ -1,3 +1,7 @@
+-- Author: Tim Harrison
+-- Created: 2026-09-26
+-- Updated: 2026-10-11
+
 -- checks_drop: ingest the Go checkd daemon's check drops.
 --
 -- Reads C:/srtap_bridge/checks.json (owned by checkd, client/checkd/main.go

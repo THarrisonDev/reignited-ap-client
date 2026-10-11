@@ -1,3 +1,7 @@
+-- Author: Tim Harrison
+-- Created: 2026-10-05
+-- Updated: 2026-10-11
+
 -- fanfare_test: independent UE4SS mod measuring how long the HUD fanfare
 -- banner (`UI_FanFareMessage_C`, the "x/x dragons!" popup) stays on screen.
 -- Read-only vs the save: message display + widget state only, no progression

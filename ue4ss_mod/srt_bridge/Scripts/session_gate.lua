@@ -1,3 +1,7 @@
+-- Author: Tim Harrison
+-- Created: 2026-09-26
+-- Updated: 2026-10-11
+
 -- session_gate: opens the AP session only while the game is in play with a
 -- readable, supported save slot, and closes it at the main menu.
 -- Pure logic: the caller passes the gamestate value and a slot reader.

@@ -1,3 +1,7 @@
+-- Author: Tim Harrison
+-- Created: 2026-09-26
+-- Updated: 2026-10-11
+
 -- Spec for client/ue4ss_mod/srt_bridge/Scripts/main.lua module loading.
 --
 -- main.lua loads its optional modules through load_module(), which swaps in

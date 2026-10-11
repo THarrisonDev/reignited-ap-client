@@ -1,4 +1,8 @@
 #!/bin/sh
+# Author: Tim Harrison
+# Created: 2026-10-11
+# Updated: 2026-10-11
+
 # Run the launcher's built-in installer from the native Linux launcher.
 set -e
 dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)

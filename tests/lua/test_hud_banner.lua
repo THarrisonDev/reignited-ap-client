@@ -1,3 +1,7 @@
+-- Author: Tim Harrison
+-- Created: 2026-09-29
+-- Updated: 2026-10-11
+
 -- Spec for client/ue4ss_mod/srt_bridge/Scripts/hud_banner.lua. Fakes the
 -- UE4SS surface (FindFirstOf, StaticFindObject, timers, game thread) and
 -- verifies the proven recipe: fanfare -> +100ms write -> convergence check.

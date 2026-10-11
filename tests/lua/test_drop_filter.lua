@@ -1,3 +1,7 @@
+-- Author: Tim Harrison
+-- Created: 2026-09-26
+-- Updated: 2026-10-11
+
 -- Spec for client/ue4ss_mod/srt_bridge/Scripts/checks_drop.lua: the checkd
 -- drop ingest + slot filter. Run from the client repo root:
 -- lua tests/lua/test_drop_filter.lua

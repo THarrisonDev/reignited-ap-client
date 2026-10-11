@@ -1,3 +1,7 @@
+-- Author: Tim Harrison
+-- Created: 2026-09-26
+-- Updated: 2026-10-11
+
 -- data_pkg: replays the connect-time item backlog whose names resolved before
 -- the AP data package loaded. AP's ReceivedItems is cumulative, so the AP item
 -- index is the identity; items that stay unresolvable belong to another game
