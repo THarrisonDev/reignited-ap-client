@@ -42,6 +42,7 @@ type view struct {
 	AllOK    bool
 	Flash    string
 	Feed     feedView
+	Install  []installResult
 }
 
 func (s *server) configPath() string {
@@ -64,8 +65,9 @@ func (s *server) readConn() (feedConn, error) {
 
 // buildView reads current config + verify results into the template model.
 // config.txt is the source of truth for host/slot/password; the launcher's own
-// path overrides are held in s.paths.
-func (s *server) buildView(flash string) view {
+// path overrides are held in s.paths. install carries the step log of a just-
+// run install (nil for a plain page load).
+func (s *server) buildView(flash string, install []installResult) view {
 	conn, err := s.readConn()
 	if err != nil {
 		flash = strings.TrimSpace(flash + "  (couldn't read config.txt: " + err.Error() + ")")
@@ -85,6 +87,7 @@ func (s *server) buildView(flash string) view {
 		AllOK:    AllOK(checks),
 		Flash:    strings.TrimSpace(flash),
 		Feed:     s.feed.View(),
+		Install:  install,
 	}
 }
 
@@ -99,7 +102,7 @@ func (s *server) handleRoot(w http.ResponseWriter, r *http.Request) {
 			flash += " (couldn't remember this: " + msg + ")"
 		}
 	}
-	if err := s.tmpl.ExecuteTemplate(w, "page", s.buildView(flash)); err != nil {
+	if err := s.tmpl.ExecuteTemplate(w, "page", s.buildView(flash, nil)); err != nil {
 		log.Printf("template execute: %v", err)
 	}
 }
@@ -147,9 +150,13 @@ func (s *server) handleApply(w http.ResponseWriter, r *http.Request) {
 	saveErr := savePaths(s.paths)
 
 	var flash string
+	var install []installResult
 	switch action {
 	case "recheck":
 		flash = "Setup re-checked."
+	case "install":
+		install = Install(s.paths, sourceDir(), installOptions{})
+		flash = summarizeInstall(install)
 	case "save", "launch":
 		flash = s.applyConnection(r, action == "launch")
 	default:
@@ -159,9 +166,24 @@ func (s *server) handleApply(w http.ResponseWriter, r *http.Request) {
 		flash += " (couldn't remember folder overrides: " + saveErr.Error() + ")"
 	}
 
-	if err := s.tmpl.ExecuteTemplate(w, "panel", s.buildView(flash)); err != nil {
+	if err := s.tmpl.ExecuteTemplate(w, "panel", s.buildView(flash, install)); err != nil {
 		log.Printf("panel execute: %v", err)
 	}
+}
+
+// summarizeInstall is the one-line flash shown above the refreshed setup
+// checks after an install run.
+func summarizeInstall(results []installResult) string {
+	failed := 0
+	for _, r := range results {
+		if !r.OK {
+			failed++
+		}
+	}
+	if failed == 0 {
+		return "Install complete — setup checks refreshed below."
+	}
+	return fmt.Sprintf("Install finished, but %d step(s) still need attention.", failed)
 }
 
 // applyConnection merges the posted host/slot/password into config.txt and
@@ -281,10 +303,38 @@ func savePaths(p Paths) error {
 	return os.WriteFile(f, b, 0644)
 }
 
+// runInstall performs a headless install using the resolved paths and prints
+// one line per step. It returns a process exit code.
+func runInstall(noDownload bool) int {
+	p := loadPaths()
+	results := Install(p, sourceDir(), installOptions{NoDownload: noDownload})
+	ok := true
+	for _, r := range results {
+		mark := "ok  "
+		if !r.OK {
+			mark = "FAIL"
+			ok = false
+		}
+		fmt.Printf("[%s] %s: %s\n", mark, r.Step, r.Detail)
+	}
+	if !ok {
+		fmt.Println("Some steps failed — open the launcher to re-check setup.")
+		return 1
+	}
+	fmt.Println("Install complete. Open the launcher to set your connection and play.")
+	return 0
+}
+
 func main() {
 	addr := flag.String("addr", "127.0.0.1:0", "listen address (default: random localhost port)")
 	noBrowser := flag.Bool("no-browser", false, "do not open a browser automatically")
+	install := flag.Bool("install", false, "copy the client files into place, then exit")
+	noDownload := flag.Bool("no-download", false, "with -install, do not fetch UE4SS; report it missing")
 	flag.Parse()
+
+	if *install {
+		os.Exit(runInstall(*noDownload))
+	}
 
 	tmpl, err := template.New("index").Parse(indexHTML)
 	if err != nil {

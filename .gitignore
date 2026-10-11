@@ -1,6 +1,7 @@
 # Compiled binaries (anchored: only the built binaries, not the module trees)
 /checkd/checkd
 /launcher/launcher
+/launcher/srtap_launcher
 *.exe
 *.dll
 *.so

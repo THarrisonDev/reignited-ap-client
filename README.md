@@ -49,23 +49,28 @@ file (`checkd.hb`) so the mod can dedupe its own spawns.
 
 ### `launcher/`
 
-A small self-contained Go web server (UI built with htmx) that verifies the
-setup, edits the mod's `config.txt` (host/slot/password), and launches the
-game via the `steam://` protocol handler. It also shows a read-only live feed
-of the slot's item movements: it keeps its own listener-only connection to
-the Archipelago room. It does not start `checkd` (the mod does), does not
-watch `checkd.hb`, and does not forward checks — the mod's AP client reports
-checks itself.
+A small self-contained Go web server (UI built with htmx) that installs and
+verifies the setup, edits the mod's `config.txt` (host/slot/password), and
+launches the game via the `steam://` protocol handler. The installer copies the
+mod, the save scanner, and (if missing) UE4SS v3.0.1 into place, enabled by the
+**Install / update setup** button or the `-install` flag; the setup checks then
+confirm the result. It also shows a read-only live feed of the slot's item
+movements: it keeps its own listener-only connection to the Archipelago room.
+It does not start `checkd` (the mod does), does not watch `checkd.hb`, and does
+not forward checks — the mod's AP client reports checks itself.
 
 ## Getting Started
 
-1. Download the latest release from the parent repo's
+1. Download the latest client release from the parent repo's
    [Releases](https://github.com/THarrisonDev/reignited-ap/releases) page, or
    build the components from source (Go 1.26+ for `checkd` and `launcher`;
    [UE4SS](https://github.com/UE4SS-RE/RE-UE4SS) for the mod).
-2. Run the launcher and point it at your Spyro Reignited Trilogy
-   installation; it verifies the setup and saves your connection settings.
-3. Launch the game — the mod connects to the Archipelago server as usual.
+2. Run `install.bat` (Windows) or `install.sh` (Linux) from the extracted
+   release — or click **Install / update setup** in the launcher — to copy the
+   mod, save scanner, and UE4SS into place.
+3. Run the launcher and point it at your Spyro Reignited Trilogy installation;
+   the setup checks confirm the install and save your connection settings.
+4. Launch the game — the mod connects to the Archipelago server as usual.
 
 ## Development
 

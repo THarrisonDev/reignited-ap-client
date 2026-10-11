@@ -1,5 +1,18 @@
 {{define "panel"}}
   {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
+  {{if .Install}}
+  <ul class="checklist">
+    {{range .Install}}
+    <li class="check">
+      <span class="{{if .OK}}ok{{else}}bad{{end}}">{{if .OK}}&#10003;{{else}}&#10007;{{end}}</span>
+      <div>
+        <div>{{.Step}}</div>
+        <div class="detail">{{.Detail}}</div>
+      </div>
+    </li>
+    {{end}}
+  </ul>
+  {{end}}
   <p class="{{if .AllOK}}status-all-ok{{else}}status-not-ok{{end}}">
     {{if .AllOK}}All good — you're ready to launch.{{else}}Some items need attention:{{end}}
   </p>
@@ -66,6 +79,7 @@
            border-radius: 6px; margin: 1rem 0; }
   .check { display: flex; gap: .6rem; align-items: baseline; padding: .35rem 0;
            border-bottom: 1px solid #8882; }
+  .checklist { list-style: none; padding: 0; margin: .5rem 0; }
   .ok { color: #2d7d46; font-weight: 700; }
   .bad { color: #c0392b; font-weight: 700; }
   .detail { color: #8a8a8a; font-size: .82rem; word-break: break-all; }
@@ -118,6 +132,7 @@
          hx-include="#cfg" hx-target="#panel" hx-swap="innerHTML">
       <button type="button" hx-post="/apply" hx-vals='{"action":"save"}'>Save config</button>
       <button type="button" hx-post="/apply" hx-vals='{"action":"launch"}' class="primary">Save &amp; launch game</button>
+      <button type="button" hx-post="/apply" hx-vals='{"action":"install"}'>Install / update setup</button>
       <button type="button" hx-post="/apply" hx-vals='{"action":"recheck"}'>Re-check setup</button>
     </div>
   </form>

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 // appID is Spyro Reignited Trilogy's Steam appid — used for the Proton
@@ -49,34 +50,139 @@ func steamRoot() string {
 	return filepath.Join(home, ".local", "share", "Steam")
 }
 
-// protonPrefixDriveC is the drive_c of the game's Proton compatdata prefix
-// (Linux only). This is where the in-Proton "C:/..." paths actually land on
-// the host filesystem.
-func protonPrefixDriveC() string {
-	return filepath.Join(steamRoot(), "steamapps", "compatdata", appID,
-		"pfx", "drive_c")
-}
-
 // gameWin64 returns the default Falcon/Binaries/Win64 directory under the
-// standard Steam library. Games installed to a secondary Steam library folder
-// need the UI override.
+// standard Steam library, used as a fallback when game detection fails.
 func gameWin64() string {
 	return filepath.Join(steamRoot(), "steamapps", "common",
 		"Spyro Reignited Trilogy", "Falcon", "Binaries", "Win64")
 }
 
-// defaultPaths resolves the best-guess locations for the host OS.
+// compatdataDriveC is the drive_c of the game's Proton compatdata prefix under
+// a given Steam library root (Linux only). Steam creates the prefix in the
+// same library that holds the game, so this must be derived per-library, not
+// from the default root.
+func compatdataDriveC(lib string) string {
+	return filepath.Join(lib, "steamapps", "compatdata", appID, "pfx", "drive_c")
+}
+
+// gameRel is the game's Win64 path relative to a Steam library root.
+func gameRel() string {
+	return filepath.Join("steamapps", "common", "Spyro Reignited Trilogy",
+		"Falcon", "Binaries", "Win64")
+}
+
+// steamLibraries returns the base Steam root plus every library listed in its
+// libraryfolders.vdf, best-effort. A missing or unreadable file yields just the
+// base root, so callers always have at least one candidate.
+func steamLibraries() []string {
+	base := steamRoot()
+	libs := []string{base}
+	data, err := os.ReadFile(filepath.Join(base, "steamapps", "libraryfolders.vdf"))
+	if err != nil {
+		return libs
+	}
+	return append(libs, parseLibraryFolders(data)...)
+}
+
+// parseLibraryFolders extracts library roots from a libraryfolders.vdf body.
+// It handles both the modern `"path" "<dir>"` form and the legacy
+// `"<n>" "<dir>"` map, ignoring anything that is not an absolute path.
+func parseLibraryFolders(data []byte) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, line := range strings.Split(string(data), "\n") {
+		key, val, ok := vdfPair(line)
+		if !ok || !isAbsPath(val) {
+			continue
+		}
+		if !strings.EqualFold(key, "path") && !isNumeric(key) {
+			continue
+		}
+		p := filepath.Clean(filepath.FromSlash(strings.ReplaceAll(val, `\\`, `\`)))
+		if !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// vdfPair returns the first two double-quoted tokens on a line, treating them
+// as a key/value pair. Lines with fewer than two tokens (braces, bare keys)
+// report ok=false.
+func vdfPair(line string) (key, val string, ok bool) {
+	var toks []string
+	for {
+		i := strings.IndexByte(line, '"')
+		if i < 0 {
+			break
+		}
+		rest := line[i+1:]
+		j := strings.IndexByte(rest, '"')
+		if j < 0 {
+			break
+		}
+		toks = append(toks, rest[:j])
+		line = rest[j+1:]
+	}
+	if len(toks) < 2 {
+		return "", "", false
+	}
+	return toks[0], toks[1], true
+}
+
+// isNumeric reports whether s is non-empty and all digits.
+func isNumeric(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// isAbsPath reports whether s looks like an absolute filesystem path on either
+// OS (leading "/" or a drive letter like "C:\").
+func isAbsPath(s string) bool {
+	if strings.HasPrefix(s, "/") {
+		return true
+	}
+	return len(s) >= 3 && s[1] == ':' && (s[2] == '\\' || s[2] == '/')
+}
+
+// findGameWin64 returns the game's Falcon/Binaries/Win64 under the first Steam
+// library that has it, along with that library root. ok is false when no
+// library contains the game.
+func findGameWin64(libs []string) (win64, lib string, ok bool) {
+	for _, l := range libs {
+		p := filepath.Join(l, gameRel())
+		if dirExists(p) {
+			return p, l, true
+		}
+	}
+	return "", "", false
+}
+
+// defaultPaths resolves the best-guess locations for the host OS, searching
+// every Steam library for the game before falling back to the default root.
 func defaultPaths() Paths {
+	libs := steamLibraries()
+	game, lib, found := findGameWin64(libs)
+	if !found {
+		game, lib = gameWin64(), steamRoot()
+	}
 	if runtime.GOOS == "windows" {
 		return Paths{
 			ConfigDir: `C:\srtap_bridge`,
-			GameWin64: gameWin64(),
+			GameWin64: game,
 		}
 	}
 	// Linux (Proton): the mod's "C:/..." paths live inside the prefix's drive_c.
-	driveC := protonPrefixDriveC()
 	return Paths{
-		ConfigDir: filepath.Join(driveC, "srtap_bridge"),
-		GameWin64: gameWin64(),
+		ConfigDir: filepath.Join(compatdataDriveC(lib), "srtap_bridge"),
+		GameWin64: game,
 	}
 }

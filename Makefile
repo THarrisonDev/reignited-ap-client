@@ -10,7 +10,7 @@ DIST    := dist
 
 WINDOWS_TARGETS := GOOS=windows GOARCH=amd64
 
-.PHONY: all vet lint test build build-windows package-mod deploy deploy-mod deploy-checkd dist regen audit lua-tests clean
+.PHONY: all vet lint test build build-windows build-linux package-mod package-client deploy deploy-mod deploy-checkd dist regen audit lua-tests clean
 
 # Paths the deploy target writes into, defaulted for a standard Steam install
 # on this Linux/Proton box. `make deploy` needs no arguments; override a path
@@ -56,6 +56,13 @@ build:
 	$(MAKE) --no-print-directory -C checkd   build GOFLAGS="$(GOFLAGS)" OUT=$(abspath $(DIST))/native/checkd
 	$(MAKE) --no-print-directory -C launcher build GOFLAGS="$(GOFLAGS)" OUT=$(abspath $(DIST))/native/launcher
 
+# Linux x64 launcher — Proton players run this natively; it carries the same
+# built-in installer as the Windows build.
+build-linux: launcher/srtap_launcher
+
+launcher/srtap_launcher: $(wildcard launcher/*.go) launcher/index.html launcher/htmx.min.js
+	$(MAKE) --no-print-directory -C launcher build-linux GOFLAGS="$(GOFLAGS)"
+
 # Player-facing Windows x64 builds:
 #   dist/windows/srtap_checkd.exe  -> copy into the bridge folder (C:\srtap_bridge
 #                                     or the Proton prefix's drive_c\srtap_bridge)
@@ -93,6 +100,24 @@ $(DIST)/srt_bridge.zip: $(shell find ue4ss_mod/srt_bridge -type f)
 	cd $(DIST)/srt_bridge && zip -q -r ../srt_bridge.zip Mods
 	@echo "packaged $(DIST)/srt_bridge.zip"
 
+# Assemble the player-facing client download: both launchers, the checkd
+# daemon, the packaged mod, the install wrappers, INSTALL.md, and the
+# third-party notices — one folder plus a zip. Players extract it and run
+# install.bat / install.sh.
+package-client: build-windows build-linux package-mod
+	rm -rf $(DIST)/client
+	mkdir -p $(DIST)/client
+	cp -f checkd/srtap_checkd.exe     $(DIST)/client/
+	cp -f launcher/srtap_launcher.exe $(DIST)/client/
+	cp -f launcher/srtap_launcher     $(DIST)/client/srtap_launcher
+	cp -f $(DIST)/srt_bridge.zip      $(DIST)/client/
+	cp -f install/install.bat install/install.sh $(DIST)/client/
+	cp -f ../INSTALL.md               $(DIST)/client/
+	cp -f ../THIRD-PARTY-NOTICES.md   $(DIST)/client/
+	chmod +x $(DIST)/client/install.sh $(DIST)/client/srtap_launcher
+	cd $(DIST) && rm -f reignited-ap-client.zip && zip -q -r reignited-ap-client.zip client
+	@echo "packaged $(DIST)/reignited-ap-client.zip"
+
 # Install everything for a game session: build the Windows checkd, drop it
 # into the bridge folder (backing up the old one), and copy the Lua mod into
 # the game's Mods folder. Run `make deploy` after changing Lua or checkd.
@@ -128,7 +153,7 @@ deploy-checkd: checkd/srtap_checkd.exe
 	@echo "checkd -> $(BRIDGE_DIR)/srtap_checkd.exe"
 
 # Full release bundle (see ../world/RELEASE.md for the release order).
-dist: build-windows package-mod
+dist: package-client
 	@echo "dist ready: $(abspath $(DIST))"
 
 # Regenerate the generated client files (locations.json + regions.lua) from
@@ -142,5 +167,5 @@ audit:
 	python3 checkd/scripts/audit_locations.py
 
 clean:
-	rm -rf $(DIST) checkd/srtap_checkd.exe launcher/srtap_launcher.exe launcher/launcher
+	rm -rf $(DIST) checkd/srtap_checkd.exe launcher/srtap_launcher.exe launcher/srtap_launcher launcher/launcher
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +

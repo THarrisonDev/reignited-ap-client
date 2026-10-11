@@ -112,6 +112,23 @@ func TestApplyFlashesStateSaveError(t *testing.T) {
 	}
 }
 
+func TestApplyInstallActionRunsSteps(t *testing.T) {
+	useStateFile(t, filepath.Join(t.TempDir(), "paths.json"))
+	root := t.TempDir()
+	win64 := filepath.Join(root, "win64")
+	// UE4SS already present so the handler never attempts a download.
+	mkfile(t, filepath.Join(win64, "dwmapi.dll"))
+	mkfile(t, filepath.Join(win64, "UE4SS.dll"))
+	mkfile(t, filepath.Join(win64, "Mods", "mods.txt"))
+	s := testServer(t, Paths{ConfigDir: filepath.Join(root, "bridge"), GameWin64: win64})
+
+	rec := postForm(s.handleApply, "/apply", url.Values{"action": {"install"}})
+	body := rec.Body.String()
+	if !strings.Contains(body, "Install") || !strings.Contains(body, "Enable mod") {
+		t.Fatalf("panel should show install step results:\n%s", body)
+	}
+}
+
 func TestResetRejectsGet(t *testing.T) {
 	state := filepath.Join(t.TempDir(), "paths.json")
 	useStateFile(t, state)
