@@ -1,6 +1,6 @@
 // Author: Tim Harrison
 // Created: 2026-09-26
-// Updated: 2026-10-11
+// Updated: 2026-10-12
 
 package main
 
@@ -22,6 +22,9 @@ const (
 	hbName         = "checkd.hb"
 	dropName       = "checks.json"
 	hbFreshSecs    = 3
+	// hbInterval writes the heartbeat twice per freshness window, so it can
+	// never read as stale even when a poll overruns.
+	hbInterval = time.Duration(hbFreshSecs) * time.Second / 2
 )
 
 func (d *daemon) writeHeartbeat() {
@@ -83,14 +86,20 @@ func main() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt)
 
+	pollT := time.NewTicker(d.poll)
+	hbT := time.NewTicker(hbInterval)
+	defer pollT.Stop()
+	defer hbT.Stop()
+
 	for {
 		select {
 		case <-sigCh:
 			d.summary()
 			return
-		case <-time.After(d.poll):
+		case <-hbT.C:
+			d.writeHeartbeat()
+		case <-pollT.C:
+			d.pollOnce()
 		}
-		d.writeHeartbeat()
-		d.pollOnce()
 	}
 }
