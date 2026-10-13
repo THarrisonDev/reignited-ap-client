@@ -16,7 +16,9 @@ import (
 )
 
 const (
-	defaultSaveDir = "C:/users/steamuser/AppData/Local/Falcon/Saved/SaveGames"
+	// protonSaveDir is the Falcon save folder inside the Proton compatdata
+	// prefix on Linux, used when %LOCALAPPDATA% is unset.
+	protonSaveDir  = "C:/users/steamuser/AppData/Local/Falcon/Saved/SaveGames"
 	defaultDropDir = "C:/srtap_bridge"
 	defaultLogPath = "C:/srtap_bridge/checkd.log"
 	hbName         = "checkd.hb"
@@ -27,6 +29,17 @@ const (
 	hbInterval = time.Duration(hbFreshSecs) * time.Second / 2
 )
 
+// defaultSaveDir returns the Falcon save folder for this machine. On Windows
+// that is %LOCALAPPDATA%\Falcon\Saved\SaveGames; Wine sets %LOCALAPPDATA% to
+// the same prefix path, so a Proton install resolves identically. The hardcoded
+// prefix path is the fallback when the variable is unset.
+func defaultSaveDir() string {
+	if local := os.Getenv("LOCALAPPDATA"); local != "" {
+		return filepath.Join(local, "Falcon", "Saved", "SaveGames")
+	}
+	return protonSaveDir
+}
+
 func (d *daemon) writeHeartbeat() {
 	path := filepath.Join(d.dropDir, hbName)
 	if err := os.WriteFile(path, []byte(strconv.FormatInt(time.Now().Unix(), 10)), 0644); err != nil {
@@ -35,7 +48,7 @@ func (d *daemon) writeHeartbeat() {
 }
 
 func main() {
-	saveDir := flag.String("save-dir", defaultSaveDir, "directory holding FalconSave.*.sav")
+	saveDir := flag.String("save-dir", defaultSaveDir(), "directory holding FalconSave.*.sav")
 	dropDir := flag.String("drop-dir", defaultDropDir, "bridge directory for checks.json drops")
 	poll := flag.Duration("poll", time.Second, "save poll interval")
 	noBackfill := flag.Bool("no-backfill", false, "do not drop already-collected dragons and eggs at baseline")

@@ -1,6 +1,6 @@
 // Author: Tim Harrison
 // Created: 2026-09-26
-// Updated: 2026-10-11
+// Updated: 2026-10-12
 
 package main
 
@@ -30,6 +30,7 @@ type daemon struct {
 	lastPath     string
 	lastMtime    int64
 	baselineOn   bool
+	warnedNoSave bool // the missing-save WARN has fired for this session
 	lastSeq      int
 	pending      []checkKey // resolved keys whose drop write failed; retried next poll
 	dropTried    bool       // this poll already called sendDrop (which retries pending)
@@ -130,6 +131,7 @@ func (d *daemon) resetScan() {
 	d.sparxKnown = make(map[string]bool)
 	d.pending = nil
 	d.baselineOn = false
+	d.warnedNoSave = false
 	d.lastPath, d.lastMtime = "", 0
 }
 
@@ -183,6 +185,10 @@ func (d *daemon) pollOnce() {
 
 	path, mtime, ok := d.newestSave()
 	if !ok {
+		if !d.warnedNoSave {
+			d.warnedNoSave = true
+			d.logf("no FalconSave.*.sav found in %s — set --save-dir to the game's save folder", d.saveDir)
+		}
 		return
 	}
 	if path == d.lastPath && mtime == d.lastMtime {
