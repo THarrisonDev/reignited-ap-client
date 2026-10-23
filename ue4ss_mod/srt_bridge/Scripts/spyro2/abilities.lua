@@ -13,22 +13,24 @@
 -- be spent. Slot data: sd.games.spyro2.options.moneybags_abilities (1 or
 -- "sanity").
 --
--- API (main.lua): init{log, regions}, configure(slot_data), note_item(name,
--- index), tick(gamestate), status().
+-- API (main.lua): init{log}, configure(slot_data), note_item(name, index),
+-- tick(world), status().
 
 local core = require("inventory_grants_core")
+local C = require("constants")
+local O = require("option")
 
 return core.new({
     tag = "[ABILITIES]",
     items = {
-        ["Spyro 2: Swim Ability"] = 32,
-        ["Spyro 2: Climb Ability"] = 30,
-        ["Spyro 2: Headbash Ability"] = 31,
+        ["Spyro 2: Swim Ability"] = C.eit.EIT_Swimming,
+        ["Spyro 2: Climb Ability"] = C.eit.EIT_Climbing,
+        ["Spyro 2: Headbash Ability"] = C.eit.EIT_HeadBash,
     },
-    option = function(sd)
+    option = function(sd, log)
         local s2 = sd and type(sd.games) == "table" and sd.games.spyro2 or nil
         local val = s2 and type(s2.options) == "table" and s2.options.moneybags_abilities
-        return (val == 1) or (val == "sanity")
+        return O.flag(val, "moneybags_abilities", log, "sanity")
     end,
     flag = "sanity",
     short = function(name) return name:match("^Spyro 2: ([%a]+) Ability$") end,

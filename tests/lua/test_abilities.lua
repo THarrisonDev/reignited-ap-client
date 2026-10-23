@@ -1,45 +1,27 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-26
--- Updated: 2026-10-11
+-- Updated: 2026-10-21
 
 -- Stub-based spec for client/ue4ss_mod/srt_bridge/Scripts/spyro2/abilities.lua.
 -- Fakes the gamestate's ability inventory UFunctions (add/remove/get player
 -- inventory item count for EIT types 30-33). ExecuteInGameThread only QUEUES
--- work; pump() runs it with the game-thread flag set, and every write asserts
+-- work; H.pump() runs it with the game-thread flag set, and every write asserts
 -- that flag (level_locks hardlock lesson).
 -- Run from the client repo root: lua tests/lua/test_abilities.lua
 
-local here = debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "./"
-package.path = here .. "../../ue4ss_mod/srt_bridge/Scripts/?.lua;" .. package.path
+package.path = (debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "./") .. "support/?.lua;" .. package.path
+local H = require("harness")
 
-local function fstring(s) return { ToString = function() return s end } end
+H.install_game_thread()
+local fstring = H.fstring
 
-local game_thread = false
-local queue = {}
-local function queue_fn(fn) queue[#queue + 1] = fn end
-ExecuteInGameThread = queue_fn
-local function pump()
-    local jobs = queue
-    queue = {}
-    for _, fn in ipairs(jobs) do
-        game_thread = true
-        fn()
-        game_thread = false
-    end
-end
-
-local now = 1000
-os.time = function() return now end
-
--- ---------------------------------------------------------------------------
--- fake gamestate: per-type owned flags (0/1/garbage), recorded calls
--- ---------------------------------------------------------------------------
+-- fake gamestate: an owned flag per EIT type (0/1/garbage), recorded calls
 local EIT_CLIMBING, EIT_HEADBASH, EIT_SWIMMING, EIT_SUPERFLAME = 30, 31, 32, 33
 local world = { abilities = {}, calls = {}, level = nil, nil_types = {} }
 local wrapped_readback = false
 
 local function record(fn, ...)
-    world.calls[#world.calls + 1] = { fn = fn, args = {...}, thread = game_thread }
+    world.calls[#world.calls + 1] = { fn = fn, args = {...}, thread = H.thread }
     return nil
 end
 
@@ -47,13 +29,13 @@ local level = "/LS201_SummerForest_Home/Maps/"
 local gs = setmetatable({}, { __index = function(_, k)
     if k == "current level" then return fstring(level) end
     if k == "add item to player inventory" then return function(eit, n)
-        assert(game_thread, "ability granted off the game thread")
+        assert(H.thread, "ability granted off the game thread")
         record("add", eit, n)
         assert(eit ~= EIT_SUPERFLAME, "grant for forbidden type 33")
         world.abilities[eit] = 1
     end end
     if k == "remove from player inventory" then return function(eit, n)
-        assert(game_thread, "ability revoked off the game thread")
+        assert(H.thread, "ability revoked off the game thread")
         record("remove", eit, n)
         assert(eit ~= EIT_SUPERFLAME, "revoke for forbidden type 33")
         if world.remove_fails then error("remove boom") end
@@ -92,10 +74,10 @@ local HEADBASH = "Spyro 2: Headbash Ability"
 -- ---------------------------------------------------------------------------
 -- harness
 -- ---------------------------------------------------------------------------
-local lines = {}
 local function fresh(keep_state)
+    H.new_fixture(REGIONS)
     package.loaded["spyro2.abilities"] = nil
-    queue = {}
+    H.clear_queue()
     if not keep_state then
         world.abilities = {}
         world.calls = {}
@@ -104,20 +86,14 @@ local function fresh(keep_state)
         wrapped_readback = false
     end
     local A = require("spyro2.abilities")
-    lines = {}
-    A.init({ log = function(l) lines[#lines + 1] = l end, regions = REGIONS })
+    H.clear_log()
+    A.init({ log = H.collect, regions = REGIONS })
     level = "/LS201_SummerForest_Home/Maps/"
     return A
 end
-local function ticks(A, n) for _ = 1, n do A.tick(gs); pump() end end
+local function ticks(A, n) for _ = 1, n do H.tick(A, gs); H.pump() end end
 local function settle(A) ticks(A, 12) end
-local function calls_of(fn)
-    local out = {}
-    for _, c in ipairs(world.calls) do
-        if c.fn == fn then out[#out + 1] = c end
-    end
-    return out
-end
+local function calls_of(fn) return H.calls_of(world.calls, fn) end
 local function wrote_superflame()
     for _, c in ipairs(world.calls) do
         if c.fn == "add" or c.fn == "remove" then
@@ -127,19 +103,7 @@ local function wrote_superflame()
     return false
 end
 
-local tests, failed = 0, 0
-local function test(name, fn)
-    tests = tests + 1
-    local ok, err = pcall(fn)
-    if ok then
-        print("PASS " .. name)
-    else
-        failed = failed + 1
-        print("FAIL " .. name .. ": " .. tostring(err))
-        for _, l in ipairs(lines) do print("    | " .. l) end
-    end
-    ExecuteInGameThread = queue_fn
-end
+local test = H.test
 
 test("vanilla mode never writes, even when owned and unreceived", function()
     local A = fresh()
@@ -173,14 +137,14 @@ test("vanilla purchase without the item is revoked; WARN logs once", function()
     assert(#calls_of("remove") == 1 and calls_of("remove")[1].args[1] == EIT_SWIMMING,
         "expected one remove(32, 1)")
     local warns = 0
-    for _, l in ipairs(lines) do
+    for _, l in ipairs(H.lines) do
         if l:find("WARN", 1, true) and l:find("Swim", 1, true) then warns = warns + 1 end
     end
     assert(warns == 1, "expected exactly 1 early-pay WARN, got " .. warns)
     settle(A)
     assert(#calls_of("remove") == 1, "revoked twice")
     warns = 0
-    for _, l in ipairs(lines) do
+    for _, l in ipairs(H.lines) do
         if l:find("WARN", 1, true) and l:find("Swim", 1, true) then warns = warns + 1 end
     end
     assert(warns == 1, "WARN logged again after the revoke")
@@ -193,20 +157,20 @@ test("a failed revoke is not retried this session; the item still lands", functi
     world.remove_fails = true
     settle(A)
     local errs = 0
-    for _, l in ipairs(lines) do
+    for _, l in ipairs(H.lines) do
         if l:find("ERROR revoke failed for " .. SWIM, 1, true) and l:find("won't retry this session", 1, true) then
             errs = errs + 1
         end
     end
     assert(errs == 1, "expected one revoke-failed ERROR, got " .. errs)
-    for _ = 1, 3 do now = now + 10; settle(A) end
+    for _ = 1, 3 do H.advance(10); settle(A) end
     assert(#calls_of("remove") == 1, "failed revoke resubmitted: " .. #calls_of("remove") .. " removes")
-    for _, l in ipairs(lines) do
+    for _, l in ipairs(H.lines) do
         assert(not l:find("write failed", 1, true), "failed revoke retried as a write: " .. l)
     end
     world.abilities[EIT_SWIMMING] = 0
     A.note_item(SWIM, 0)
-    now = now + 10
+    H.advance(10)
     settle(A)
     assert(world.abilities[EIT_SWIMMING] == 1, "received item blocked by the failed revoke")
 end)
@@ -299,5 +263,4 @@ test("status() is a string naming the abilities", function()
         and s:find("Headbash", 1, true), "got " .. s)
 end)
 
-print(string.format("%d/%d passed", tests - failed, tests))
-os.exit(failed == 0 and 0 or 1)
+H.finish()

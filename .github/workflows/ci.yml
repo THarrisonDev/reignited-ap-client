@@ -83,14 +83,29 @@ jobs:
           exit $fail
 
   audit:
-    name: generated locations up to date
+    name: client version handshake
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - name: locations.json + regions.lua match the data sources
-        run: python3 checkd/scripts/audit_locations.py
+      # locations.json/regions.lua drift needs the sibling world/ checkout and
+      # is audited by the parent repo CI; only the self-contained check runs here.
+      - name: mod <-> launcher client version match
+        run: python3 scripts/audit_client_version.py
+
+  generated:
+    name: fixtures + goldens match their generators
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install generator deps
+        run: pip install -r checkd/scripts/requirements.txt
+      - name: testdata fixtures are current
+        run: python3 checkd/scripts/gen_fixtures.py --check
+      - name: scan goldens are current
+        run: python3 checkd/scripts/gen_golden.py --check

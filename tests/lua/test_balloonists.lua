@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-26
--- Updated: 2026-10-11
+-- Updated: 2026-10-21
 
 -- Stub-based spec for client/ue4ss_mod/srt_bridge/Scripts/spyro1/balloonists.lua.
 -- Fakes the UE4SS surfaces the module touches (FindAllOf, Marco actors,
@@ -8,31 +8,15 @@
 -- (docs/game_state_control.md §9.5.1): each CNS1127_MarcoTheBalloonist_C has
 -- LevelPath (FString, spelling may differ from the level path), GoalType
 -- (EInventoryItemType number) and GoalValue (int); Marcos stream in late.
--- ExecuteInGameThread only QUEUES work; pump() runs it with the game-thread
+-- ExecuteInGameThread only QUEUES work; H.pump() runs it with the game-thread
 -- flag set. Every write asserts that flag.
 -- Run from the client repo root: lua tests/lua/test_balloonists.lua
 
-local here = debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "./"
-package.path = here .. "../../ue4ss_mod/srt_bridge/Scripts/?.lua;" .. package.path
+package.path = (debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "./") .. "support/?.lua;" .. package.path
+local H = require("harness")
 
-local function fstring(s) return { ToString = function() return s end } end
-
-local game_thread = false
-local queue = {}
-local function queue_fn(fn) queue[#queue + 1] = fn end
-ExecuteInGameThread = queue_fn
-local function pump()
-    local jobs = queue
-    queue = {}
-    for _, fn in ipairs(jobs) do
-        game_thread = true
-        fn()
-        game_thread = false
-    end
-end
-
-local now = 1000
-os.time = function() return now end
+H.install_game_thread()
+local fstring = H.fstring
 
 local EIT = { gems = 1, eggs = 15, dragons = 16 }
 
@@ -53,7 +37,7 @@ local function new_marco(level_path, goal_type, goal_value, unlocked)
             return v
         end,
         __newindex = function(_, k, v)
-            assert(game_thread, "property " .. k .. " written off the game thread")
+            assert(H.thread, "property " .. k .. " written off the game thread")
             if P.explode then error("marco boom") end
             assert(k == "GoalValue", "only GoalValue may be written, got " .. k)
             assert(math.type(v) == "integer", "GoalValue must be written as an integer")
@@ -65,17 +49,10 @@ local function new_marco(level_path, goal_type, goal_value, unlocked)
 end
 
 local world = { marcos = {} }
-function FindAllOf(cls)
-    if cls ~= "CNS1127_MarcoTheBalloonist_C" then return nil end
-    local out = {}
-    for _, P in ipairs(world.marcos) do out[#out + 1] = P.actor end
-    return out
-end
+H.find_all_of("CNS1127_MarcoTheBalloonist_C", function() return world.marcos end)
 
 local level = "/LS101_ArtisansHome/Maps/"
-local gs = setmetatable({}, { __index = function(_, k)
-    if k == "current level" then return fstring(level) end
-end })
+local gs = H.level_gs(function() return level end)
 
 local regions = {
     ["/LS101_ArtisansHome/Maps/"] = "Artisans",
@@ -101,42 +78,22 @@ local SD = sd_with(GATES)
 -- ---------------------------------------------------------------------------
 -- harness
 -- ---------------------------------------------------------------------------
-local lines = {}
 local function fresh()
+    H.new_fixture(regions)
     package.loaded["spyro1.balloonists"] = nil
-    queue = {}
+    H.clear_queue()
     local B = require("spyro1.balloonists")
-    lines = {}
-    B.init({ log = function(l) lines[#lines + 1] = l end, regions = regions })
+    H.clear_log()
+    B.init({ log = H.collect, regions = regions })
     level = "/LS101_ArtisansHome/Maps/"
     world.marcos = { new_marco("/LS107_PeacekeeperHome/Maps/", EIT.dragons, 10) }
     return B, world.marcos[1]
 end
-local function ticks(B, n) for _ = 1, n do B.tick(gs); pump() end end
+local function ticks(B, n) for _ = 1, n do H.tick(B, gs); H.pump() end end
 local function settle(B) ticks(B, 4) end
-local function logged(pat)
-    for _, l in ipairs(lines) do if l:find(pat) then return true end end
-    return false
-end
-local function count_logged(pat)
-    local n = 0
-    for _, l in ipairs(lines) do if l:find(pat) then n = n + 1 end end
-    return n
-end
+local logged, count_logged = H.logged, H.count_logged
 
-local tests, failed = 0, 0
-local function test(name, fn)
-    tests = tests + 1
-    local ok, err = pcall(fn)
-    if ok then
-        print("PASS " .. name)
-    else
-        failed = failed + 1
-        print("FAIL " .. name .. ": " .. tostring(err))
-        for _, l in ipairs(lines) do print("    | " .. l) end
-    end
-    ExecuteInGameThread = queue_fn
-end
+local test = H.test
 
 test("raises a gate below the seed's number and logs it", function()
     local B, pk = fresh()
@@ -174,7 +131,7 @@ test("equal gate is left alone (vanilla seed is a no-op)", function()
     local B, pk = fresh()
     B.configure(sd_with({ ["Peace Keepers"] = { type = "dragons", needed = 10 } }))
     settle(B)
-    assert(pk.writes == 0 and #queue == 0)
+    assert(pk.writes == 0 and H.queued() == 0)
 end)
 
 test("GoalType mismatch: no write, one WARN per actor", function()
@@ -226,9 +183,9 @@ test("several Marcos: one job per poll, all raised", function()
     world.marcos = { pk, mc }
     B.configure(SD)
     ticks(B, 2)
-    B.tick(gs)
-    assert(#queue == 1, "expected 1 queued job, got " .. #queue)
-    pump()
+    H.tick(B, gs)
+    assert(H.queued() == 1, "expected 1 queued job, got " .. H.queued())
+    H.pump()
     ticks(B, 1)
     assert(pk.props.GoalValue == 11 and mc.props.GoalValue == 1300)
     assert(B.status() == "enabled=true gates=3 raised_here=2", "got " .. B.status())
@@ -242,9 +199,9 @@ test("level change resets per-actor state and waits for the new level", function
     level = "/LS107_PeacekeeperHome/Maps/"
     local mc = new_marco("/LS113_MagicHome/Maps/", EIT.gems, 1200)
     world.marcos = { mc }
-    B.tick(gs)
+    H.tick(B, gs)
     assert(B.status():match("raised_here=0$"), "state not reset: " .. B.status())
-    assert(#queue == 0, "submitted on the level-change poll")
+    assert(H.queued() == 0, "submitted on the level-change poll")
     settle(B)
     assert(mc.props.GoalValue == 1300)
     assert(pk.writes == 1)
@@ -255,22 +212,22 @@ test("no writes outside homeworlds", function()
     level = "/LS102_StoneHill/Maps/"
     B.configure(SD)
     settle(B)
-    assert(pk.writes == 0 and #queue == 0)
+    assert(pk.writes == 0 and H.queued() == 0)
 end)
 
 test("nothing submitted while a job is in flight; abandoned after timeout", function()
     local B = fresh()
     B.configure(SD)
-    for _ = 1, 3 do B.tick(gs) end
-    assert(#queue == 1, "expected the raise job to be queued")
-    for _ = 1, 5 do B.tick(gs) end
-    assert(#queue == 1, "submitted while a job was in flight")
-    now = now + 4
-    B.tick(gs)
-    assert(#queue == 1, "still waiting inside the timeout")
-    now = now + 1
-    B.tick(gs)
-    assert(#queue == 2, "timed-out job should be abandoned and a new one submitted")
+    for _ = 1, 3 do H.tick(B, gs) end
+    assert(H.queued() == 1, "expected the raise job to be queued")
+    for _ = 1, 5 do H.tick(B, gs) end
+    assert(H.queued() == 1, "submitted while a job was in flight")
+    H.advance(4)
+    H.tick(B, gs)
+    assert(H.queued() == 1, "still waiting inside the timeout")
+    H.advance(1)
+    H.tick(B, gs)
+    assert(H.queued() == 2, "timed-out job should be abandoned and a new one submitted")
     assert(logged("never finished"), "abandoning a job should be logged")
 end)
 
@@ -281,14 +238,14 @@ test("a failing job backs off instead of resubmitting every tick", function()
     ticks(B, 20)
     assert(count_logged("ERROR raise Peace Keepers: ") == 1,
         "expected 1 ERROR inside the backoff, got " .. count_logged("ERROR raise Peace Keepers: "))
-    now = now + 4
+    H.advance(4)
     ticks(B, 4)
     assert(count_logged("ERROR raise Peace Keepers: ") == 1, "resubmitted inside the backoff")
-    now = now + 1
+    H.advance(1)
     ticks(B, 1)
     assert(count_logged("ERROR raise Peace Keepers: ") == 2, "expected one retry after the backoff")
     pk.explode = false
-    now = now + 5
+    H.advance(5)
     ticks(B, 1)
     assert(pk.props.GoalValue == 11, "raise never landed")
 end)
@@ -378,5 +335,4 @@ test("reconfigure replaces the gates", function()
     assert(B.status() == "enabled=true gates=1 raised_here=1", "got " .. B.status())
 end)
 
-print(string.format("%d/%d passed", tests - failed, tests))
-os.exit(failed == 0 and 0 or 1)
+H.finish()

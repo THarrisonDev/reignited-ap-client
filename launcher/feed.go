@@ -131,6 +131,13 @@ func (f *Feed) runOnce(ctx context.Context, cfg feedConn, conf func() feedConn) 
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	msgs, readErr := readMessages(ctx, c)
+	s := newAPSession(f, cfg, writeTo(ctx, c))
+	return s.serve(ctx, cfg, conf, msgs, readErr)
+}
+
+// readMessages streams the connection's frames and reports a read failure.
+func readMessages(ctx context.Context, c *websocket.Conn) (<-chan []byte, <-chan error) {
 	msgs := make(chan []byte)
 	readErr := make(chan error, 1)
 	go func() {
@@ -147,8 +154,12 @@ func (f *Feed) runOnce(ctx context.Context, cfg feedConn, conf func() feedConn) 
 			}
 		}
 	}()
+	return msgs, readErr
+}
 
-	s := newAPSession(f, cfg, func(cmds ...any) error {
+// writeTo sends encoded commands on the session's connection.
+func writeTo(ctx context.Context, c *websocket.Conn) func(cmds ...any) error {
+	return func(cmds ...any) error {
 		b, err := json.Marshal(cmds)
 		if err != nil {
 			return err
@@ -156,7 +167,13 @@ func (f *Feed) runOnce(ctx context.Context, cfg feedConn, conf func() feedConn) 
 		wctx, wcancel := context.WithTimeout(ctx, 10*time.Second)
 		defer wcancel()
 		return c.Write(wctx, websocket.MessageText, b)
-	})
+	}
+}
+
+// serve applies server messages until the connection drops, the settings
+// change, or ctx ends.
+func (s *apSession) serve(ctx context.Context, cfg feedConn, conf func() feedConn,
+	msgs <-chan []byte, readErr <-chan error) error {
 	tick := time.NewTicker(2 * time.Second)
 	defer tick.Stop()
 	for {
@@ -243,32 +260,39 @@ func (s *apSession) handle(b []byte) error {
 		return nil
 	}
 	for _, raw := range cmds {
-		var head struct {
-			Cmd string `json:"cmd"`
-		}
-		if json.Unmarshal(raw, &head) != nil {
-			continue
-		}
-		var err error
-		switch head.Cmd {
-		case "RoomInfo":
-			err = s.onRoomInfo(raw)
-		case "DataPackage":
-			s.onDataPackage(raw)
-		case "Connected":
-			s.onConnected(raw)
-		case "RoomUpdate":
-			s.onRoomUpdate(raw)
-		case "PrintJSON":
-			s.onPrintJSON(raw)
-		case "ConnectionRefused":
-			err = s.onRefused(raw)
-		}
-		if err != nil {
+		if err := s.dispatch(raw); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// dispatch applies one server command.
+func (s *apSession) dispatch(raw json.RawMessage) error {
+	switch cmdName(raw) {
+	case "RoomInfo":
+		return s.onRoomInfo(raw)
+	case "DataPackage":
+		s.onDataPackage(raw)
+	case "Connected":
+		s.onConnected(raw)
+	case "RoomUpdate":
+		s.onRoomUpdate(raw)
+	case "PrintJSON":
+		s.onPrintJSON(raw)
+	case "ConnectionRefused":
+		return s.onRefused(raw)
+	}
+	return nil
+}
+
+// cmdName is the command a raw server message names, empty when it names none.
+func cmdName(raw json.RawMessage) string {
+	var head struct {
+		Cmd string `json:"cmd"`
+	}
+	_ = json.Unmarshal(raw, &head)
+	return head.Cmd
 }
 
 func (s *apSession) onRoomInfo(raw json.RawMessage) error {

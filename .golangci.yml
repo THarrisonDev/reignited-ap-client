@@ -14,9 +14,21 @@ linters:
     - staticcheck   # the standard static analysis battery
     - ineffassign   # assignments that are never used
     - copyloopvar   # loop var copies that Go 1.22+ makes unnecessary
+    - unused        # package-level decls, fields and funcs nothing references
+    - unparam       # parameters that always receive the same value
+    - cyclop        # cyclomatic complexity per function (max 10)
     # Bug-prone patterns
     - nilerr        # returns nil after checking err != nil
     - exhaustive    # missing switch cases on typed enums
+  settings:
+    cyclop:
+      max-complexity: 10
+  exclusions:
+    rules:
+      # Table-driven test helpers take the case's game/kind up front even when
+      # one table only ever exercises a single value.
+      - path: _test\.go
+        linters: [unparam]
 
 issues:
   max-issues-per-linter: 0

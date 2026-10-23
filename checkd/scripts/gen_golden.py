@@ -42,6 +42,11 @@ DEFAULT_TESTDATA = os.path.join(CHECKD, "testdata")
 STEMS = ["snapshot1", "snapshot2", "snapshot3", "mid_s1",
          "mixed_s1_s2", "s1_events", "100pct_ref"]
 
+
+def load_doc():
+    with open(os.path.join(CHECKD, "locations.json")) as f:
+        return json.load(f)
+
 DRAGON = "EIT_Dragon"
 EGG = "EIT_Egg"
 ORB = "EIT_S2GreenOrb"
@@ -50,14 +55,9 @@ S3_EGGS = ("EIT_S3Egg", "EIT_S3BonusEgg")
 BOSS = "EIT_S2Boss"
 ABILITIES = {"EIT_Swimming": "Swim", "EIT_Climbing": "Climb", "EIT_HeadBash": "Headbash"}
 
-GEM_VALUES = {
-    "EIT_RedGem": 1, "EIT_GreenGem": 2, "EIT_BlueGem": 5,
-    "EIT_YellowGem": 10, "EIT_PurpleGem": 25,
-    "EIT_S2RedGem": 1, "EIT_S2GreenGem": 2, "EIT_S2PurpleGem": 5,
-    "EIT_S2YellowGem": 10, "EIT_S2MagentaGem": 25,
-    "EIT_S3RedGem": 1, "EIT_S3GreenGem": 2, "EIT_S3BlueGem": 5,
-    "EIT_S3GoldGem": 10, "EIT_S3PurpleGem": 25,
-}
+# Per-gem-type values come from the generated locations.json (which checkd also
+# embeds), so the Go scanner and this golden generator share one source.
+GEM_VALUES = {row["tag"]: row["value"] for row in load_doc()["gemValues"]}
 
 PORTAL_EXIT = "EIT_PortalExit"
 S1_BOSS = "EIT_S1Boss"
@@ -136,27 +136,6 @@ def item_params(item):
     body = struct_fields(item).get("itemParamList")
     sps = body.value.get("saveParams")
     return [(s.value["paramName"].value, s.value["paramValue"].value) for s in sps.values]
-
-
-def scan_dragons(entries, path_to_region):
-    out = {}
-    for entry in entries:
-        for level, objects, _ in entry_levels(entry):
-            region = path_to_region.get(level, "")
-            for items in objects.values():
-                for it in items:
-                    if item_type(it) != DRAGON or not region:
-                        continue
-                    params = item_params(it)
-                    name = params[0][0] if params else None
-                    if not name:
-                        continue
-                    key = (region, name)
-                    if key in out:
-                        out[key] = out[key] or item_collected(it)
-                    else:
-                        out[key] = item_collected(it)
-    return out
 
 
 def scan_eggs(entries, path_to_region):
@@ -297,7 +276,8 @@ def build_goldens(gvas, regions):
     s1, s2, s3 = regions["spyro1"], regions["spyro2"], regions["spyro3"]
     game2 = [entries[6 + slot] for slot in range(3)]
     docs = {
-        ".": {"dragons": [[r, n, c] for (r, n), c in sorted(scan_dragons(entries, s1).items())]},
+        ".": {"dragons": [[r, n, c] for (r, n), c in
+                          sorted(scan_named(entries, s1, (DRAGON,)).items())]},
         ".eggs.": {"eggs": [list(e) for e in scan_eggs(entries, s1)]},
         ".gems.": None,
         ".abilities.": {"abilities": sorted(scan_abilities(entries).items())},

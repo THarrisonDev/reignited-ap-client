@@ -1,33 +1,17 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-26
--- Updated: 2026-10-11
+-- Updated: 2026-10-21
 
 -- Spec for client/ue4ss_mod/srt_bridge/Scripts/checks_drop.lua: the checkd
 -- drop ingest + slot filter. Run from the client repo root:
 -- lua tests/lua/test_drop_filter.lua
 
-local here = debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "./"
-package.path = here .. "../../ue4ss_mod/srt_bridge/Scripts/?.lua;" .. package.path
+package.path = (debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "./") .. "support/?.lua;" .. package.path
+local H = require("harness")
 
 local DROP = require("checks_drop")
 
-local passed, total = 0, 0
-local function case(name, fn)
-    total = total + 1
-    local ok, err = pcall(fn)
-    if ok then
-        passed = passed + 1
-        print("PASS " .. name)
-    else
-        print("FAIL " .. name .. ": " .. tostring(err))
-    end
-end
-
-local function eq(got, want, what)
-    if got ~= want then
-        error(string.format("%s: got %s, want %s", what, tostring(got), tostring(want)), 2)
-    end
-end
+local case, eq = H.test, H.eq
 
 -- Test rig: a temp drop file per case; id_to_name = the slot's location set;
 -- sent_checks = the shared ever-sent table; a stub ap capturing sends.
@@ -133,23 +117,30 @@ end)
 
 case("failed send leaves the drop for retry", function()
     local slot = {[1001] = "x"}
-    local state = fresh(slot)
-    state.fail = true
-    -- a failing on_send: re-init with a failing send
+    local sent, sends = {}, {}
+    local accept = false
     DROP.init({
         connect_gate = function() return true end,
-        log = function(l) state.logs[#state.logs + 1] = l end,
-        on_send = function() return false end,
+        log = function() end,
+        on_send = function(ids)
+            if not accept then return false end
+            sends[#sends + 1] = ids
+            return true
+        end,
         id_to_name = slot,
-        sent_checks = {},
+        sent_checks = sent,
         check_path = tmpdir .. "/checks.json",
     })
     drop_file('{"seq":6,"checks":[1001],"names":[]}')
     DROP.tick()
+    eq(#sends, 0, "failing send recorded nothing")
     eq(file_exists(tmpdir .. "/checks.json"), true, "drop kept for retry")
+    accept = true
     DROP.tick()
-    -- still there; a succeeding retry consumes it
-    eq(file_exists(tmpdir .. "/checks.json"), true, "drop still kept")
+    eq(#sends, 1, "retry sent the pending id")
+    eq(sends[1][1], 1001, "the retried id")
+    eq(sent[1001], true, "sent_checks marked on success")
+    eq(file_exists(tmpdir .. "/checks.json"), false, "drop consumed on success")
 end)
 
 case("parse errors quarantine after 3 consecutive", function()
@@ -189,5 +180,4 @@ case("reset clears the stale-seq guard", function()
 end)
 
 os.execute('rm -rf "' .. tmpdir .. '"')
-print(string.format("%d/%d passed", passed, total))
-if passed ~= total then os.exit(1) end
+H.finish()

@@ -6,13 +6,10 @@ package main
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
 	"testing"
-	"time"
 )
 
 const eventsSave = "s1_events"
@@ -66,6 +63,23 @@ func TestSpyro1EventTable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	with := checkS1EventRegions(t, nameToID)
+	if with != 29 || len(spyro1Events) != 29 {
+		t.Fatalf("%d regions with events, %d addressable; want 29", with, len(spyro1Events))
+	}
+	checkS1RuleRegions(t)
+	if spyro1Events[spyro1LootRegion] != "Spyro 1: Gnasty's Loot Complete" {
+		t.Fatalf("Loot event = %q", spyro1Events[spyro1LootRegion])
+	}
+	if gemLabel(100) == "" {
+		t.Fatal("no 100% gem threshold label for the Loot rule")
+	}
+}
+
+// checkS1EventRegions checks every region's single event resolves and returns
+// how many regions carry one.
+func checkS1EventRegions(t *testing.T, nameToID map[string]int) int {
+	t.Helper()
 	with := 0
 	for region, r := range embeddedDoc.Games["spyro1"].Regions {
 		if len(r.Events) == 0 {
@@ -83,9 +97,12 @@ func TestSpyro1EventTable(t *testing.T) {
 			t.Fatalf("event %q id %d, nameToID %d", e.Location, e.ID, nameToID[e.Location])
 		}
 	}
-	if with != 29 || len(spyro1Events) != 29 {
-		t.Fatalf("%d regions with events, %d addressable; want 29", with, len(spyro1Events))
-	}
+	return with
+}
+
+// checkS1RuleRegions checks the completion rules name real event regions.
+func checkS1RuleRegions(t *testing.T) {
+	t.Helper()
 	regions := []string{spyro1GnastyRegion, spyro1LootRegion}
 	for r := range spyro1FlightRegions {
 		regions = append(regions, r)
@@ -94,12 +111,6 @@ func TestSpyro1EventTable(t *testing.T) {
 		if _, ok := spyro1Events[r]; !ok {
 			t.Fatalf("rule region %q has no event", r)
 		}
-	}
-	if spyro1Events[spyro1LootRegion] != "Spyro 1: Gnasty's Loot Complete" {
-		t.Fatalf("Loot event = %q", spyro1Events[spyro1LootRegion])
-	}
-	if gemLabel(100) == "" {
-		t.Fatal("no 100% gem threshold label for the Loot rule")
 	}
 }
 
@@ -155,14 +166,7 @@ func TestS1EventRules(t *testing.T) {
 // record.
 func TestScanS1EventsMatchesGolden(t *testing.T) {
 	for _, stem := range allFixtureStems {
-		want := map[int][]string{}
-		for _, row := range goldenRows(t, stem, ".events.golden.json", "events", 2) {
-			var regs []string
-			for _, r := range row[1].([]any) {
-				regs = append(regs, r.(string))
-			}
-			want[int(row[0].(float64))] = regs
-		}
+		want := eventsGolden(t, stem)
 		for slot := 0; slot < 3; slot++ {
 			got, stats := ScanS1Events(gameEntry(t, stem, slot))
 			if stats.Skipped != 0 {
@@ -182,6 +186,20 @@ func TestScanS1EventsMatchesGolden(t *testing.T) {
 	if stats.Markers != 7+1+17 || len(got) != 6 {
 		t.Fatalf("s1_events slot 0: %v, stats %+v", got, stats)
 	}
+}
+
+// eventsGolden is one fixture's slot -> fired regions golden.
+func eventsGolden(t *testing.T, stem string) map[int][]string {
+	t.Helper()
+	want := map[int][]string{}
+	for _, row := range goldenRows(t, stem, ".events.golden.json", "events", 2) {
+		var regs []string
+		for _, r := range row[1].([]any) {
+			regs = append(regs, r.(string))
+		}
+		want[int(row[0].(float64))] = regs
+	}
+	return want
 }
 
 // TestScanFlightSets: the flight rewards decode through the generalised
@@ -232,17 +250,7 @@ func TestScanPortalExitRegionFromKey(t *testing.T) {
 
 func eventsDaemon(t *testing.T, backfill bool, session string) *daemon {
 	t.Helper()
-	d := testDaemon(t, backfill)
-	d.saveDir = t.TempDir()
-	writeSession(t, d, session)
-	return d
-}
-
-func writeSave(t *testing.T, d *daemon, name, stem string) {
-	t.Helper()
-	if err := os.WriteFile(filepath.Join(d.saveDir, name), loadSave(t, stem), 0644); err != nil {
-		t.Fatal(err)
-	}
+	return testDaemonSession(t, backfill, session)
 }
 
 // TestDaemonEventsBackfill drives pollOnce on s1_events slot 0 with backfill:
@@ -265,7 +273,6 @@ func TestDaemonEventsBackfill(t *testing.T) {
 	}
 
 	// an unchanged-content rewrite drops nothing more
-	time.Sleep(20 * time.Millisecond)
 	writeSave(t, d, "FalconSave.98.sav", eventsSave)
 	d.pollOnce()
 	if d.drops != 1 {
@@ -285,7 +292,6 @@ func TestDaemonEventsFlip(t *testing.T) {
 	if d.drops != 0 {
 		t.Fatalf("no-backfill baseline dropped %d", d.drops)
 	}
-	time.Sleep(20 * time.Millisecond)
 	writeSave(t, d, "FalconSave.98.sav", eventsSave)
 	d.pollOnce()
 	expectDrop(t, readDrop(t, d), copyDrop(eventsSlot0Drop))

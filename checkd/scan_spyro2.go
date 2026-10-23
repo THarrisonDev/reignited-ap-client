@@ -23,36 +23,20 @@ func (d *daemon) scanSpyro2(path string, entry []byte) {
 			orbStats.Skipped, talStats.Skipped, abilityStats.Skipped, bossStats.Skipped, gemStats.Skipped, spStats.Skipped)
 		return
 	}
-	var fresh []checkKey
-	for _, named := range []struct {
-		kind    Kind
-		records []Dragon
-	}{{KindOrb, orbs}, {KindTalisman, talismans}, {KindBoss, bosses}, {KindAbility, abilities}} {
-		for _, r := range named.records {
-			if k, ok := d.ingestNamed(named.kind, r); ok {
-				fresh = append(fresh, k)
-			}
-		}
-	}
-	for region, value := range gems {
-		fresh = append(fresh, d.gemFlip(region, value)...)
-	}
+	fresh := d.ingestGroups([]namedGroup{
+		{KindOrb, orbs}, {KindTalisman, talismans}, {KindBoss, bosses}, {KindAbility, abilities},
+	})
+	fresh = append(fresh, d.gemFlips(gems)...)
 	fresh = append(fresh, d.spFlip(sps, 1)...)
 	if !d.baselineOn {
-		collected := 0
-		for _, a := range abilities {
-			if a.Collected {
-				collected++
-			}
-		}
-		bossCollected := 0
-		for _, b := range bosses {
-			if b.Collected {
-				bossCollected++
-			}
-		}
-		d.logf("baseline: %d orbs, %d talismans, %d abilities (%d collected), %d bosses (%d collected), gems across %d regions, skill points (%d earned)",
-			len(orbs), len(talismans), len(abilities), collected, len(bosses), bossCollected, len(gems), len(sps))
+		d.logBaselineS2(orbs, talismans, abilities, bosses, gems, sps)
 	}
 	d.finishBaseline(fresh)
+}
+
+// logBaselineS2 logs what the first Spyro 2 baseline saw.
+func (d *daemon) logBaselineS2(orbs, talismans, abilities, bosses []Dragon, gems map[string]int, sps []int) {
+	d.logf("baseline: %d orbs, %d talismans, %d abilities (%d collected), %d bosses (%d collected), gems across %d regions, skill points (%d earned)",
+		len(orbs), len(talismans), len(abilities), countCollected(abilities),
+		len(bosses), countCollected(bosses), len(gems), len(sps))
 }

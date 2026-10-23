@@ -12,13 +12,12 @@
 -- sd.games.spyro2.options.level_locks + sd.games.spyro2.level_keys.
 --
 -- API (main.lua): init{log, regions}, configure(slot_data), note_item(name),
--- tick(gamestate), status().
+-- tick(world), status().
 
 local core = require("level_locks_core")
+local C = require("constants")
 
-local HOMEWORLDS = {
-    ["Summer Forest"] = true, ["Autumn Plains"] = true, ["Winter Tundra"] = true,
-}
+local HOMEWORLDS = C.homeworlds.spyro2
 
 return core.new({
     game = "spyro2",

@@ -104,6 +104,7 @@
   <div id="feed" hx-get="/feed" hx-trigger="every 2s">{{template "feed" .Feed}}</div>
 
   <form id="cfg">
+    <input type="hidden" name="csrf" value="{{.Token}}">
     <h2>Connection</h2>
     <label>Server host</label>
     <input type="text" name="host" value="{{.Host}}" placeholder="archipelago.gg:38281">
@@ -136,7 +137,9 @@
       <button type="button" hx-post="/apply" hx-vals='{"action":"recheck"}'>Re-check setup</button>
     </div>
   </form>
-  <form id="reset" method="post" action="/reset"></form>
+  <form id="reset" method="post" action="/reset">
+    <input type="hidden" name="csrf" value="{{.Token}}">
+  </form>
 
   <h2>Setup check</h2>
   <div id="panel">{{template "panel" .}}</div>

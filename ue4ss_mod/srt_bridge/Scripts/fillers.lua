@@ -7,11 +7,12 @@
 
 local U = require("util")
 local logger = require("logger")
+local C = require("constants")
 
 local M = {}
 
 local PAWN_CLASS = "BP_CPS1999_Playable_C"
-local EIT_LIFE = 18
+local EIT_LIFE = C.eit.EIT_Life
 local STABLE_TICKS = 8      -- x 250ms poll: never write until the level has held 2s
 local JOB_TIMEOUT = 5       -- seconds before an unfinished job is abandoned (and failed-job backoff)
 local COLOR_DURATION = 30   -- seconds a color tint stays active before it reverts
@@ -42,8 +43,9 @@ local COLOR_GLOBAL = "code.color"
 
 local TRAP_NAME = "Damage Trap"
 
-local log = logger.tagged("[FILLERS]")
-local regions = {}          -- map path -> region (generated regions.lua)
+local TAG = "[FILLERS]"
+
+local log = logger.tagged(TAG)
 local dir = "C:/srtap_bridge/"
 local can_write = false     -- ExecuteInGameThread available
 local state_file = nil
@@ -57,7 +59,6 @@ local applied_pawn = nil    -- actor key of the pawn the look was last pushed to
                             -- a new pawn (level load) forces a re-apply even
                             -- though the cheat globals persist
 local revert_color = false  -- a color expired: push code.color back to 0 once
-local cur_path, stable_ticks = nil, 0
 local jobs = U.job_runner{log = function() return log end, timeout = JOB_TIMEOUT}
 local probed_pawn = nil
 
@@ -194,63 +195,74 @@ end
 -- FIRST and the color (if it should be visible) is re-asserted LAST. That is
 -- also why a color is re-applied whenever any mode changes, not only when the
 -- color itself changed.
---- Grant lives and apply the due look changes and traps on the game thread.
-local function run_job(gs, pawn, lives, traps, color_changed, turn_on, turn_off)
-    if lives > 0 then
-        gs["add item to player inventory"](EIT_LIFE, lives)
-        lives_granted = lives_granted + lives
-        save_granted()
-        log.info(string.format("granted %d extra %s (total %d)",
-            lives, lives == 1 and "life" or "lives", lives_granted))
-    end
-    if pawn == nil or not valid(pawn) then return end
-    -- Cheat globals are written too, not just the handler called: the game's
-    -- CheckCheat re-reads them on pawn setup, so the global carries the mode to
-    -- the next pawn (and gives reconcile a readable state to compare against).
-    local mode_changed = false
+--- Grant the due extra lives and log the new total.
+local function grant_lives(gs, lives)
+    if lives <= 0 then return end
+    gs["add item to player inventory"](EIT_LIFE, lives)
+    lives_granted = lives_granted + lives
+    save_granted()
+    log.info(string.format("granted %d extra %s (total %d)",
+        lives, lives == 1 and "life" or "lives", lives_granted))
+end
+
+--- Write the due mode transitions, returning whether any was written.
+--- The cheat globals are written too, not just the handler called: the game's
+--- CheckCheat re-reads them on pawn setup, so they carry the mode to the next
+--- pawn (and give reconcile a readable state to compare against).
+local function set_modes(gs, pawn, turn_on, turn_off)
+    local changed = false
     for _, fn in ipairs(turn_on) do
         gs:SetGlobalFloatValue(MODE_GLOBALS[fn], 1)
         pawn[fn](pawn, true)
         log.info(fn .. "(true)")
-        mode_changed = true
+        changed = true
     end
     for _, fn in ipairs(turn_off) do
         gs:SetGlobalFloatValue(MODE_GLOBALS[fn], 0)
         pawn[fn](pawn, false)
         log.info(fn .. "(false, expired)")
-        mode_changed = true
+        changed = true
     end
-    if not (color_changed or mode_changed) then
-        if traps > 0 and valid(pawn) then
-            for _ = 1, traps do apply_trap(pawn) end
-        end
-        return
-    end
+    return changed
+end
+
+--- Apply the wanted tint (or the revert), returning false when a retry is due.
+local function apply_color(gs, pawn, color_changed)
     if look.color == nil then
-        if color_changed then
-            gs:SetGlobalFloatValue(COLOR_GLOBAL, 0)
-            pawn:ICheatCodeSetSpyroTintColor()
-            log.info("color reverted to default (expired)")
-        end
-    else
-        local idx = nearest(read_tints(pawn), COLORS[look.color])
-        if idx == 0 then
-            log.warn(look.color .. " skipped: nearest CheatTints entry is 0 (no tint)")
-        elseif idx then
-            gs:SetGlobalFloatValue(COLOR_GLOBAL, idx)
-            pawn:ICheatCodeSetSpyroTintColor()
-            local back = read_global(gs, COLOR_GLOBAL)
-            if back == idx then
-                log.info(look.color .. " -> code.color " .. idx)
-            else
-                log.warn(look.color .. ": code.color write read back " ..
-                    tostring(back) .. " (expected " .. idx .. "), will retry")
-                return false
-            end
-        else
-            log.warn(look.color .. " skipped: CheatTints unreadable, will retry")
-            return false
-        end
+        if not color_changed then return true end
+        gs:SetGlobalFloatValue(COLOR_GLOBAL, 0)
+        pawn:ICheatCodeSetSpyroTintColor()
+        log.info("color reverted to default (expired)")
+        return true
+    end
+    local idx = nearest(read_tints(pawn), COLORS[look.color])
+    if idx == 0 then
+        log.warn(look.color .. " skipped: nearest CheatTints entry is 0 (no tint)")
+        return true
+    end
+    if not idx then
+        log.warn(look.color .. " skipped: CheatTints unreadable, will retry")
+        return false
+    end
+    gs:SetGlobalFloatValue(COLOR_GLOBAL, idx)
+    pawn:ICheatCodeSetSpyroTintColor()
+    local back = read_global(gs, COLOR_GLOBAL)
+    if back == idx then
+        log.info(look.color .. " -> code.color " .. idx)
+        return true
+    end
+    log.warn(look.color .. ": code.color write read back " ..
+        tostring(back) .. " (expected " .. idx .. "), will retry")
+    return false
+end
+
+--- Grant lives and apply the due look changes and traps on the game thread.
+local function run_job(gs, pawn, lives, traps, color_changed, turn_on, turn_off)
+    grant_lives(gs, lives)
+    if pawn == nil or not valid(pawn) then return end
+    local mode_changed = set_modes(gs, pawn, turn_on, turn_off)
+    if (color_changed or mode_changed) and not apply_color(gs, pawn, color_changed) then
+        return false
     end
     if traps > 0 and valid(pawn) then
         for _ = 1, traps do apply_trap(pawn) end
@@ -259,19 +271,21 @@ end
 
 --- Queue a look/trap job on the one-job game-thread runner.
 local function submit(gs, pawn, lives, traps, color_changed, turn_on, turn_off)
-    jobs.submit(function() return run_job(gs, pawn, lives, traps, color_changed, turn_on, turn_off) end)
+    local look_due = color_changed or #turn_on > 0 or #turn_off > 0
+    local target = (look_due or traps > 0) and pawn or nil
+    jobs.submit(function()
+        return run_job(gs, target, lives, traps, color_changed, turn_on, turn_off)
+    end)
 end
 
 -- ---------------------------------------------------------------------------
 -- API
 -- ---------------------------------------------------------------------------
---- Initialize the module from the host's opts {log, regions, dir}.
---- @param opts table|nil
+--- Initialize the module from the host's opts {log, dir}.
 function M.init(opts)
-    log = logger.leveled("[FILLERS]", opts and opts.log)
-    regions = (opts and opts.regions) or {}
+    log = logger.leveled(TAG, opts and opts.log)
     dir = (opts and opts.dir) or dir
-    can_write = type(ExecuteInGameThread) == "function"
+    can_write = U.can_write()
     if not can_write then
         log.error("ExecuteInGameThread unavailable — filler items disabled")
     end
@@ -290,14 +304,19 @@ function M.configure(sd)
     log.info(string.format("configured: lives_granted=%d (%s)", lives_granted, state_file))
 end
 
+--- Record an AP item index in seen, returning whether it was new.
+local function first_index(seen, index)
+    if index == nil then return true end
+    if seen[index] then return false end
+    seen[index] = true
+    return true
+end
+
 --- Record a received filler item by name, deduped by AP item index.
---- @param name string
 --- @param index number|nil AP item index used for dedup.
 function M.note_item(name, index)
     if name == "Extra Life" then
-        if index ~= nil and life_indices[index] then return end
-        if index ~= nil then life_indices[index] = true end
-        lives_received = lives_received + 1
+        if first_index(life_indices, index) then lives_received = lives_received + 1 end
     elseif COLORS[name] then
         -- a repeat grant restarts the clock rather than queueing a revert
         look.color = name
@@ -305,73 +324,85 @@ function M.note_item(name, index)
     elseif MODES[name] then
         -- a duplicate grant restarts the clock rather than stacking
         look.modes[MODES[name]] = os.time() + MODE_DURATION
-    elseif name == TRAP_NAME then
-        if index == nil or not trap_indices[index] then
-            if index ~= nil then trap_indices[index] = true end
-            traps_received = traps_received + 1
-        end
+    elseif name == TRAP_NAME and first_index(trap_indices, index) then
+        traps_received = traps_received + 1
     end
 end
 
---- Poll the gamestate, reconcile the desired look, and submit due work.
---- @param gs userdata Game state object.
-function M.tick(gs)
-    if not can_write then return end
-    local path = safe(function() return gs["current level"]:ToString() end, nil)
-    if path ~= cur_path then
-        cur_path, stable_ticks = path, 0
-        if traps_received == 0 then return end
-    end
-    if not (path and regions[path]) then return end
-    stable_ticks = stable_ticks + 1
-    -- traps bypass the settle gate (a hit wants to land now); lives/looks wait
-    if stable_ticks < STABLE_TICKS and traps_received == 0 then return end
-    if not jobs.ready() then return end
-
-    -- wall-clock: colors and modes expire even when nothing else is happening
-    local now = os.time()
+--- Expire the tint and modes whose wall-clock duration has run out.
+local function expire_look(now)
     if look.color_expire and now >= look.color_expire then
         look.color, look.color_expire, revert_color = nil, nil, true
     end
     for fn, expire in pairs(look.modes) do
         if now >= expire then look.modes[fn] = nil end
     end
+end
 
+--- Find the pawn, its actor key and whether it is one this module has not
+--- pushed a look to.
+local function find_pawn(gs)
     local pawn = safe(function() return FindFirstOf(PAWN_CLASS) end, nil)
     local key = valid(pawn) and actor_key(pawn) or nil
-    if key then probe(pawn, gs, key) else pawn = nil end
-    -- A new pawn spawns with a default material even though the cheat globals
-    -- carry over, so its look must be pushed once.
-    local new_pawn = key ~= nil and key ~= applied_pawn
+    if not key then return nil, nil, false end
+    probe(pawn, gs, key)
+    local new_pawn = key ~= applied_pawn
     if new_pawn then applied_pawn = key end
+    return pawn, key, new_pawn
+end
 
-    local lives = math.max(lives_received - lives_granted, 0)
-    local traps = traps_received
+--- Return whether the wanted look drifts from the cheat globals the game shows.
+local function look_differs(gs, pawn, key, new_pawn)
+    if key == nil then return false end
+    if revert_color then return true end
+    local want = look.color ~= nil or next(look.modes) ~= nil
+    return want and (new_pawn or color_index(pawn) ~= read_global(gs, COLOR_GLOBAL))
+end
 
-    -- Reconcile the desired look against the cheat globals the game shows.
-    -- color_index is nil only when the tint table is unreadable (retry).
-    local want_look = look.color ~= nil or next(look.modes) ~= nil
-    local color_changed = key ~= nil and
-        (revert_color or (want_look and (new_pawn or color_index(pawn) ~= read_global(gs, COLOR_GLOBAL))))
+--- Return the modes to turn on and off, given the wanted set.
+local function plan_modes(gs, new_pawn)
     local turn_on, turn_off = {}, {}
-    if key ~= nil then
-        for fn in pairs(look.modes) do
-            if new_pawn or read_global(gs, MODE_GLOBALS[fn]) ~= 1 then turn_on[#turn_on + 1] = fn end
-        end
-        -- clear any tracked cheat the game left on but we no longer want
-        for fn, glob in pairs(MODE_GLOBALS) do
-            if look.modes[fn] == nil and read_global(gs, glob) == 1 then
-                turn_off[#turn_off + 1] = fn
-            end
+    for fn in pairs(look.modes) do
+        if new_pawn or read_global(gs, MODE_GLOBALS[fn]) ~= 1 then turn_on[#turn_on + 1] = fn end
+    end
+    for fn, glob in pairs(MODE_GLOBALS) do
+        if look.modes[fn] == nil and read_global(gs, glob) == 1 then
+            turn_off[#turn_off + 1] = fn
         end
     end
+    return turn_on, turn_off
+end
 
+--- Return whether this poll may write: settled, playable and off cooldown.
+local function write_ready(world)
+    if not can_write or not world.ok or not world.playable then return false end
+    if world.changed and traps_received == 0 then return false end
+    return world.ticks >= STABLE_TICKS or traps_received > 0
+end
+
+--- Return whether this poll has work: a due look, lives or trapped hits.
+local function due_work(look_due, lives, traps, pawn)
+    if look_due then return true end
+    if lives <= 0 and traps == 0 then return false end
+    return traps == 0 or pawn ~= nil
+end
+
+--- Poll the world snapshot, reconcile the desired look, and submit due work.
+--- @param world table game_state snapshot.
+function M.tick(world)
+    if not write_ready(world) or not jobs.ready() then return end
+    expire_look(os.time())
+    local pawn, key, new_pawn = find_pawn(world.gs)
+    local color_changed = look_differs(world.gs, pawn, key, new_pawn)
+    local turn_on, turn_off = {}, {}
+    if key ~= nil then turn_on, turn_off = plan_modes(world.gs, new_pawn) end
+    local lives = math.max(lives_received - lives_granted, 0)
+    local traps = traps_received
     local look_due = color_changed or #turn_on > 0 or #turn_off > 0
-    if lives == 0 and traps == 0 and not look_due then return end
-    if traps > 0 and pawn == nil then return end   -- hold traps until a pawn exists (never dropped)
+    if not due_work(look_due, lives, traps, pawn) then return end
     traps_received = 0
     revert_color = false
-    submit(gs, (look_due or traps > 0) and pawn or nil, lives, traps, color_changed, turn_on, turn_off)
+    submit(world.gs, pawn, lives, traps, color_changed, turn_on, turn_off)
 end
 
 --- Return a one-line status summary of lives, look and traps.
@@ -384,5 +415,6 @@ function M.status()
         lives_granted, lives_received, look.color or "default",
         #modes > 0 and ("+" .. table.concat(modes, "+")) or "", traps_received)
 end
+M.tag = TAG
 
 return M

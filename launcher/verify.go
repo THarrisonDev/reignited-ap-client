@@ -5,7 +5,6 @@
 package main
 
 import (
-	"bufio"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,24 +32,15 @@ func dirExists(path string) bool {
 
 // modEnabled reports whether mods.txt has an uncommented `srt_bridge : 1` line.
 func modEnabled(modsTxt string) (enabled bool, found bool) {
-	f, err := os.Open(modsTxt)
-	if err != nil {
-		return false, false
-	}
-	defer func() { _ = f.Close() }()
-	sc := bufio.NewScanner(f)
-	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
-		if line == "" || strings.HasPrefix(line, ";") {
-			continue
-		}
+	err := scanLines(modsTxt, ';', func(line string) bool {
 		name, val, ok := strings.Cut(line, ":")
 		if !ok || strings.TrimSpace(name) != "srt_bridge" {
-			continue
+			return true
 		}
-		return strings.TrimSpace(val) == "1", true
-	}
-	return false, false
+		enabled, found = strings.TrimSpace(val) == "1", true
+		return false
+	})
+	return err == nil && enabled, found
 }
 
 // Verify runs the setup checks against the resolved paths and returns them in

@@ -131,30 +131,19 @@ func TestDaemonSpyro1SessionIgnoresOrbs(t *testing.T) {
 // game-2 entry and resolving only through spyro3Locations must keep their
 // checks out of the drop.
 func TestDaemonSpyro3Drop(t *testing.T) {
-	d := testDaemon(t, true)
-	d.saveDir = t.TempDir()
-	if err := os.WriteFile(filepath.Join(d.saveDir, "FalconSave.106.sav"), loadSave(t, ref100Save), 0644); err != nil {
-		t.Fatal(err)
-	}
-	writeSession(t, d, "slot=0\ngame=2\ntoken=s3full\n")
+	d := seedSave(t, true, "FalconSave.106.sav", ref100Save, "slot=0\ngame=2\ntoken=s3full\n")
 	d.pollOnce()
 	if d.drops != 1 {
 		t.Fatalf("baseline must drop once, drops=%d", d.drops)
 	}
 	drop := readDrop(t, d)
-	sent := map[string]bool{}
-	for _, n := range drop.Names {
-		sent[n] = true
-		if !strings.HasPrefix(n, "Spyro 3: ") {
-			t.Fatalf("Spyro 3 session dropped non-Spyro 3 check %q", n)
-		}
-	}
+	sent := gameNameSet(t, drop.Names, "Spyro 3")
 	// 150 collected named eggs + every gem-bearing level at 100% (4 thresholds)
 	// + the 20 earned skill points + the 3 obtained Sparx powers
 	if len(drop.Checks) != 150+29*4+20+3 {
 		t.Fatalf("backfill sent %d checks, want %d", len(drop.Checks), 150+29*4+20+3)
 	}
-	for _, n := range []string{
+	expectSent(t, sent,
 		"Spyro 3: Sunny Villa: Sanders",
 		"Spyro 3: Midnight Mountain: Al",
 		"Spyro 3: Super Bonus Round: YinYang",
@@ -165,19 +154,8 @@ func TestDaemonSpyro3Drop(t *testing.T) {
 		"Spyro 3: Crawdad Farm: Sparx Gem Collect Range (Power)",
 		"Spyro 3: Starfish Reef: Sparx Extra Hit Point (Power)",
 		"Spyro 3: Bugbot Factory: Sparx Chest Breaking (Power)",
-	} {
-		if !sent[n] {
-			t.Fatalf("egg location %q missing from the baseline drop %v", n, drop.Names)
-		}
-	}
-	for _, region := range []string{"Sunrise Spring", "Dino Mines", "Super Bonus Round"} {
-		for _, label := range []string{"25% Gems", "50% Gems", "75% Gems", "All Gems"} {
-			n := "Spyro 3: " + region + ": " + label
-			if !sent[n] {
-				t.Fatalf("gem location %q missing from the baseline drop %v", n, drop.Names)
-			}
-		}
-	}
+	)
+	requireGemChecks(t, sent, "Spyro 3", []string{"Sunrise Spring", "Dino Mines", "Super Bonus Round"})
 	// the 300000+1000*regionIndex+n ID scheme, pinned on the spot-checked regions
 	wantID := map[string]int{
 		"Spyro 3: Sunrise Spring: 25% Gems":    300000,
@@ -205,6 +183,19 @@ func TestDaemonSpyro3Drop(t *testing.T) {
 	}
 	t.Logf("100pct_ref Spyro 3 baseline: %d checks (150 eggs + 116 gem checks across 29 gem levels + 20 SPs + 3 sparx powers): OK",
 		len(drop.Checks))
+}
+
+// requireGemChecks asserts every gem threshold of the given regions was sent.
+func requireGemChecks(t *testing.T, sent map[string]bool, game string, regions []string) {
+	t.Helper()
+	for _, region := range regions {
+		for _, label := range []string{"25% Gems", "50% Gems", "75% Gems", "All Gems"} {
+			n := game + ": " + region + ": " + label
+			if !sent[n] {
+				t.Fatalf("gem location %q missing from the drop", n)
+			}
+		}
+	}
 }
 
 // TestDaemonSpyro3TransientSkip: a save with no Spyro 3 playthrough (the

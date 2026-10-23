@@ -6,7 +6,10 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/subtle"
 	_ "embed"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -22,6 +25,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 )
 
 //go:embed index.html
@@ -35,10 +39,12 @@ type server struct {
 	paths Paths
 	tmpl  *template.Template
 	feed  *Feed
+	token string // per-run CSRF token; see checkCSRF
 }
 
 type view struct {
 	Paths    Paths
+	Token    string
 	Host     string
 	Slot     string
 	Password string
@@ -47,6 +53,28 @@ type view struct {
 	Flash    string
 	Feed     feedView
 	Install  []installResult
+}
+
+// newToken returns a random per-run CSRF token. The launcher is a local web UI
+// that writes config and installs files, so a page the player visits must not
+// be able to drive it (a plain GET or a cross-site form post).
+func newToken() string {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		log.Fatalf("generate CSRF token: %v", err)
+	}
+	return hex.EncodeToString(b)
+}
+
+// checkCSRF reports whether the request carries this run's token, compared in
+// constant time. The token is a hidden field of both POST forms; the HTMX
+// buttons include #cfg, so their posts carry it too.
+func (s *server) checkCSRF(r *http.Request) bool {
+	got := r.FormValue("csrf")
+	if s.token == "" || got == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(got), []byte(s.token)) == 1
 }
 
 func (s *server) configPath() string {
@@ -84,6 +112,7 @@ func (s *server) buildView(flash string, install []installResult) view {
 	checks := Verify(s.paths)
 	return view{
 		Paths:    s.paths,
+		Token:    s.token,
 		Host:     conn.Host,
 		Slot:     slot,
 		Password: conn.Password,
@@ -111,13 +140,31 @@ func (s *server) handleRoot(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// requirePost refuses anything that is not a POST carrying a valid CSRF token,
+// answering the request itself when it does. A state-changing endpoint must
+// check this first: without it the query string alone could install or launch.
+func (s *server) requirePost(w http.ResponseWriter, r *http.Request) bool {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return false
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return false
+	}
+	if !s.checkCSRF(r) {
+		http.Error(w, "bad or missing token — reload the launcher page", http.StatusForbidden)
+		return false
+	}
+	return true
+}
+
 // handleReset re-detects folders and forgets any saved overrides. POST only;
 // any posted fields are ignored. It redirects to the full page so the path
 // fields re-render with the defaults.
 func (s *server) handleReset(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !s.requirePost(w, r) {
 		return
 	}
 	s.mu.Lock()
@@ -135,16 +182,13 @@ func (s *server) handleReset(w http.ResponseWriter, r *http.Request) {
 // edits (and optionally launches), then returns the "panel" fragment (flash +
 // refreshed setup checks) for HTMX to swap into #panel.
 func (s *server) handleApply(w http.ResponseWriter, r *http.Request) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad form", http.StatusBadRequest)
+	if !s.requirePost(w, r) {
 		return
 	}
 	action := r.FormValue("action")
 
 	// path overrides are the launcher's own state; persist so they survive.
+	s.mu.Lock()
 	if v := strings.TrimSpace(r.FormValue("config_dir")); v != "" {
 		s.paths.ConfigDir = v
 	}
@@ -152,6 +196,8 @@ func (s *server) handleApply(w http.ResponseWriter, r *http.Request) {
 		s.paths.GameWin64 = v
 	}
 	saveErr := savePaths(s.paths)
+	paths := s.paths
+	s.mu.Unlock()
 
 	var flash string
 	var install []installResult
@@ -159,7 +205,9 @@ func (s *server) handleApply(w http.ResponseWriter, r *http.Request) {
 	case "recheck":
 		flash = "Setup re-checked."
 	case "install":
-		install = Install(s.paths, sourceDir(), installOptions{})
+		// Install runs WITHOUT the lock: the UE4SS download takes minutes and
+		// the feed goroutine must keep answering the page while it does.
+		install = Install(paths, sourceDir(), installOptions{})
 		flash = summarizeInstall(install)
 	case "save", "launch":
 		flash = s.applyConnection(r, action == "launch")
@@ -170,7 +218,10 @@ func (s *server) handleApply(w http.ResponseWriter, r *http.Request) {
 		flash += " (couldn't remember folder overrides: " + saveErr.Error() + ")"
 	}
 
-	if err := s.tmpl.ExecuteTemplate(w, "panel", s.buildView(flash, install)); err != nil {
+	s.mu.Lock()
+	panel := s.buildView(flash, install)
+	s.mu.Unlock()
+	if err := s.tmpl.ExecuteTemplate(w, "panel", panel); err != nil {
 		log.Printf("panel execute: %v", err)
 	}
 }
@@ -255,7 +306,55 @@ func openURL(u string) error {
 	default:
 		cmd = exec.Command("xdg-open", u)
 	}
-	return cmd.Start()
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	// reap the child once it exits, or it stays a zombie for the launcher's life
+	go func() { _ = cmd.Wait() }()
+	return nil
+}
+
+// localOnly rejects requests whose Host is not loopback. The launcher listens
+// on 127.0.0.1 by default; without this, a page the player visits could reach
+// it by resolving a domain to 127.0.0.1 (DNS rebinding). A non-loopback -addr
+// disables the check, since then accepting remote hosts is the point.
+func localOnly(next http.Handler, enabled bool) http.Handler {
+	if !enabled {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackHost(r.Host) {
+			http.Error(w, "forbidden host", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// isLoopbackHost reports whether a request Host ("name" or "name:port") is loopback.
+func isLoopbackHost(hostport string) bool {
+	host := hostport
+	if h, _, err := net.SplitHostPort(hostport); err == nil {
+		host = h
+	}
+	return isLoopbackName(host)
+}
+
+// isLoopbackAddr reports whether a listen address binds loopback only.
+func isLoopbackAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	return isLoopbackName(host)
+}
+
+func isLoopbackName(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // launcherStateFile is where path overrides persist between runs. A variable
@@ -345,7 +444,7 @@ func main() {
 		log.Fatalf("parse template: %v", err)
 	}
 
-	s := &server{paths: loadPaths(), tmpl: tmpl, feed: NewFeed()}
+	s := &server{paths: loadPaths(), tmpl: tmpl, feed: NewFeed(), token: newToken()}
 	go s.feed.Run(context.Background(), s.currentConn)
 
 	ln, err := net.Listen("tcp", *addr)
@@ -361,11 +460,21 @@ func main() {
 	mux.HandleFunc("/htmx.min.js", s.handleHTMX)
 	mux.HandleFunc("/feed", s.handleFeed)
 
+	srv := &http.Server{
+		Handler:           localOnly(mux, isLoopbackAddr(*addr)),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		// An install holds the response open across the UE4SS download, so the
+		// write bound is generous rather than the default (none).
+		WriteTimeout: 5 * time.Minute,
+		IdleTimeout:  2 * time.Minute,
+	}
+
 	fmt.Printf("Spyro Reignited Launcher running at %s\n", uiURL)
 	if !*noBrowser {
 		if err := openURL(uiURL); err != nil {
 			fmt.Printf("(couldn't open a browser automatically: %v — open the URL above manually)\n", err)
 		}
 	}
-	log.Fatal(http.Serve(ln, mux))
+	log.Fatal(srv.Serve(ln))
 }

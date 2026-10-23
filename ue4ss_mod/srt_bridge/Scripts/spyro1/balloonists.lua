@@ -10,31 +10,30 @@
 -- Every write runs inside one ExecuteInGameThread job at a time; the async
 -- tick only reads and decides (U.job_runner).
 --
--- API (main.lua): init{log, regions}, configure(slot_data), tick(gamestate),
+-- API (main.lua): init{log, regions}, configure(slot_data), tick(world),
 -- status().
 
 local U = require("util")
 local logger = require("logger")
+local O = require("option")
+local C = require("constants")
 
 local M = {}
 
 local MARCO_CLASS = "CNS1127_MarcoTheBalloonist_C"
 local STABLE_TICKS = 2      -- x 250ms poll: a property write spawns nothing, so act fast
 local JOB_TIMEOUT = 5       -- seconds before an unfinished job is abandoned (and failed-job backoff)
-local GOAL_TYPES = {gems = 1, eggs = 15, dragons = 16}   -- EIT_Treasure, EIT_Egg, EIT_Dragon
-local HOMEWORLDS = {
-    ["Artisans"] = true, ["Peace Keepers"] = true, ["Magic Crafters"] = true,
-    ["Beast Makers"] = true, ["Dream Weavers"] = true, ["Gnorc Gnexus"] = true,
-}
+local GOAL_TYPES = {gems = C.eit.EIT_Treasure, eggs = C.eit.EIT_Egg, dragons = C.eit.EIT_Dragon}
+local HOMEWORLDS = C.homeworlds.spyro1
 
-local log = logger.tagged("[BALLOON]")
-local regions = {}          -- map path -> region (generated regions.lua)
+local TAG = "[BALLOON]"
+
+local log = logger.tagged(TAG)
 local code_to_region = {}   -- "LS107" -> "Peace Keepers"
 local can_write = false
 local enabled = false
 local gates = {}            -- destination region -> {type, needed, goal_type}
 local ngates = 0
-local cur_path, stable_ticks = nil, 0
 local marcos = {}           -- actor address -> {dest, raised, mismatch, bad}
 local jobs = U.job_runner{log = function() return log end, timeout = JOB_TIMEOUT}
 
@@ -93,62 +92,73 @@ local function plan_marco(m, key, dest, gate)
     return false
 end
 
---- Initialize the region/LS-code maps and write capability from opts {log, regions}.
+--- Initialize the code_to_region map and write capability from opts {log, regions}.
 function M.init(opts)
-    log = logger.leveled("[BALLOON]", opts and opts.log)
-    regions = (opts and opts.regions) or {}
-    code_to_region = {}
-    for path, region in pairs(regions) do
-        local code = path:match("^/(LS%d%d%d)_")
-        if code then code_to_region[code] = region end
-    end
-    can_write = type(ExecuteInGameThread) == "function"
+    log = logger.leveled(TAG, opts and opts.log)
+    code_to_region = U.region_codes(opts and opts.regions)
+    can_write = U.can_write()
     if not can_write then
         log.error("ExecuteInGameThread unavailable — balloonist gates stay vanilla")
     end
 end
 
---- Build the enabled gate set from slot_data's gate_requirements.
-function M.configure(sd)
-    local games = sd and type(sd.games) == "table" and sd.games or {}
-    local sg = type(games.spyro1) == "table" and games.spyro1 or {}
+--- Return req.needed as a whole number >= 0, or nil.
+local function gate_needed(req)
+    if type(req) ~= "table" or type(req.needed) ~= "number" then return nil end
+    local needed = math.tointeger(math.floor(req.needed))
+    if needed == nil or needed < 0 then return nil end
+    return needed
+end
+
+--- Return destination -> gate from slot data's gate_requirements, and the count.
+local function read_gates(sg)
     local reqs = type(sg.gate_requirements) == "table" and sg.gate_requirements or {}
-    gates, ngates = {}, 0
+    local out, count = {}, 0
     for dest, req in pairs(reqs) do
         local kind = type(req) == "table" and req.type
-        local needed = type(req) == "table" and type(req.needed) == "number"
-            and math.tointeger(math.floor(req.needed)) or nil
-        if type(dest) == "string" and GOAL_TYPES[kind] and needed and needed >= 0 then
-            gates[dest] = {type = kind, needed = needed, goal_type = GOAL_TYPES[kind]}
-            ngates = ngates + 1
+        local needed = gate_needed(req)
+        if type(dest) == "string" and GOAL_TYPES[kind] and needed then
+            out[dest] = {type = kind, needed = needed, goal_type = GOAL_TYPES[kind]}
+            count = count + 1
         end
     end
+    return out, count
+end
+
+--- Build the enabled gate set from slot_data's gate_requirements.
+function M.configure(sd)
+    gates, ngates = read_gates(O.game_data(sd, "spyro1"))
     enabled = can_write and ngates > 0
-    cur_path, stable_ticks, marcos = nil, 0, {}
+    marcos = {}
     log.info(string.format("configured: enabled=%s gates=%d", tostring(enabled), ngates))
 end
 
---- Poll the current homeworld's Marco actors and plan at most one gate raise.
-function M.tick(gs)
-    local path = U.safe(function() return gs["current level"]:ToString() end, nil)
-    if path ~= cur_path then
-        cur_path, stable_ticks, marcos = path, 0, {}
-        return
-    end
-    if not enabled then return end
-    local here = path and regions[path]
-    if not (here and HOMEWORLDS[here]) then return end
-    stable_ticks = stable_ticks + 1
-    if stable_ticks < STABLE_TICKS then return end
-    if not jobs.ready() then return end
-    for _, m in ipairs(U.safe(function() return FindAllOf(MARCO_CLASS) end, nil) or {}) do
-        local dest_path = U.valid(m) and U.fstr(m, "LevelPath") or nil
-        local code = dest_path and dest_path:match("^/(LS%d%d%d)_")
-        local dest = code and code_to_region[code]
-        local gate = dest and gates[dest]
-        local key = gate and U.actor_key(m)
+--- Return the dest, gate and actor key of a Marco that may need raising.
+local function marco_target(m)
+    local dest_path = U.valid(m) and U.fstr(m, "LevelPath") or nil
+    local code = dest_path and dest_path:match("^/(LS%d%d%d)_")
+    local dest = code and code_to_region[code]
+    local gate = dest and gates[dest]
+    return gate and U.actor_key(m), dest, gate
+end
+
+--- Plan at most one gate raise for the actors in this homeworld.
+local function poll_marcos()
+    local actors = U.safe(function() return FindAllOf(MARCO_CLASS) end, nil) or {}
+    for _, m in ipairs(actors) do
+        local key, dest, gate = marco_target(m)
         if key and plan_marco(m, key, dest, gate) then return end
     end
+end
+
+--- Poll the world snapshot: in a stable homeworld, plan at most one gate raise.
+--- @param world table game_state snapshot.
+function M.tick(world)
+    if not world.ok then return end
+    -- a world transition remakes every Marco actor
+    if world.changed then marcos = {} end
+    if not U.gate_ready(world, enabled, HOMEWORLDS, STABLE_TICKS, jobs) then return end
+    poll_marcos()
 end
 
 --- Return the heartbeat status line: enabled, gate count and raises here.
@@ -160,5 +170,6 @@ function M.status()
     end
     return string.format("enabled=%s gates=%d raised_here=%d", tostring(enabled), ngates, raised)
 end
+M.tag = TAG
 
 return M

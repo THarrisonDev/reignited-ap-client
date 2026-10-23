@@ -7,10 +7,14 @@ package main
 import (
 	"archive/zip"
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 )
 
@@ -59,31 +63,36 @@ func TestEnableMod(t *testing.T) {
 		{"no-trailing-newline", "other : 1", "other : 1\nsrt_bridge : 1", true},
 	}
 	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			p := filepath.Join(t.TempDir(), "mods.txt")
-			if c.content != "" {
-				if err := os.WriteFile(p, []byte(c.content), 0644); err != nil {
-					t.Fatal(err)
-				}
-			}
-			if err := enableMod(p); err != nil {
-				t.Fatal(err)
-			}
-			got, err := os.ReadFile(p)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if string(got) != c.want {
-				t.Fatalf("mods.txt = %q, want %q", got, c.want)
-			}
-			baks, _ := filepath.Glob(p + ".bak-*")
-			if c.wantBackup && len(baks) == 0 {
-				t.Error("expected a backup")
-			}
-			if !c.wantBackup && len(baks) != 0 {
-				t.Errorf("unexpected backup: %v", baks)
-			}
-		})
+		t.Run(c.name, func(t *testing.T) { checkEnableMod(t, c.content, c.want, c.wantBackup) })
+	}
+}
+
+// checkEnableMod runs one enableMod case and asserts the rewritten file and
+// whether a backup was taken.
+func checkEnableMod(t *testing.T, content, want string, wantBackup bool) {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "mods.txt")
+	if content != "" {
+		if err := os.WriteFile(p, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := enableMod(p); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != want {
+		t.Fatalf("mods.txt = %q, want %q", got, want)
+	}
+	baks, _ := filepath.Glob(p + ".bak-*")
+	if wantBackup && len(baks) == 0 {
+		t.Error("expected a backup")
+	}
+	if !wantBackup && len(baks) != 0 {
+		t.Errorf("unexpected backup: %v", baks)
 	}
 }
 
@@ -161,13 +170,8 @@ func TestParseLibraryFolders(t *testing.T) {
 }`
 	got := parseLibraryFolders([]byte(modern))
 	want := []string{"/home/u/.local/share/Steam", "/media/u/SteamLibrary"}
-	if len(got) != len(want) {
+	if !slices.Equal(got, want) {
 		t.Fatalf("got %v, want %v", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("got %v, want %v", got, want)
-		}
 	}
 
 	legacy := `"LibraryFolders"
@@ -176,13 +180,13 @@ func TestParseLibraryFolders(t *testing.T) {
 	"1"		"/mnt/games/SteamLibrary"
 }`
 	got = parseLibraryFolders([]byte(legacy))
-	if len(got) != 1 || got[0] != "/mnt/games/SteamLibrary" {
+	if !slices.Equal(got, []string{"/mnt/games/SteamLibrary"}) {
 		t.Fatalf("legacy: got %v", got)
 	}
 
 	escaped := `"path"		"D:\\SteamLibrary"`
 	got = parseLibraryFolders([]byte(escaped))
-	if len(got) != 1 || got[0] != `D:\SteamLibrary` {
+	if !slices.Equal(got, []string{`D:\SteamLibrary`}) {
 		t.Fatalf("escaped windows path: got %v", got)
 	}
 }
@@ -243,29 +247,74 @@ func TestInstallEndToEnd(t *testing.T) {
 
 func TestInstallDownloadsUE4SS(t *testing.T) {
 	payload := zipBytes(t, map[string]string{"dwmapi.dll": "a", "UE4SS.dll": "b"})
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/zip")
-		_, _ = w.Write(payload)
-	}))
-	defer srv.Close()
+	sum := sha256.Sum256(payload)
+	srv := servePayload(t, payload)
+	win64, res := installFrom(t, srv, installOptions{UE4SSSHA256: hex.EncodeToString(sum[:])})
 
-	root := t.TempDir()
-	win64 := filepath.Join(root, "win64")
-	res := Install(Paths{ConfigDir: filepath.Join(root, "bridge"), GameWin64: win64},
-		"", installOptions{UE4SSURL: srv.URL, HTTPClient: srv.Client()})
-
-	var ue4ss *installResult
-	for i := range res {
-		if res[i].Step == "UE4SS" {
-			ue4ss = &res[i]
-		}
-	}
-	if ue4ss == nil || !ue4ss.OK {
+	if step := stepOf(res, "UE4SS"); step == nil || !step.OK {
 		t.Fatalf("UE4SS step should succeed: %+v", res)
 	}
 	if !fileExists(filepath.Join(win64, "UE4SS.dll")) {
 		t.Fatal("UE4SS.dll was not extracted")
 	}
+}
+
+// TestInstallRejectsBadUE4SSHash: the archive drops a DLL the game loads, so a
+// body that does not match the pin must never reach extraction.
+func TestInstallRejectsBadUE4SSHash(t *testing.T) {
+	srv := servePayload(t, zipBytes(t, map[string]string{"dwmapi.dll": "a"}))
+	win64, res := installFrom(t, srv, installOptions{UE4SSSHA256: strings.Repeat("00", 32)})
+
+	if step := stepOf(res, "UE4SS"); step == nil || step.OK {
+		t.Fatalf("UE4SS must fail on a hash mismatch: %+v", res)
+	}
+	if fileExists(filepath.Join(win64, "dwmapi.dll")) {
+		t.Fatal("a bad-hash archive must not be extracted")
+	}
+}
+
+// TestInstallRejectsOversizeUE4SS: the download is size-capped before hashing.
+func TestInstallRejectsOversizeUE4SS(t *testing.T) {
+	payload := zipBytes(t, map[string]string{"dwmapi.dll": strings.Repeat("a", 128)})
+	sum := sha256.Sum256(payload)
+	srv := servePayload(t, payload)
+	_, res := installFrom(t, srv, installOptions{
+		UE4SSSHA256: hex.EncodeToString(sum[:]), UE4SSMaxBytes: 16})
+
+	if step := stepOf(res, "UE4SS"); step == nil || step.OK {
+		t.Fatalf("UE4SS must fail on an oversize download: %+v", res)
+	}
+}
+
+// servePayload serves payload over a test HTTP server for the installer.
+func servePayload(t *testing.T, payload []byte) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/zip")
+		_, _ = w.Write(payload)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// installFrom downloads UE4SS from srv into a fresh Win64 folder, returning
+// that folder and the install steps.
+func installFrom(t *testing.T, srv *httptest.Server, opts installOptions) (string, []installResult) {
+	t.Helper()
+	root := t.TempDir()
+	win64 := filepath.Join(root, "win64")
+	opts.UE4SSURL, opts.HTTPClient = srv.URL, srv.Client()
+	return win64, Install(Paths{ConfigDir: filepath.Join(root, "bridge"), GameWin64: win64}, "", opts)
+}
+
+// stepOf returns the named install step, or nil.
+func stepOf(res []installResult, name string) *installResult {
+	for i := range res {
+		if res[i].Step == name {
+			return &res[i]
+		}
+	}
+	return nil
 }
 
 func TestInstallMissingSourcesReported(t *testing.T) {

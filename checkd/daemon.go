@@ -29,6 +29,8 @@ type daemon struct {
 	sparxKnown   map[string]bool
 	lastPath     string
 	lastMtime    int64
+	layoutErrs   int    // consecutive polls whose save entry could not be read
+	noticeText   string // current player notice ("" = none)
 	baselineOn   bool
 	warnedNoSave bool // the missing-save WARN has fired for this session
 	lastSeq      int
@@ -161,18 +163,10 @@ func (d *daemon) newestSave() (string, int64, bool) {
 func (d *daemon) pollOnce() {
 	s, open := readSession(filepath.Join(d.dropDir, sessionName))
 	if !open {
-		if d.session != nil {
-			d.logf("session closed (back at the main menu): idle until a save is picked")
-			d.session = nil
-			d.resetScan()
-		}
+		d.closeSession()
 		return
 	}
-	if d.session == nil || *d.session != s {
-		d.logf("session open: save slot %d, game %d (save entry %d)", s.slot, s.game, entryIndex(s.slot, s.game))
-		d.session = &s
-		d.resetScan()
-	}
+	d.openSession(s)
 	// a failed drop write left keys pending: retry them this poll even when
 	// the save is unchanged, unless the scan below already sent a drop (which
 	// carries them)
@@ -182,7 +176,31 @@ func (d *daemon) pollOnce() {
 			d.sendDrop(nil)
 		}
 	}()
+	d.scanNewest(s)
+}
 
+// closeSession goes idle when the player returns to the main menu.
+func (d *daemon) closeSession() {
+	if d.session == nil {
+		return
+	}
+	d.logf("session closed (back at the main menu): idle until a save is picked")
+	d.session = nil
+	d.resetScan()
+}
+
+// openSession adopts the picked save, resetting the scan when it changes.
+func (d *daemon) openSession(s session) {
+	if d.session != nil && *d.session == s {
+		return
+	}
+	d.logf("session open: save slot %d, game %d (save entry %d)", s.slot, s.game, entryIndex(s.slot, s.game))
+	d.session = &s
+	d.resetScan()
+}
+
+// scanNewest scans the newest save once it has changed since the last poll.
+func (d *daemon) scanNewest(s session) {
 	path, mtime, ok := d.newestSave()
 	if !ok {
 		if !d.warnedNoSave {
@@ -195,22 +213,42 @@ func (d *daemon) pollOnce() {
 		return
 	}
 	d.lastPath, d.lastMtime = path, mtime
+	entry, data, ok := d.readSave(path, s)
+	if !ok {
+		return
+	}
+	d.scanGame(s, path, entry, data)
+}
+
+// readSave reads the newest save and returns the session's entry from it.
+func (d *daemon) readSave(path string, s session) (entry, data []byte, ok bool) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		d.logf("scan error: read %s: %v", path, err)
-		return
+		return nil, nil, false
 	}
 	if len(data) < 4 || string(data[:4]) != "GVAS" {
 		d.logf("scan error: %s is not GVAS (mid-write?), skipping", path)
-		return
+		return nil, nil, false
 	}
 	// only the picked save counts: another slot's playthrough sends nothing
 	idx := entryIndex(s.slot, s.game)
-	entry, ok := saveEntry(data, idx)
-	if !ok {
+	entry, found := saveEntry(data, idx)
+	if !found {
+		d.layoutErrs++
 		d.logf("scan error: %s has no save entry %d (unexpected layout), skipping", path, idx)
-		return
+		if d.layoutErrs >= noticeLayoutErrs {
+			d.setNotice(noticeSaveScanFailed)
+		}
+		return nil, nil, false
 	}
+	d.layoutErrs = 0
+	d.setNotice("")
+	return entry, data, true
+}
+
+// scanGame runs the session game's scan body over the save entry.
+func (d *daemon) scanGame(s session, path string, entry, data []byte) {
 	switch s.game {
 	case 0:
 		d.scanSpyro1(path, entry, len(data))
@@ -220,6 +258,46 @@ func (d *daemon) pollOnce() {
 		d.rawSave = data
 		d.scanSpyro3(path, entry)
 	}
+}
+
+// namedGroup is one family of named records to ingest under one check kind.
+type namedGroup struct {
+	kind    Kind
+	records []Dragon
+}
+
+// ingestGroups ingests each group's records in order and returns the fresh
+// keys.
+func (d *daemon) ingestGroups(groups []namedGroup) []checkKey {
+	var fresh []checkKey
+	for _, g := range groups {
+		for _, r := range g.records {
+			if k, ok := d.ingestNamed(g.kind, r); ok {
+				fresh = append(fresh, k)
+			}
+		}
+	}
+	return fresh
+}
+
+// gemFlips returns the thresholds every scanned region crossed.
+func (d *daemon) gemFlips(gems map[string]int) []checkKey {
+	var fresh []checkKey
+	for region, value := range gems {
+		fresh = append(fresh, d.gemFlip(region, value)...)
+	}
+	return fresh
+}
+
+// countCollected counts the collected records.
+func countCollected(records []Dragon) int {
+	n := 0
+	for _, r := range records {
+		if r.Collected {
+			n++
+		}
+	}
+	return n
 }
 
 // gemFlip compares a scanned gem value with the daemon's last known total for

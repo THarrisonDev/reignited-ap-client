@@ -27,7 +27,16 @@ func (d *daemon) scanSpyro1(path string, entry []byte, saveLen int) {
 			stats.Skipped, eggStats.Skipped, gemStats.Skipped, spStats.Skipped, evStats.Skipped)
 		return
 	}
+	fresh := d.s1Fresh(dragons, eggs, gems, sps, events)
+	if !d.baselineOn {
+		d.logBaselineS1(dragons, eggs, gems, sps)
+	}
+	d.finishBaseline(fresh)
+}
 
+// s1Fresh marks the scanned Spyro 1 records known and returns the checks the
+// slot has not sent or baselined yet.
+func (d *daemon) s1Fresh(dragons []Dragon, eggs []Egg, gems map[string]int, sps []int, events []string) []checkKey {
 	var fresh []checkKey
 	for _, dr := range dragons {
 		if k, ok := d.ingestNamed(KindDragon, dr); ok {
@@ -41,6 +50,18 @@ func (d *daemon) scanSpyro1(path string, entry []byte, saveLen int) {
 			fresh = append(fresh, k)
 		}
 	}
+	fresh = append(fresh, d.s1GemFlips(gems)...)
+	fresh = append(fresh, d.spFlip(sps, 0)...)
+	for _, region := range events {
+		fresh = append(fresh, d.eventFlip(region)...)
+	}
+	return fresh
+}
+
+// s1GemFlips fires the gem thresholds each region crossed. Gnasty's Loot has no
+// completion record: its event fires with the Loot's All Gems threshold.
+func (d *daemon) s1GemFlips(gems map[string]int) []checkKey {
+	var fresh []checkKey
 	allGems := gemLabel(100)
 	for region, value := range gems {
 		crossed := d.gemFlip(region, value)
@@ -54,28 +75,25 @@ func (d *daemon) scanSpyro1(path string, entry []byte, saveLen int) {
 			}
 		}
 	}
-	fresh = append(fresh, d.spFlip(sps, 0)...)
-	for _, region := range events {
-		fresh = append(fresh, d.eventFlip(region)...)
-	}
+	return fresh
+}
 
-	if !d.baselineOn {
-		dCollected, eCollected, completions := 0, 0, 0
-		for k, v := range d.known {
-			if !v {
-				continue
-			}
-			switch k.kind {
-			case KindEgg:
-				eCollected++
-			case KindDragon:
-				dCollected++
-			case KindEvent:
-				completions++
-			}
+// logBaselineS1 logs what the first Spyro 1 baseline saw.
+func (d *daemon) logBaselineS1(dragons []Dragon, eggs []Egg, gems map[string]int, sps []int) {
+	dCollected, eCollected, completions := 0, 0, 0
+	for k, v := range d.known {
+		if !v {
+			continue
 		}
-		d.logf("baseline: %d dragons (%d collected), %d eggs (%d collected), gems across %d regions, skill points (%d earned), %d completions",
-			len(dragons), dCollected, len(eggs), eCollected, len(gems), len(sps), completions)
+		switch k.kind { //nolint:exhaustive // only the kinds the baseline counts
+		case KindEgg:
+			eCollected++
+		case KindDragon:
+			dCollected++
+		case KindEvent:
+			completions++
+		}
 	}
-	d.finishBaseline(fresh)
+	d.logf("baseline: %d dragons (%d collected), %d eggs (%d collected), gems across %d regions, skill points (%d earned), %d completions",
+		len(dragons), dCollected, len(eggs), eCollected, len(gems), len(sps), completions)
 }

@@ -1,57 +1,39 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-26
--- Updated: 2026-10-11
+-- Updated: 2026-10-21
 
 -- Stub-based spec for client/ue4ss_mod/srt_bridge/Scripts/spyro3/sparx_powers.lua
 -- (and, through it, inventory_grants_core.lua). Fakes the gamestate's
 -- inventory UFunctions (add/remove/get player inventory item count for EIT
--- types 45-48). ExecuteInGameThread only QUEUES work; pump() runs it with the
+-- types 45-48). ExecuteInGameThread only QUEUES work; H.pump() runs it with the
 -- game-thread flag set, and every write asserts that flag (level_locks
 -- hardlock lesson). EIT_SparxPower_GemFinder (46) must never be touched.
 -- Run from the client repo root: lua tests/lua/test_sparx_powers.lua
 
-local here = debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "./"
-package.path = here .. "../../ue4ss_mod/srt_bridge/Scripts/?.lua;" .. package.path
+package.path = (debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "./") .. "support/?.lua;" .. package.path
+local H = require("harness")
 
-local function fstring(s) return { ToString = function() return s end } end
+H.install_game_thread()
+local fstring = H.fstring
 
-local game_thread = false
-local queue = {}
-local function queue_fn(fn) queue[#queue + 1] = fn end
-ExecuteInGameThread = queue_fn
-local function pump()
-    local jobs = queue
-    queue = {}
-    for _, fn in ipairs(jobs) do
-        game_thread = true
-        fn()
-        game_thread = false
-    end
-end
-
-local now = 1000
-os.time = function() return now end
-
--- ---------------------------------------------------------------------------
--- fake gamestate: per-type owned flags (0/1/garbage), recorded calls
--- ---------------------------------------------------------------------------
+-- fake gamestate: an owned flag per Sparx power type (0/1/garbage), calls
 local EIT_RANGE, EIT_FINDER, EIT_HP, EIT_CHESTS = 45, 46, 47, 48
 local world = { powers = {}, calls = {}, nil_types = {} }
 
 local function record(fn, ...)
-    world.calls[#world.calls + 1] = { fn = fn, args = {...}, thread = game_thread }
+    world.calls[#world.calls + 1] = { fn = fn, args = {...}, thread = H.thread }
 end
 
 local level = "/LS301_SunriseSpring_Home/Maps/"
 local gs = setmetatable({}, { __index = function(_, k)
     if k == "current level" then return fstring(level) end
     if k == "add item to player inventory" then return function(eit, n)
-        assert(game_thread, "power granted off the game thread")
+        assert(H.thread, "power granted off the game thread")
         record("add", eit, n)
         world.powers[eit] = 1
     end end
     if k == "remove from player inventory" then return function(eit, n)
-        assert(game_thread, "power revoked off the game thread")
+        assert(H.thread, "power revoked off the game thread")
         record("remove", eit, n)
         if world.remove_fails then error("remove boom") end
         world.powers[eit] = 0
@@ -83,28 +65,22 @@ local CHESTS = "Spyro 3: Sparx Chest Breaking"
 -- ---------------------------------------------------------------------------
 -- harness
 -- ---------------------------------------------------------------------------
-local lines = {}
 local function fresh()
+    H.new_fixture(REGIONS)
     package.loaded["spyro3.sparx_powers"] = nil
     package.loaded["inventory_grants_core"] = nil
-    queue = {}
+    H.clear_queue()
     world.powers, world.calls, world.nil_types = {}, {}, {}
     world.remove_fails = false
     local S = require("spyro3.sparx_powers")
-    lines = {}
-    S.init({ log = function(l) lines[#lines + 1] = l end, regions = REGIONS })
+    H.clear_log()
+    S.init({ log = H.collect, regions = REGIONS })
     level = "/LS301_SunriseSpring_Home/Maps/"
     return S
 end
-local function ticks(S, n) for _ = 1, n do S.tick(gs); pump() end end
+local function ticks(S, n) for _ = 1, n do H.tick(S, gs); H.pump() end end
 local function settle(S) ticks(S, 12) end
-local function calls_of(fn)
-    local out = {}
-    for _, c in ipairs(world.calls) do
-        if c.fn == fn then out[#out + 1] = c end
-    end
-    return out
-end
+local function calls_of(fn) return H.calls_of(world.calls, fn) end
 local function touched_finder()
     for _, c in ipairs(world.calls) do
         if c.args[1] == EIT_FINDER then return true end
@@ -113,7 +89,7 @@ local function touched_finder()
 end
 local function count_lines(...)
     local needles, n = {...}, 0
-    for _, l in ipairs(lines) do
+    for _, l in ipairs(H.lines) do
         local all = true
         for _, s in ipairs(needles) do
             if not l:find(s, 1, true) then all = false end
@@ -123,19 +99,7 @@ local function count_lines(...)
     return n
 end
 
-local tests, failed = 0, 0
-local function test(name, fn)
-    tests = tests + 1
-    local ok, err = pcall(fn)
-    if ok then
-        print("PASS " .. name)
-    else
-        failed = failed + 1
-        print("FAIL " .. name .. ": " .. tostring(err))
-        for _, l in ipairs(lines) do print("    | " .. l) end
-    end
-    ExecuteInGameThread = queue_fn
-end
+local test = H.test
 
 test("option off never calls the game, even when owned and unreceived", function()
     local S = fresh()
@@ -199,13 +163,13 @@ test("a failed revoke is not retried this session; configure re-arms it", functi
     assert(#calls_of("remove") == 1, "expected one revoke attempt, got " .. #calls_of("remove"))
     assert(count_lines("[SPARX] ERROR revoke failed for", CHESTS, "won't retry this session") == 1,
         "revoke failure not logged")
-    for _ = 1, 3 do now = now + 10; settle(S) end
+    for _ = 1, 3 do H.advance(10); settle(S) end
     level = "/LS302_SunnyVilla/Maps/"
     settle(S)
     assert(#calls_of("remove") == 1, "failed revoke resubmitted: " .. #calls_of("remove") .. " removes")
     assert(count_lines("[SPARX] ERROR") == 1, "ERROR repeated after the failed revoke")
     S.note_item(HP, 0)
-    now = now + 10
+    H.advance(10)
     settle(S)
     assert(world.powers[EIT_HP] == 1, "other items' grants must still land")
     world.remove_fails = false
@@ -317,5 +281,4 @@ test("status() format", function()
     assert(count_lines("[SPARX] configured: powers=true") == 1)
 end)
 
-print(string.format("%d/%d passed", tests - failed, tests))
-os.exit(failed == 0 and 0 or 1)
+H.finish()

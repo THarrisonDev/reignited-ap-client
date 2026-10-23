@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-26
--- Updated: 2026-10-11
+-- Updated: 2026-10-21
 
 -- Spec for client/ue4ss_mod/srt_bridge/Scripts/data_pkg.lua.
 -- Fakes process/resolve/log; exercises the connect-time backlog: items whose
@@ -8,10 +8,9 @@
 -- (index -> item_id) and are replayed exactly once by tick(true).
 -- Run from the client repo root: lua tests/lua/test_data_pkg.lua
 
-local here = debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "./"
-package.path = here .. "../../ue4ss_mod/srt_bridge/Scripts/?.lua;" .. package.path
+package.path = (debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "./") .. "support/?.lua;" .. package.path
+local H = require("harness")
 
-local lines = {}
 local applied = {}       -- {name=..., index=...} in process() call order
 local fail_on_index = nil
 local resolved = {}      -- item_id -> name
@@ -19,14 +18,14 @@ local resolve_calls = {}
 
 local function fresh()
     package.loaded["data_pkg"] = nil
-    lines = {}
+    H.clear_log()
     applied = {}
     fail_on_index = nil
     resolved = {}
     resolve_calls = {}
     local D = require("data_pkg")
     D.init({
-        log = function(l) lines[#lines + 1] = l end,
+        log = H.collect,
         process = function(name, index)
             if index == fail_on_index then error("boom for index " .. tostring(index)) end
             applied[#applied + 1] = { name = name, index = index }
@@ -39,18 +38,7 @@ local function fresh()
     return D
 end
 
-local tests, failed = 0, 0
-local function test(name, fn)
-    tests = tests + 1
-    local ok, err = pcall(fn)
-    if ok then
-        print("PASS " .. name)
-    else
-        failed = failed + 1
-        print("FAIL " .. name .. ": " .. tostring(err))
-        for _, l in ipairs(lines) do print("    | " .. l) end
-    end
-end
+local test = H.test
 
 test("usable names apply inline immediately and park nothing", function()
     local D = fresh()
@@ -110,7 +98,7 @@ test("tick(true) applies every parked item exactly once via resolve", function()
     D.tick(true)
     assert(#applied == 2, "second tick(true) re-applied")
     local said = false
-    for _, l in ipairs(lines) do
+    for _, l in ipairs(H.lines) do
         if l:find("backlog item", 1, true) then said = true end
     end
     assert(said, "no backlog-applied log line")
@@ -123,7 +111,7 @@ test("an item still unresolvable after the package is valid is dropped", functio
     D.tick(true)
     assert(#applied == 0, "unresolvable item was applied")
     assert(#resolve_calls == 1, "item was retried beyond its single resolve")
-    for _, l in ipairs(lines) do
+    for _, l in ipairs(H.lines) do
         assert(not l:find("ERROR", 1, true), "ERROR logged for a dropped item: " .. l)
     end
 end)
@@ -140,7 +128,7 @@ test("a throwing process logs ERROR; the remaining parked items still apply", fu
     assert(#applied == 1 and applied[1].index == 8,
         "remaining parked items did not apply after one failure")
     local errored = false
-    for _, l in ipairs(lines) do
+    for _, l in ipairs(H.lines) do
         if l:find("ERROR", 1, true) then errored = true end
     end
     assert(errored, "no ERROR logged for the failed apply")
@@ -179,5 +167,4 @@ test("duplicate parking of the same index overwrites (last item_id wins)", funct
         "parked item resolved to the wrong name")
 end)
 
-print(string.format("%d/%d passed", tests - failed, tests))
-os.exit(failed == 0 and 0 or 1)
+H.finish()

@@ -40,31 +40,42 @@ type Config struct {
 	order  []string // keys in first-seen order, for stable rewrite of extras
 }
 
-// ReadConfig parses config.txt. A missing file yields an empty Config (not an
-// error) — the launcher's whole job is to create it the first time.
-func ReadConfig(path string) (*Config, error) {
-	c := &Config{values: map[string]string{}}
+// scanLines calls fn for every non-blank, non-comment line of path, stopping
+// early when fn returns false. A line is a comment when it starts with comment.
+func scanLines(path string, comment byte, fn func(line string) bool) error {
 	f, err := os.Open(path)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return c, nil
-		}
-		return nil, err
+		return err
 	}
 	defer func() { _ = f.Close() }()
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
+		if line == "" || line[0] == comment {
 			continue
 		}
-		k, v, ok := strings.Cut(line, "=")
-		if !ok {
-			continue
+		if !fn(line) {
+			break
 		}
-		c.Set(strings.TrimSpace(k), strings.TrimSpace(v))
 	}
-	return c, sc.Err()
+	return sc.Err()
+}
+
+// ReadConfig parses config.txt. A missing file yields an empty Config (not an
+// error) — the launcher's whole job is to create it the first time.
+func ReadConfig(path string) (*Config, error) {
+	c := &Config{values: map[string]string{}}
+	err := scanLines(path, '#', func(line string) bool {
+		k, v, ok := strings.Cut(line, "=")
+		if ok {
+			c.Set(strings.TrimSpace(k), strings.TrimSpace(v))
+		}
+		return true
+	})
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	return c, nil
 }
 
 // Get returns the value for key, or def when absent.
@@ -75,8 +86,11 @@ func (c *Config) Get(key, def string) string {
 	return def
 }
 
-// Set assigns a key, remembering first-seen order for stable rewrites.
+// Set assigns a key, remembering first-seen order for stable rewrites. CR and
+// LF are stripped: config.txt is a line-based key=value file the mod parses, so
+// a value carrying a newline could inject extra keys.
 func (c *Config) Set(key, val string) {
+	val = strings.NewReplacer("\r", "", "\n", "").Replace(val)
 	if _, ok := c.values[key]; !ok {
 		c.order = append(c.order, key)
 	}

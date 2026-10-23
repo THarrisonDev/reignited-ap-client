@@ -9,20 +9,21 @@
 
 local U = require("util")
 local logger = require("logger")
+local C = require("constants")
+local O = require("option")
 
 local STABLE_TICKS = 2      -- Polls of 250ms: a property write spawns nothing, so act fast.
 local JOB_TIMEOUT = 5       -- Seconds before an unfinished job is abandoned (and failed-job backoff).
 
-local HOMEWORLDS = {
-    ["Sunrise Spring"] = true, ["Midday Gardens"] = true,
-    ["Evening Lake"] = true, ["Midnight Mountain"] = true,
-}
+local HOMEWORLDS = C.homeworlds.spyro3
 
 --- Build a fresh egg-gates module instance.
 local function new()
     local M = {}
 
-    local log = logger.tagged("[EGGS3]")
+    local TAG = "[EGGS3]"
+
+    local log = logger.tagged(TAG)
     local regions = {}          -- Map of path -> region (generated regions.lua).
     local target_to_region = {} -- TargetName (engine id, e.g. "LS304_MoltenCrater")
                                 -- -> region display name (e.g. "Molten Crater").
@@ -33,7 +34,6 @@ local function new()
     local vanilla = {}          -- Region -> vanilla EggRequirement (slot data).
     local nvanilla = 0
     local received = 0          -- Dragon Egg items received from the server.
-    local cur_path, stable_ticks = nil, 0
     local tuned = {}            -- Actor address -> {region, done, bad}.
     local jobs = U.job_runner{log = function() return log end, timeout = JOB_TIMEOUT}
 
@@ -130,38 +130,42 @@ local function new()
     --- Set the logger and regions, deriving TargetName -> region from the path
     --- keys, and probe for ExecuteInGameThread.
     function M.init(opts)
-        log = logger.leveled("[EGGS3]", opts and opts.log)
+        log = logger.leveled(TAG, opts and opts.log)
         regions = (opts and opts.regions) or {}
         target_to_region = {}
         for path, name in pairs(regions) do
             local target = path:match("^/(.-)/Maps/$")
             if target then target_to_region[target] = name end
         end
-        can_write = type(ExecuteInGameThread) == "function"
+        can_write = U.can_write()
         if not can_write then
             log.error("ExecuteInGameThread unavailable — egg gates stay vanilla")
         end
     end
 
-    --- Load per-region vanilla requirements and enable the module when
-    --- egg_shuffle is on.
-    function M.configure(sd)
-        local games = sd and type(sd.games) == "table" and sd.games or {}
-        local sg = type(games.spyro3) == "table" and games.spyro3 or {}
-        local opts = type(sg.options) == "table" and sg.options or {}
-        local gates = type(sg.egg_gates) == "table" and sg.egg_gates or {}
-        vanilla, nvanilla = {}, 0
-        for region, req in pairs(gates) do
-            if type(region) == "string" and type(req) == "number" and req > 0 then
-                vanilla[region] = math.tointeger(math.floor(req))
-                nvanilla = nvanilla + 1
-            end
+--- Return the region -> vanilla requirement map from slot data's egg_gates.
+local function read_gates(sg)
+    local raw = type(sg.egg_gates) == "table" and sg.egg_gates or {}
+    local gates, count = {}, 0
+    for region, req in pairs(raw) do
+        if type(region) == "string" and type(req) == "number" and req > 0 then
+            gates[region] = math.tointeger(math.floor(req))
+            count = count + 1
         end
-        enabled = can_write and (opts.egg_shuffle == 1 or opts.egg_shuffle == true) and nvanilla > 0
-        received = 0
-        log.info(string.format("configured: enabled=%s gates=%d (egg_shuffle=%s)",
-            tostring(enabled), nvanilla, tostring(opts.egg_shuffle)))
     end
+    return gates, count
+end
+
+--- Load per-region vanilla requirements and enable the module when
+--- egg_shuffle is on.
+function M.configure(sd)
+    local opts = O.game_options(sd, "spyro3")
+    vanilla, nvanilla = read_gates(O.game_data(sd, "spyro3"))
+    enabled = can_write and O.flag(opts.egg_shuffle, "egg_shuffle", log) and nvanilla > 0
+    received = 0
+    log.info(string.format("configured: enabled=%s gates=%d (egg_shuffle=%s)",
+        tostring(enabled), nvanilla, tostring(opts.egg_shuffle)))
+end
 
     --- Count a received Dragon Egg item.
     function M.note_item(name)
@@ -171,34 +175,37 @@ local function new()
         end
     end
 
-    --- Reset tuned state on level change, then submit one tune job for a
-    --- matching homeworld egg-gate controller.
-    function M.tick(gs)
-        local path = U.safe(function() return gs["current level"]:ToString() end, nil)
-        if path ~= cur_path then
-            cur_path, stable_ticks, tuned = path, 0, {}
-            return
+    --- Poll the world snapshot: in a stable homeworld, submit one tune job for
+    --- a matching egg-gate controller.
+    --- Return the actor key and region of a controller that gates a realm here.
+    local function controller_region(c)
+        if not U.valid(c) then return nil end
+        -- PortalControllers in a homeworld gate the realms, so match by
+        -- TargetName, never by streamed neighbours. TargetName is the engine id,
+        -- never the display name that slot_data's egg_gates is keyed by;
+        -- translate through target_to_region first.
+        local target = U.fstr(c, "TargetName")
+        local region = target and target_to_region[target]
+        if not region or not vanilla[region] then return nil end
+        return U.actor_key(c), region
+    end
+
+    --- Submit one tune job for a matching egg-gate controller.
+    local function poll_controllers()
+        local actors = U.safe(function() return FindAllOf("PortalController") end, nil) or {}
+        for _, c in ipairs(actors) do
+            local key, region = controller_region(c)
+            if key and plan_controller(c, key, region) then return end
         end
-        if not enabled then return end
-        local here = path and regions[path]
-        if not (here and HOMEWORLDS[here]) then return end
-        stable_ticks = stable_ticks + 1
-        if stable_ticks < STABLE_TICKS then return end
-        if not jobs.ready() then return end
-        for _, c in ipairs(U.safe(function() return FindAllOf("PortalController") end, nil) or {}) do
-            if U.valid(c) then
-                local key = U.actor_key(c)
-                -- PortalControllers in a homeworld gate the realms, so match
-                -- by TargetName, never by streamed neighbours. TargetName is
-                -- the engine id, never the display name that slot_data's
-                -- egg_gates is keyed by; translate through target_to_region
-                -- first.
-                local target = U.fstr(c, "TargetName")
-                local region = target and target_to_region[target]
-                region = region and vanilla[region] and region or nil
-                if region and plan_controller(c, key, region) then return end
-            end
-        end
+    end
+
+    --- @param world table game_state snapshot.
+    function M.tick(world)
+        if not world.ok then return end
+        -- a world transition remakes every gate controller
+        if world.changed then tuned = {} end
+        if not U.gate_ready(world, enabled, HOMEWORLDS, STABLE_TICKS, jobs) then return end
+        poll_controllers()
     end
 
     --- Return one heartbeat line of counts.
@@ -213,6 +220,7 @@ local function new()
             tostring(enabled), nvanilla, received, done, bad)
     end
 
+    M.tag = TAG
     return M
 end
 

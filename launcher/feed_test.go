@@ -164,6 +164,32 @@ func TestFeedURLs(t *testing.T) {
 
 // End to end over a real websocket: dial, TextOnly handshake, an ItemSend.
 func TestFeedRunAgainstServer(t *testing.T) {
+	srv := feedServer(t)
+	f := NewFeed()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	host := "ws://" + strings.TrimPrefix(srv.URL, "http://")
+	go func() {
+		f.Run(ctx, func() feedConn { return feedConn{Host: host, Slot: "SRTPlayer"} })
+		close(done)
+	}()
+
+	v := waitForEvent(t, f)
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not stop after cancel")
+	}
+	if !v.Connected || len(v.Events) != 1 || v.Events[0].Other != "SpeedyLink" {
+		t.Fatalf("feed after run: %+v", v)
+	}
+}
+
+// feedServer serves the handshake, data package, Connected and one ItemSend,
+// then holds the connection open until the test ends.
+func feedServer(t *testing.T) *httptest.Server {
+	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c, err := websocket.Accept(w, r, nil)
 		if err != nil {
@@ -185,31 +211,18 @@ func TestFeedRunAgainstServer(t *testing.T) {
 			}
 		}
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
+	return srv
+}
 
-	f := NewFeed()
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	host := "ws://" + strings.TrimPrefix(srv.URL, "http://")
-	go func() {
-		f.Run(ctx, func() feedConn { return feedConn{Host: host, Slot: "SRTPlayer"} })
-		close(done)
-	}()
-
+// waitForEvent blocks until the feed lists an event and returns that view.
+func waitForEvent(t *testing.T, f *Feed) feedView {
+	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for len(f.View().Events) == 0 && time.Now().Before(deadline) {
 		time.Sleep(20 * time.Millisecond)
 	}
-	v := f.View()
-	cancel()
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("Run did not stop after cancel")
-	}
-	if !v.Connected || len(v.Events) != 1 || v.Events[0].Other != "SpeedyLink" {
-		t.Fatalf("feed after run: %+v", v)
-	}
+	return f.View()
 }
 
 func TestFeedFragmentEscapesNames(t *testing.T) {

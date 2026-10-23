@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-27
--- Updated: 2026-10-11
+-- Updated: 2026-10-21
 
 -- Spec for client/ue4ss_mod/srt_bridge/Scripts/spyro3/egg_gates.lua, using
 -- fakes for the UE4SS surfaces the module touches. Covers the
@@ -8,25 +8,10 @@
 -- and received-item bookkeeping.
 -- Run from the client repo root: lua tests/lua/test_egg_gates.lua
 
-local here = debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "./"
-package.path = here .. "../../ue4ss_mod/srt_bridge/Scripts/?.lua;" .. package.path
+package.path = (debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "./") .. "support/?.lua;" .. package.path
+local H = require("harness")
 
-local game_thread = false
-local queue = {}
-local function queue_fn(fn) queue[#queue + 1] = fn end
-ExecuteInGameThread = queue_fn
-local function pump()
-    local jobs = queue
-    queue = {}
-    for _, fn in ipairs(jobs) do
-        game_thread = true
-        fn()
-        game_thread = false
-    end
-end
-
-local now = 1000
-os.time = function() return now end
+H.install_game_thread()
 
 -- ---------------------------------------------------------------------------
 -- fake PortalControllers
@@ -47,14 +32,13 @@ local function new_controller(target, egg_req, gem_req, opts)
     if not opts.no_actions then
         actions = { IsValid = function() return true end }
     end
-    P.actor = setmetatable({}, {
+    P.actor = { IsValid = function() return true end, GetAddress = function() return P.addr end }
+    setmetatable(P.actor, {
         __index = function(_, k)
-            if k == "IsValid" then return function() return true end end
-            if k == "GetAddress" then return function() return P.addr end end
             if k == "QuestActions" then return actions end
             if k == "Open" then
                 return function(_, given_actions)
-                    assert(game_thread, "Open() called off the game thread")
+                    assert(H.thread, "Open() called off the game thread")
                     assert(given_actions == actions, "Open() called with the wrong QuestActions")
                     if opts.open_fails then error("Open() blew up") end
                     P.opens = P.opens + 1
@@ -65,7 +49,7 @@ local function new_controller(target, egg_req, gem_req, opts)
             return v
         end,
         __newindex = function(_, k, v)
-            assert(game_thread, "property " .. k .. " written off the game thread")
+            assert(H.thread, "property " .. k .. " written off the game thread")
             assert(k == "EggRequirement", "only EggRequirement may be written, got " .. k)
             assert(math.type(v) == "integer", "EggRequirement must be written as an integer")
             P.writes = P.writes + 1
@@ -76,17 +60,10 @@ local function new_controller(target, egg_req, gem_req, opts)
 end
 
 local world = { controllers = {} }
-function FindAllOf(cls)
-    if cls ~= "PortalController" then return nil end
-    local out = {}
-    for _, P in ipairs(world.controllers) do out[#out + 1] = P.actor end
-    return out
-end
+H.find_all_of("PortalController", function() return world.controllers end)
 
 local level = "/LS301_SunriseSpring_Home/Maps/"
-local gs = setmetatable({}, { __index = function(_, k)
-    if k == "current level" then return { ToString = function() return level end } end
-end })
+local gs = H.level_gs(function() return level end)
 
 local regions = {
     ["/LS301_SunriseSpring_Home/Maps/"] = "Sunrise Spring",
@@ -111,42 +88,36 @@ local SD_OFF = {
 -- ---------------------------------------------------------------------------
 -- harness
 -- ---------------------------------------------------------------------------
-local lines = {}
 local function fresh()
+    H.new_fixture(regions)
     package.loaded["spyro3.egg_gates"] = nil
-    queue = {}
+    H.clear_queue()
     local E = require("spyro3.egg_gates")
-    lines = {}
-    E.init({ log = function(l) lines[#lines + 1] = l end, regions = regions })
+    H.clear_log()
+    E.init({ log = H.collect, regions = regions })
     level = "/LS301_SunriseSpring_Home/Maps/"
     world.controllers = { new_controller("LS304_MoltenCrater", 10) }
     return E, world.controllers[1]
 end
-local function ticks(E, n) for _ = 1, n do E.tick(gs); pump() end end
+local function ticks(E, n) for _ = 1, n do H.tick(E, gs); H.pump() end end
 local function settle(E) ticks(E, 3) end
-local function logged(pat)
-    for _, l in ipairs(lines) do if l:find(pat) then return true end end
-    return false
-end
-local function count_logged(pat)
-    local n = 0
-    for _, l in ipairs(lines) do if l:find(pat) then n = n + 1 end end
-    return n
+
+--- Settle a controller built with opts after ten eggs have been received.
+--- @param opts table new_controller options.
+--- @return table The controller.
+local function ten_eggs_with(opts)
+    local E = fresh()
+    local c = new_controller("LS304_MoltenCrater", 10, nil, opts)
+    world.controllers = { c }
+    E.configure(SD)
+    for _ = 1, 10 do E.note_item("Spyro 3: Dragon Egg") end
+    settle(E)
+    return c
 end
 
-local tests, failed = 0, 0
-local function test(name, fn)
-    tests = tests + 1
-    local ok, err = pcall(fn)
-    if ok then
-        print("PASS " .. name)
-    else
-        failed = failed + 1
-        print("FAIL " .. name .. ": " .. tostring(err))
-        for _, l in ipairs(lines) do print("    | " .. l) end
-    end
-    ExecuteInGameThread = queue_fn
-end
+local logged, count_logged = H.logged, H.count_logged
+
+local test = H.test
 
 test("tunes a vanilla requirement down by received items", function()
     local E, c = fresh()
@@ -170,24 +141,14 @@ test("requirement at or below received is zeroed (portal opens outright)", funct
 end)
 
 test("QuestActions invalid at 0: WARN, no forced open, write still lands", function()
-    local E = fresh()
-    local c = new_controller("LS304_MoltenCrater", 10, nil, { no_actions = true })
-    world.controllers = { c }
-    E.configure(SD)
-    for _ = 1, 10 do E.note_item("Spyro 3: Dragon Egg") end
-    settle(E)
+    local c = ten_eggs_with({ no_actions = true })
     assert(c.props.EggRequirement == 0, "the requirement write must still land")
     assert(c.opens == 0, "no Open() call without a valid QuestActions")
     assert(logged("QuestActions unreadable"), "missing-actions case not logged")
 end)
 
 test("Open() call throwing is Lua-caught: WARN, no crash, write stands", function()
-    local E = fresh()
-    local c = new_controller("LS304_MoltenCrater", 10, nil, { open_fails = true })
-    world.controllers = { c }
-    E.configure(SD)
-    for _ = 1, 10 do E.note_item("Spyro 3: Dragon Egg") end
-    settle(E)
+    local c = ten_eggs_with({ open_fails = true })
     assert(c.props.EggRequirement == 0, "the requirement write must still land")
     assert(c.opens == 0, "opens must not increment when Open() throws")
     assert(logged("Open%(%) call failed"), "failed-open case not logged")
@@ -262,8 +223,8 @@ test("level change resets per-actor state and re-tunes fresh actors", function()
     level = "/LS310_MiddayGardens_Home/Maps/"
     local c2 = new_controller("LS304_MoltenCrater", 10)
     world.controllers = { c2 }
-    E.tick(gs)
-    assert(#queue == 0, "submitted on the level-change poll")
+    H.tick(E, gs)
+    assert(H.queued() == 0, "submitted on the level-change poll")
     settle(E)
     assert(c2.props.EggRequirement == 9, "fresh actor not re-tuned")
     assert(c2.writes == 1, "fresh actor tuned more than once")
@@ -277,9 +238,9 @@ test("several controllers: one job per poll, all tuned", function()
     E.configure(SD)
     for _ = 1, 3 do E.note_item("Spyro 3: Dragon Egg") end
     ticks(E, 3)
-    E.tick(gs)
-    assert(#queue == 1, "expected 1 queued job, got " .. #queue)
-    pump()
+    H.tick(E, gs)
+    assert(H.queued() == 1, "expected 1 queued job, got " .. H.queued())
+    H.pump()
     ticks(E, 2)
     assert(c.props.EggRequirement == 7 and c2.props.EggRequirement == 11)
     assert(E.status() == "enabled=true gates=2 received=3 tuned_here=2 bad=0",
@@ -307,10 +268,10 @@ test("EggRequirement going unreadable between plan and job: WARN, no write", fun
     assert(bad.props.EggRequirement == 9, "precondition: tuned to 9")
     -- A second egg arrives, so the next settled poll submits a job for 8.
     E.note_item("Spyro 3: Dragon Egg")
-    E.tick(gs)
-    assert(#queue == 1, "job not submitted")
+    H.tick(E, gs)
+    assert(H.queued() == 1, "job not submitted")
     bad.props.EggRequirement = nil -- the actor dies mid-flight
-    pump()
+    H.pump()
     assert(bad.props.EggRequirement == nil, "the mid-flight job must not write")
     assert(bad.writes == 1, "expected only the settle's tune write")
     assert(count_logged("WARN EggRequirement unreadable") == 1,
@@ -323,5 +284,4 @@ test("configure line reports enabled and gate count", function()
     assert(logged("^%[EGGS3%] configured: enabled=true gates=2 %(egg_shuffle=1%)$"))
 end)
 
-print(string.format("\n%d/%d passed", tests - failed, tests))
-os.exit(failed == 0 and 0 or 1)
+H.finish()

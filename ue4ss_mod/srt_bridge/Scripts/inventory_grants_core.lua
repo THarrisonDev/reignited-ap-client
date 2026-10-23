@@ -18,7 +18,7 @@ local JOB_TIMEOUT = 5       -- seconds before an unfinished job is abandoned (an
 --- @return table
 local function new(cfg)
     -- cfg: {tag = "[ABILITIES]", items = {name = eit},
-    --        option = function(slot_data) -> bool, flag = "sanity" (status/log),
+    --        option = function(slot_data, log) -> bool, flag = "sanity" (status/log),
     --        short = function(name) -> status short name,
     --        disabled = "ability items disabled" (no game-thread API),
     --        revoked = "... neutralized" (revoke log reason),
@@ -30,18 +30,14 @@ local function new(cfg)
     local ITEMS = cfg.items
 
     local log = logger.tagged(TAG)
-    local regions = {}          -- map path -> region (generated regions.lua)
     local can_write = false     -- ExecuteInGameThread available
     local enabled = false       -- slot data says the items are shuffled
     local received = {}         -- AP item index -> true (this module's items, this session)
     local has_received = {}     -- item name -> true (ever received this session)
-    local applied = {}          -- item name -> last target successfully written
     local warned = {}           -- item name -> early-grant WARN already logged
     local revoke_failed = {}    -- item name -> remove-from-inventory failed: no revoke retry this session
-    local cur_path, stable_ticks = nil, 0
     local jobs = U.job_runner{log = function() return log end, timeout = JOB_TIMEOUT}
 
-    local safe = U.safe
     local num = U.prop
 
     --- Return the owned flag target (1 owned, 0 not) for name.
@@ -87,7 +83,6 @@ local function new(cfg)
             end
             return "failed"
         end
-        applied[name] = target
         local why = target == 1 and "received" or cfg.revoked
         log.info(string.format("%s: %d -> %d (%s)", name, cur, target, why))
         return "ok"
@@ -108,12 +103,10 @@ local function new(cfg)
         jobs.submit(function() return run_job(gs) end)
     end
 
-    --- Wire the injected logger and region map, and detect the game-thread
-    --- write API.
+    --- Wire the injected logger and detect the game-thread write API.
     function M.init(opts)
         log = logger.leveled(TAG, opts and opts.log)
-        regions = (opts and opts.regions) or {}
-        can_write = type(ExecuteInGameThread) == "function"
+        can_write = U.can_write()
         if not can_write then
             log.error("ExecuteInGameThread unavailable — " .. cfg.disabled)
         end
@@ -121,9 +114,8 @@ local function new(cfg)
 
     --- Read this game's option from slot data and reset per-session state.
     function M.configure(sd)
-        enabled = cfg.option(sd) and true or false
-        received, has_received, applied, warned, revoke_failed = {}, {}, {}, {}, {}
-        cur_path, stable_ticks = nil, 0
+        enabled = cfg.option(sd, log) and true or false
+        received, has_received, warned, revoke_failed = {}, {}, {}, {}
         log.info(string.format("configured: %s=%s", cfg.flag, tostring(enabled)))
     end
 
@@ -136,44 +128,49 @@ local function new(cfg)
         log.debug(string.format("%s received (index %s)", name, tostring(index)))
     end
 
-    --- Poll gs: once the level is known and stable, decide which items drift
-    --- from their target and submit a reconcile job (with a one-shot early
-    --- WARN per item).
-    function M.tick(gs)
-        if not can_write or not enabled then return end
-        local path = safe(function() return gs["current level"]:ToString() end, nil)
-        if path ~= cur_path then
-            cur_path, stable_ticks, applied = path, 0, {}
-            return
-        end
-        if not (path and regions[path]) then return end
-        stable_ticks = stable_ticks + 1
-        if stable_ticks < STABLE_TICKS then return end
-        if not jobs.ready() then return end
-
-        -- async-side decide: what is owned vs what should be?
+    --- Poll the world snapshot: once the level is known and stable, decide
+    --- which items drift from their target and submit a reconcile job (with a
+    --- one-shot early WARN per item).
+    --- @param world table game_state snapshot.
+    --- Read one item's count and decide whether it needs a write.
+    --- @return boolean, string|nil mismatch, name of the first early grant
+    local function poll_item(name, eit, gs)
+        -- A fresh out table per item: UE4SS out-param marshalling can return
+        -- without writing, and a shared table would then hand this item the
+        -- previous item's count — a wrong grant/revoke decision.
         local out = {}
+        local okR = pcall(function() gs["get player inventory item count"](eit, false, out) end)
+        if not okR then return false, nil end
+        local cur = num(out, "item count")
+        if cur ~= 0 and cur ~= 1 then return false, nil end
+        local target = drive(name, cur)
+        if target == nil then return false, nil end
+        if cur == 1 and target == 0 and not warned[name] then
+            warned[name] = true
+            return true, name
+        end
+        return true, nil
+    end
+
+    --- Poll every item; returns whether a write is needed and any early grant.
+    local function poll_items(gs)
         local mismatch, early = false, nil
         for name, eit in pairs(ITEMS) do
-            local okR = pcall(function() gs["get player inventory item count"](eit, false, out) end)
-            if okR then
-                local cur = num(out, "item count")
-                if cur == 0 or cur == 1 then
-                    local target = drive(name, cur)
-                    if target ~= nil then
-                        mismatch = true
-                        if cur == 1 and target == 0 and not warned[name] then
-                            warned[name] = true
-                            early = name
-                        end
-                    end
-                end
-            end
+            local bad, warn = poll_item(name, eit, gs)
+            mismatch = mismatch or bad
+            early = early or warn
         end
-        if early then
-            log.warn(early .. cfg.early)
-        end
-        if mismatch then submit(gs) end
+        return mismatch, early
+    end
+
+    function M.tick(world)
+        if not can_write or not enabled or not world.ok then return end
+        if not world.playable then return end
+        if world.ticks < STABLE_TICKS then return end
+        if not jobs.ready() then return end
+        local mismatch, early = poll_items(world.gs)
+        if early then log.warn(early .. cfg.early) end
+        if mismatch then submit(world.gs) end
     end
 
     --- Return a one-line heartbeat summary of received items and the option.
@@ -187,6 +184,7 @@ local function new(cfg)
         return table.concat(parts, " ") .. " " .. cfg.flag .. "=" .. tostring(enabled)
     end
 
+    M.tag = TAG
     return M
 end
 

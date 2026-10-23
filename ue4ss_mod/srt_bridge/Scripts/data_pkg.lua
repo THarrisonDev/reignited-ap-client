@@ -11,7 +11,9 @@ local logger = require("logger")
 
 local M = {}
 
-local log = logger.tagged("[DATAPKG]")
+local TAG = "[DATAPKG]"
+
+local log = logger.tagged(TAG)
 local process = function() end
 local resolve = function() return nil end
 local pending = {}   -- AP item index -> item id (parked until the package is valid)
@@ -24,7 +26,7 @@ end
 
 --- Install the injected log/process/resolve callbacks and clear parked state.
 function M.init(opts)
-    log = logger.leveled("[DATAPKG]", opts and opts.log)
+    log = logger.leveled(TAG, opts and opts.log)
     process = (opts and opts.process) or process
     resolve = (opts and opts.resolve) or resolve
     pending = {}
@@ -70,5 +72,6 @@ function M.tick(is_valid)
         log.info(string.format("data package loaded: applied %d backlog item(s)", applied))
     end
 end
+M.tag = TAG
 
 return M

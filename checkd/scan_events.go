@@ -49,12 +49,7 @@ const (
 func scanCollectedRegions(data []byte, keys []levelKey, marker string, stats *ScanStats) map[string]bool {
 	var set recordSet
 	scanRecords(data, findMarkers(data, marker), stats, &set, func(m, end int) (Dragon, bool) {
-		d, ok := abilityOne(data, m, end)
-		if !ok {
-			return d, false
-		}
-		d.Region = regionFor(keys, m, levelPathToRegion)
-		return d, d.Region != ""
+		return regionOfRecord(data, keys, m, end, levelPathToRegion)
 	})
 	out := map[string]bool{}
 	for _, d := range set.out {
@@ -108,16 +103,7 @@ func s1EventRegions(exits, bosses map[string]bool, flights map[string]map[int]bo
 		fired[spyro1GnastyRegion] = true
 	}
 	for r, sets := range flights {
-		if !spyro1FlightRegions[r] {
-			continue
-		}
-		n := 0
-		for v := range sets {
-			if v != flightAllInOne {
-				n++
-			}
-		}
-		if n >= flightSetsNeeded {
+		if spyro1FlightRegions[r] && flightDone(sets) {
 			fired[r] = true
 		}
 	}
@@ -127,6 +113,18 @@ func s1EventRegions(exits, bosses map[string]bool, flights map[string]map[int]bo
 	}
 	sort.Strings(out)
 	return out
+}
+
+// flightDone reports whether a flight's collected target sets cover enough
+// distinct sets other than the all-in-one record.
+func flightDone(sets map[int]bool) bool {
+	n := 0
+	for v := range sets {
+		if v != flightAllInOne {
+			n++
+		}
+	}
+	return n >= flightSetsNeeded
 }
 
 // ScanS1Events extracts the Spyro 1 regions whose "<Level> Complete" /

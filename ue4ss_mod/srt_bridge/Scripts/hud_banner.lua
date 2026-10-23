@@ -1,81 +1,95 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-29
--- Updated: 2026-10-11
+-- Updated: 2026-10-18
 
--- hud_banner.lua: shows each received item on the game's fanfare banner at
--- the bottom of the screen.
+-- hud_banner.lua: show received items, sent checks and checkd notices on the
+-- game's dragon fanfare banner, one fanfare per burst.
 --
--- The fanfare widget is the only banner we can put custom text on, so we fire
--- a normal dragon fanfare and overwrite its message text right after. See
--- docs/fanfare_text.md.
+-- Fire the game's fanfare, freeze the Intro so the window stays up, then swap
+-- the message text line by line; release with the Outro once the queue drains.
+-- The measured recipe, freeze points and failure modes are in
+-- docs/fanfare_text.md ("Burst mode"). The `message text` property is the lever
+-- (Base is bound to it) and the only trustworthy readback — Base:GetText() reads
+-- back empty while a window is held.
 --
--- init{log, display}   display is how long each banner stays up (default 3s)
--- note_item(name)      queue a received item to show
--- note_sent(text)      queue an outgoing-send line to show
--- tick()               called by the host poll loop
--- status()             counters for the heartbeat log
+-- Received items are aggregated: the queue is drained into one line per distinct
+-- item, so a batch of 32 Dragon Eggs is "Received 32 Dragon Egg" once instead of
+-- 32 banners. Sent checks are always individual lines, in order, one per check.
+-- The window's length follows that line count (one line per ~1s), and a burst
+-- longer than one window's budget spills into the next burst.
+--
+-- init{log}          wire up logging
+-- note_item(name)    queue a received item
+-- note_sent(text)    queue an outgoing-send line
+-- note_system(text)  queue a checkd notice; preempts the other queues
+-- tick()             drive the burst (host poll loop, ~250ms)
+-- status()           counters for the heartbeat log
 
 local M = {}
 
 local logger = require("logger")
 local U = require("util")
 
-local log = logger.tagged("[BANNER]")
+local TAG = "[BANNER]"
+local log = logger.tagged(TAG)
 local jobs = U.job_runner({
   log = function()
     return log
   end,
 })
 
-local queue = {} -- received item names waiting to show
-local sent_queue = {} -- outgoing-send lines waiting to show
-local queued, shown, failed = 0, 0, 0 -- running totals
-local sent_queued, sent_shown = 0, 0 -- outgoing-send totals
-local display = 3 -- seconds each banner stays up
-local last_shown = 0 -- when the current banner went up
-local epoch = 0 -- show counter, used to drop stale redos
-local show_seq = 0 -- bumped per show(); stale async waits abort on a mismatch
-local pending = false -- true while a show() is waiting for an idle widget
+-- Queues in priority order: system notices preempt items, items outrank sends.
+local Q = { system = {}, item = {}, sent = {} }
+local ORDER = { "system", "item", "sent" }
+local counters = { queued = 0, shown = 0, failed = 0, sent_queued = 0, sent_shown = 0 }
 
-local EFFT_DRAGON = 1
-local kt_lib, cached_hud = nil, nil -- cached KismetTextLibrary and HUD
-local IDLE_RETRY_MS = 100 -- poll interval while waiting for an idle widget
-local MAX_IDLE_RETRIES = 20 -- ~2s; give up and drop the banner past this
+local EFFT_DRAGON, DRAGON = 1, "Nestor" -- stand-in fanfare; the text is ours
+local TICK_S = 0.25 -- host poll interval; the module paces itself against it
+local WRITE_MS = 100 -- first line lands after the fire (proven)
+local FREEZE_MS = 300 -- Intro freeze: 300-450ms holds the window, 580ms is too late
+local LINE_TICKS = 4 -- poll ticks a line stays up (~1s each)
+local BURST_MAX_TICKS = 60 -- longest one window is held (~15s); the rest of the
+-- queue continues in the next burst, so a long replay is slower, never lossy
+local GAP_TICKS = 2 -- quiet ticks between bursts
+local OPENING_TICKS = 8 -- abandon a burst whose timers never landed (~2s)
+
+local STATE_IDLE, STATE_OPENING, STATE_OPEN = "idle", "opening", "open"
+local state = STATE_IDLE
+local batch = {} -- this burst's lines: {text, kind, raw, count}
+local batch_i = 0 -- index of the line on screen (0 = none yet)
+local current = nil -- batch[batch_i]
+local written = 0 -- lines written in this burst
+local burst_ticks = 0 -- ticks this window has been open
+local dwell = 0 -- ticks the current line has been up
+local opening = 0 -- ticks spent waiting for the freeze timer
+local wait_ticks = 0 -- ticks left before the next burst may open
+local gen = 0 -- bumped per burst and per reset; stale timers drop out
+
+local kt_lib, hud -- cached handles, re-fetched when they go invalid
 
 --- Return the cached KismetTextLibrary used to convert our strings to FText.
---- @return userdata|nil
 local function get_kt_lib()
-  if U.valid(kt_lib) then
-    return kt_lib
+  if not U.valid(kt_lib) then
+    kt_lib = U.safe(function()
+      return StaticFindObject("/Script/Engine.Default__KismetTextLibrary")
+    end, nil)
   end
-  kt_lib = U.safe(function()
-    return StaticFindObject("/Script/Engine.Default__KismetTextLibrary")
-  end, nil)
   return U.valid(kt_lib) and kt_lib or nil
 end
 
---- Return the game's HUD, needed to fire a fanfare. Cached and re-fetched when
---- the controller or HUD is replaced by a level transition.
---- @return userdata|nil
+--- Return the game's HUD, needed to fire a fanfare. Re-fetched when a level
+--- transition replaces the controller or the HUD.
 local function get_hud()
-  if U.valid(cached_hud) then
-    return cached_hud
+  if not U.valid(hud) then
+    hud = U.safe(function()
+      return FindFirstOf("PlayerController"):GetHUD()
+    end, nil)
   end
-  local pc = U.safe(function()
-    return FindFirstOf("PlayerController")
-  end, nil)
-  if not pc then
-    cached_hud = nil
-    return nil
-  end
-  cached_hud = U.safe(function()
-    return pc.GetHUD()
-  end, nil)
-  return U.valid(cached_hud) and cached_hud or nil
+  return U.valid(hud) and hud or nil
 end
 
---- Return the live fanfare widget whose text we overwrite.
---- @return userdata|nil
+--- Return the live fanfare widget whose text we overwrite, or nil. Never
+--- cached: a stale handle survives a level transition pointing at freed memory.
 local function get_widget()
   local w = U.safe(function()
     return FindFirstOf("UI_FanFareMessage_C")
@@ -83,229 +97,324 @@ local function get_widget()
   return U.valid(w) and w or nil
 end
 
---- Return the widget's live `message text` property, or nil when unreadable.
---- The property is the real lever: Base is bound to it, so a direct Base
---- SetText is overridden on the next repaint. Judging on the property keeps a
---- normal banner to a single write — chasing the Base readback (always
---- canned/blank) rewrote the widget on every re-assert and closed its window.
---- @param fmw userdata
---- @return string|nil
-local function current_prop_text(fmw)
-  return U.safe(function()
-    return fmw["message text"]:ToString()
-  end, nil)
-end
-
---- Write our FText into the widget and report whether the property held; Base
---- is written too so the current frame paints our text.
---- @return boolean
-local function write_props(fmw, base, ftext, text)
-  pcall(function()
-    fmw["message text"] = ftext
-  end)
-  if base then
-    pcall(function()
-      base:SetText(ftext)
-    end)
-  end
-  return current_prop_text(fmw) == text
-end
-
---- Re-assert our text when a redraw wiped it; do nothing if a newer banner
---- owns the widget. Reads the property, not Base, so an untouched banner is
---- left alone rather than rewritten (which would close its window).
-local function reassert(fmw, base, ftext, text, my_epoch)
-  if my_epoch ~= epoch then
-    return false
-  end
-  if current_prop_text(fmw) == text then
-    return true
-  end
-  return write_props(fmw, base, ftext, text)
-end
-
---- Write text into the fanfare widget, confirming the readback and re-asserting
---- across the display window as its animation redraws.
---- @param fmw userdata Fanfare widget from get_widget().
---- @param kt userdata KismetTextLibrary from get_kt_lib().
---- @param text string Banner text to show.
---- @param my_epoch number Show counter this write belongs to.
---- @return boolean success
-local function apply_write(fmw, kt, text, my_epoch)
-  local ftext = U.safe(function()
-    return kt:Conv_StringToText(text)
-  end, nil)
-  if not ftext then
-    log.warn("no FText conversion — banner shows canned text: " .. text)
-    return
-  end
-  local base = U.safe(function()
-    return fmw.Base
-  end, nil)
-  if write_props(fmw, base, ftext, text) then
-    shown = shown + 1
-    log.info("banner: " .. text)
-  else
-    failed = failed + 1
-    log.warn("banner write not confirmed: " .. text)
-  end
-  -- the Intro/Outro redraws can wipe our text mid-window; the window is ~2.8s
-  -- (measured, docs/fanfare_text.md), so re-assert early and often, stopping
-  -- once it sticks
-  if type(ExecuteWithDelay) == "function" then
-    for _, ms in ipairs({ 400, 900, 1500 }) do
-      ExecuteWithDelay(ms, function()
-        ExecuteInGameThread(function()
-          reassert(fmw, base, ftext, text, my_epoch)
-        end)
-      end)
+--- Return the highest-priority queue that has a line, or nil.
+local function next_queue()
+  for _, kind in ipairs(ORDER) do
+    if #Q[kind] > 0 then
+      return kind, Q[kind]
     end
   end
-  return true
 end
 
---- Return the widget's State field (0 idle, 1 showing), or nil if unreadable.
---- State is the only reliable open/close signal; see docs/fanfare_text.md.
---- @param fmw userdata
---- @return number|nil
-local function widget_state(fmw)
-  local s = U.prop(fmw, "State")
-  return type(s) == "number" and s or nil
+--- Return how many lines are waiting across every queue.
+local function queue_len()
+  local n = 0
+  for _, kind in ipairs(ORDER) do
+    n = n + #Q[kind]
+  end
+  return n
 end
 
---- Fire a fanfare, then swap in our text once it's on screen. Waits for the
---- widget to go idle first: injecting while the game is mid-fanfare (a counter
---- redraw at connect, say) queues our entry behind the game's and the write
---- lands on the wrong window. See docs/fanfare_text.md.
---- @param text string Banner text to show.
---- @return boolean success
-local function show(text)
-  local hud = get_hud()
-  if not hud then
-    log.warn("no HUD — banner dropped: " .. text)
+--- Return the banner text for one line: received items carry a "Received"
+--- prefix and a count, sent checks already read as a sentence and stay verbatim.
+--- @param entry table {raw, kind, count}
+--- @return string
+local function format_line(entry)
+  if entry.kind ~= "item" then
+    return entry.raw
+  end
+  if entry.count > 1 then
+    return "Received " .. entry.count .. " " .. entry.raw
+  end
+  return "Received " .. entry.raw
+end
+
+--- Drain the queues into this burst's lines. Repeated received items collapse
+--- into one counted line; every sent check keeps its own line, always, so the
+--- player can see each thing that left the slot. Order is queue order: items
+--- before sends, first-seen first.
+--- @return table lines
+local function take_batch()
+  local lines, index = {}, {}
+  for _, kind in ipairs(ORDER) do
+    for _, raw in ipairs(Q[kind]) do
+      if kind ~= "item" then
+        -- individual, never merged
+        lines[#lines + 1] = { raw = raw, kind = kind, count = 1, text = raw }
+      else
+        local key = kind .. "\0" .. raw
+        local entry = index[key]
+        if entry then
+          entry.count = entry.count + 1
+          entry.text = format_line(entry)
+        else
+          entry = { raw = raw, kind = kind, count = 1 }
+          entry.text = format_line(entry)
+          index[key] = entry
+          lines[#lines + 1] = entry
+        end
+      end
+    end
+    Q[kind] = {}
+  end
+  return lines
+end
+
+--- Put this burst's unwritten lines back at the head of their queues, so a
+--- budget spill or a failed open loses nothing.
+--- @param from number index of the first line to return
+local function return_lines(from)
+  for i = #batch, from, -1 do
+    local entry = batch[i]
+    for _ = 1, entry.count do
+      table.insert(Q[entry.kind], 1, entry.raw)
+    end
+  end
+end
+
+--- Drop the burst; the next one may open after the gap.
+local function abandon(reason)
+  log.warn(reason)
+  state, batch, batch_i, current = STATE_IDLE, {}, 0, nil
+  written, burst_ticks, dwell, opening = 0, 0, 0, 0
+  wait_ticks = GAP_TICKS
+end
+
+--- Write one line into the banner: the property (the lever) and Base (the frame
+--- being painted). Runs on the game thread. is_new=false for a re-assert, which
+--- must not consume a slot in the burst's pacing.
+local function write_line(w, line, is_new)
+  if not line then
     return false
   end
-
-  local fmw = get_widget()
-  if not fmw then
-    log.warn("no fanfare widget — banner dropped: " .. text)
-    return false
-  end
-
   local kt = get_kt_lib()
-  if not kt then
-    log.warn("no KismetTextLibrary — banner dropped: " .. text)
+  local ft = kt and U.safe(function()
+    return kt:Conv_StringToText(line.text)
+  end, nil)
+  if not ft then
+    counters.failed = counters.failed + 1
+    log.warn("no FText — banner shows canned text: " .. line.text)
     return false
   end
-
-  show_seq = show_seq + 1
-  local my_seq = show_seq
-  pending = true
-
-  -- Test stubs may omit ExecuteWithDelay; fire + write immediately.
-  if type(ExecuteWithDelay) ~= "function" then
-    epoch = epoch + 1
-    last_shown = os.time()
-    pending = false
-    local my_epoch = epoch
+  if is_new ~= false then
+    written = written + 1
+  end
+  U.safe(function()
+    w["message text"] = ft
+  end, nil)
+  local base = U.safe(function()
+    return w.Base
+  end, nil)
+  if base then
     U.safe(function()
-      hud.ShowFanfare(EFFT_DRAGON, "Nestor")
-    end)
-    apply_write(fmw, kt, text, my_epoch)
+      base:SetText(ft)
+    end, nil)
+  end
+  if U.fstr(w, "message text") == line.text then
+    counters.shown = counters.shown + 1
+    if line.kind == "sent" then
+      counters.sent_shown = counters.sent_shown + 1
+    end
+    log.info("banner: " .. line.text)
     return true
   end
+  counters.failed = counters.failed + 1
+  log.warn("banner write not confirmed: " .. line.text)
+  return false
+end
 
-  local function wait_idle(attempt)
-    if my_seq ~= show_seq then
-      return -- a newer show superseded us
-    end
-    local st = widget_state(fmw)
-    if st == 1 and attempt < MAX_IDLE_RETRIES then
-      ExecuteWithDelay(IDLE_RETRY_MS, function()
-        ExecuteInGameThread(function()
-          wait_idle(attempt + 1)
-        end)
-      end)
-      return
-    end
-    if st == 1 then
-      pending = false
-      log.warn("widget busy " .. attempt .. " retries — banner dropped: " .. text)
-      return
-    end
-    epoch = epoch + 1
-    last_shown = os.time()
-    pending = false
-    local my_epoch = epoch
-    -- ShowFanfare's name must resolve in the dragon table; Nestor is present,
-    -- so use him as a stand-in and overwrite the text once our window opens.
+--- Release the window: let the Intro go and play the game's Outro, which parks
+--- the widget where the game expects it. Timers still armed for this burst drop
+--- out on the generation check.
+local function close_window(w)
+  jobs.submit(function()
     U.safe(function()
-      hud.ShowFanfare(EFFT_DRAGON, "Nestor")
-    end)
-    -- Wait for it to render before overwriting, still on the game thread.
-    ExecuteWithDelay(100, function()
-      ExecuteInGameThread(function()
-        apply_write(fmw, kt, text, my_epoch)
-      end)
-    end)
-  end
+      w:StopAnimation(w.Intro)
+    end, nil)
+    U.safe(function()
+      w:PlayAnimation(w.Outro, 0, 1, 0, 1.0)
+    end, nil)
+    U.safe(function()
+      w.State = 0
+    end, nil)
+  end, { desc = "banner close", fail = "banner close failed" })
+  log.debug("burst closed after " .. written .. " line(s)")
+  state, batch, batch_i, current = STATE_IDLE, {}, 0, nil
+  written, burst_ticks, dwell, opening = 0, 0, 0, 0
+  wait_ticks = GAP_TICKS
+end
 
-  wait_idle(0)
+--- Fire the fanfare, write the first line, then freeze the Intro to hold the
+--- window open. Runs on the game thread and arms the burst's only two timers.
+--- @return boolean whether the burst opened
+local function open_window(h, w)
+  batch = take_batch()
+  written, burst_ticks, dwell, opening = 0, 0, 0, 0
+  batch_i = 1
+  current = batch[1]
+  if not current then
+    return true
+  end
+  local items = 0
+  for _, entry in ipairs(batch) do
+    items = items + entry.count
+  end
+  log.info(
+    string.format(
+      "burst open: %d line(s) from %d queued, holding ~%.1fs",
+      #batch,
+      items,
+      #batch * LINE_TICKS * TICK_S
+    )
+  )
+  -- Dot call, exactly as this file has always called it: a wrong UFunction call
+  -- shape is a native crash, not a Lua error pcall could catch.
+  if not pcall(function()
+    h.ShowFanfare(EFFT_DRAGON, DRAGON)
+  end) then
+    log.warn("ShowFanfare failed — burst dropped")
+    return_lines(1) -- nothing was shown: put the whole batch back
+    batch, batch_i, current, written, dwell = {}, 0, nil, 0, 0
+    return false
+  end
+  state = STATE_OPENING
+  gen = gen + 1
+  local my_gen = gen
+  ExecuteWithDelay(WRITE_MS, function()
+    ExecuteInGameThread(function()
+      if my_gen ~= gen then
+        return
+      end
+      if not U.valid(w) then
+        abandon("fanfare widget went away before the first line")
+        return
+      end
+      write_line(w, current)
+      dwell = 0
+    end)
+  end)
+  ExecuteWithDelay(FREEZE_MS, function()
+    ExecuteInGameThread(function()
+      if my_gen ~= gen then
+        return
+      end
+      if not U.valid(w) then
+        abandon("fanfare widget went away before the freeze")
+        return
+      end
+      U.safe(function()
+        w:PauseAnimation(w.Intro)
+      end, nil)
+      state, opening = STATE_OPEN, 0
+    end)
+  end)
   return true
 end
 
---- Show the next banner if one is due. Received items outrank sent lines; each
---- queue collapses to its newest entry when it backs up.
-local function drain()
-  if #queue == 0 and #sent_queue == 0 then
+--- Hold the window and pace the lines. Called once per poll tick while open.
+local function step()
+  local w = get_widget()
+  if not w then
+    abandon("fanfare widget went away — burst dropped")
     return
   end
   if not jobs.ready() then
     return
   end
-  if pending then
+  dwell = dwell + 1
+  burst_ticks = burst_ticks + 1
+  -- The game can repaint its canned text over ours mid-window; rewrite only
+  -- when the property actually changed, never on a timer.
+  if current and U.fstr(w, "message text") ~= current.text then
+    jobs.submit(function()
+      write_line(w, current, false)
+    end, { desc = "banner re-assert", fail = "banner re-assert failed" })
     return
   end
-  if os.time() - last_shown < display then
+  if burst_ticks >= BURST_MAX_TICKS then
+    -- Out of budget, not out of items: close here and let the next burst carry
+    -- on, so a long replay takes longer but loses nothing.
+    local left = #batch - batch_i
+    if left > 0 then
+      log.info("burst closed at the budget, " .. left .. " line(s) left")
+      return_lines(batch_i + 1)
+    end
+    close_window(w)
     return
   end
-  local from_sent = #queue == 0
-  local q = from_sent and sent_queue or queue
-  local text = table.remove(q, 1)
-  jobs.submit(function()
-    local ok = show(text)
-    if #q > 2 then
-      -- replaying old fanfares back to back just flashes, so skip to
-      -- the newest one instead
-      local dropped = #q - 1
-      local latest = table.remove(q)
-      -- keep only the newest, mutated in place (a plain `queue = {}`
-      -- would leave the caller's upvalue pointing at the old table)
-      for i = #q, 1, -1 do
-        q[i] = nil
-      end
-      q[1] = latest
-      log.warn("banner backlog collapsed, dropped " .. dropped)
-    end
-    if from_sent and ok then
-      sent_shown = sent_shown + 1
-    end
-    return ok and true or false -- false makes the runner back off
-  end, { desc = "banner job", fail = "banner apply failed" })
+  if dwell < LINE_TICKS then
+    return
+  end
+  if batch_i < #batch then
+    batch_i = batch_i + 1
+    current = batch[batch_i]
+    dwell = 0
+    local line = current
+    jobs.submit(function()
+      write_line(w, line)
+    end, { desc = "banner line", fail = "banner line failed" })
+    return
+  end
+  close_window(w)
 end
 
---- Wire up logging and the per-banner display time.
---- @param opts table|nil {log, display}
+--- Open the burst on the game thread, if the widget is there and idle. The
+--- game's own fanfare wins: injecting into it collides (docs/fanfare_text.md).
+local function try_open()
+  local h, w = get_hud(), get_widget()
+  if not h or not w or not get_kt_lib() then
+    return -- no HUD yet (menu, loading): the next tick tries again
+  end
+  if U.prop(w, "State") == 1 then
+    return -- a fanfare is already showing; the next tick tries again
+  end
+  return open_window(h, w)
+end
+
+--- Start a burst when lines are waiting, the widget is free and the runner is
+--- idle. Called from the host tick and from note_system.
+local function start()
+  if state ~= STATE_IDLE then
+    return
+  end
+  if wait_ticks > 0 then
+    wait_ticks = wait_ticks - 1
+    return
+  end
+  if not next_queue() or not jobs.ready() then
+    return
+  end
+  jobs.submit(try_open, { desc = "banner open", fail = "banner open failed" })
+end
+
+--- Wire up logging.
+--- @param opts table|nil {log}
 function M.init(opts)
-  log = logger.leveled("[BANNER]", opts and opts.log)
-  if opts and type(opts.display) == "number" then
-    display = opts.display
-  end
+  log = logger.leveled(TAG, opts and opts.log)
 end
 
---- Drive the queue, called by the host poll loop.
+--- Clear the per-session queues and counters; a burst in flight stops at its
+--- next step.
+function M.reset()
+  Q = { system = {}, item = {}, sent = {} }
+  counters = { queued = 0, shown = 0, failed = 0, sent_queued = 0, sent_shown = 0 }
+  state, batch, batch_i, current = STATE_IDLE, {}, 0, nil
+  written, burst_ticks, dwell, opening, wait_ticks = 0, 0, 0, 0, 0
+  gen = gen + 1
+end
+
+--- Drive the burst, called by the host poll loop.
 function M.tick()
-  drain()
+  if state == STATE_IDLE then
+    start()
+  elseif state == STATE_OPENING then
+    opening = opening + 1
+    if opening > OPENING_TICKS then
+      abandon("burst never opened (freeze timer lost)")
+    end
+  elseif state == STATE_OPEN then
+    step()
+  end
 end
 
 --- Queue a received item to show.
@@ -314,37 +423,48 @@ function M.note_item(name)
   if type(name) ~= "string" or name == "" then
     return
   end
-  queued = queued + 1
-  queue[#queue + 1] = name
-  drain()
+  counters.queued = counters.queued + 1
+  Q.item[#Q.item + 1] = name
 end
 
---- Queue an outgoing-send line to show.
+--- Queue an outgoing-send line to show; items outrank it, so no immediate action.
 --- @param text string Send line.
 function M.note_sent(text)
   if type(text) ~= "string" or text == "" then
     return
   end
-  sent_queued = sent_queued + 1
-  sent_queue[#sent_queue + 1] = text
-  -- no immediate drain: a received item noted just after this must show
-  -- first, so let tick() (or the next note_item) pick sent lines up once
-  -- the received queue is empty.
+  counters.sent_queued = counters.sent_queued + 1
+  Q.sent[#Q.sent + 1] = text
+end
+
+--- Queue a checkd notice that supersedes everything, then open a burst for it:
+--- a broken scanner means the player needs to hear about it now, and a refused
+--- session is never ticked by the host, so waiting for a tick would never show it.
+--- @param text string One-line notice.
+function M.note_system(text)
+  if type(text) ~= "string" or text == "" then
+    return
+  end
+  Q = { system = { text }, item = {}, sent = {} }
+  start()
 end
 
 --- Return counters for the heartbeat log.
 --- @return string
 function M.status()
   return string.format(
-    "queued=%d shown=%d failed=%d waiting=%d sent=%d sent_queued=%d sent_waiting=%d",
-    queued,
-    shown,
-    failed,
-    #queue,
-    sent_shown,
-    sent_queued,
-    #sent_queue
+    "state=%s queued=%d shown=%d failed=%d waiting=%d left=%d sent=%d sent_queued=%d sent_waiting=%d",
+    state,
+    counters.queued,
+    counters.shown,
+    counters.failed,
+    queue_len(),
+    math.max(0, #batch - batch_i),
+    counters.sent_shown,
+    counters.sent_queued,
+    #Q.sent
   )
 end
+M.tag = TAG
 
 return M

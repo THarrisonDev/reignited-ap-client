@@ -5,9 +5,6 @@
 package main
 
 import (
-	"encoding/json"
-	"os"
-	"path/filepath"
 	"testing"
 )
 
@@ -60,7 +57,7 @@ func Test100pctRefS1Gems(t *testing.T) {
 		"Sunny Flight": true, "Night Flight": true, "Crystal Flight": true,
 		"Wild Flight": true, "Icy Flight": true,
 	}
-	for region, total := range levelGemsForTest(t) {
+	for region, total := range levelGemsForTest(t, "spyro1") {
 		if flights[region] {
 			if gems[region] != 0 {
 				t.Fatalf("flight level %s scanned gem value %d, want 0", region, gems[region])
@@ -117,7 +114,7 @@ func Test100pctRefSpyro3Gems(t *testing.T) {
 	if len(gems) == 0 {
 		t.Fatalf("ScanSpyro3Gems found nothing (stats %+v)", stats)
 	}
-	for region, total := range spyro3LevelGemsForTest(t) {
+	for region, total := range levelGemsForTest(t, "spyro3") {
 		if gems[region] != total {
 			t.Fatalf("%s: scanned %d, locations.json gemTotal %d", region, gems[region], total)
 		}
@@ -189,9 +186,7 @@ func Test100pctRefAbilities(t *testing.T) {
 // Test100pctRefOrbsTalismans: the save holds all 64 orbs and 14 talismans,
 // one per catalog key, all collected.
 func Test100pctRefOrbsTalismans(t *testing.T) {
-	data := loadSave(t, ref100Save)
-	entry := mustEntry(t, data, entryIndex(0, 1))
-
+	entry := mustEntry(t, loadSave(t, ref100Save), entryIndex(0, 1))
 	orbs, stats := ScanOrbs(entry)
 	if len(orbs) != 64 {
 		t.Fatalf("ScanOrbs found %d orbs (stats %+v), want 64", len(orbs), stats)
@@ -201,6 +196,19 @@ func Test100pctRefOrbsTalismans(t *testing.T) {
 		t.Fatalf("ScanTalismans found %d talismans (stats %+v), want 14", len(talismans), talStats)
 	}
 
+	wantOrbKeys, wantTalismanKeys := checkOrbCatalog(t, orbs, talismans)
+	if len(wantOrbKeys) != 64 || len(wantTalismanKeys) != 14 {
+		t.Fatalf("catalog shape: %d orb keys, %d talisman keys", len(wantOrbKeys), len(wantTalismanKeys))
+	}
+	requireCollected(t, "orb", orbs)
+	requireCollected(t, "talisman", talismans)
+	t.Logf("100pct_ref Spyro 2: 64 orbs + 14 talismans, all collected, one per catalog key: OK")
+}
+
+// checkOrbCatalog checks every catalog orb and talisman scanned collected and
+// returns the catalog's key sets.
+func checkOrbCatalog(t *testing.T, orbs, talismans []Dragon) (map[string]bool, map[string]bool) {
+	t.Helper()
 	wantOrbKeys := map[string]bool{}
 	wantTalismanKeys := map[string]bool{}
 	for region, r := range spyro2RegionsForTest(t) {
@@ -219,20 +227,17 @@ func Test100pctRefOrbsTalismans(t *testing.T) {
 			}
 		}
 	}
-	if len(wantOrbKeys) != 64 || len(wantTalismanKeys) != 14 {
-		t.Fatalf("catalog shape: %d orb keys, %d talisman keys", len(wantOrbKeys), len(wantTalismanKeys))
-	}
-	for _, o := range orbs {
-		if !o.Collected {
-			t.Fatalf("orb %+v not collected", o)
+	return wantOrbKeys, wantTalismanKeys
+}
+
+// requireCollected fails when any record reads uncollected.
+func requireCollected(t *testing.T, kind string, records []Dragon) {
+	t.Helper()
+	for _, r := range records {
+		if !r.Collected {
+			t.Fatalf("%s %+v not collected", kind, r)
 		}
 	}
-	for _, ta := range talismans {
-		if !ta.Collected {
-			t.Fatalf("talisman %+v not collected", ta)
-		}
-	}
-	t.Logf("100pct_ref Spyro 2: 64 orbs + 14 talismans, all collected, one per catalog key: OK")
 }
 
 // Test100pctRefEntryScoping: the S1 playthrough (entry 0) holds no orb,
@@ -243,8 +248,6 @@ func Test100pctRefOrbsTalismans(t *testing.T) {
 func Test100pctRefEntryScoping(t *testing.T) {
 	data := loadSave(t, ref100Save)
 	s1 := mustEntry(t, data, entryIndex(0, 0))
-	s2 := mustEntry(t, data, entryIndex(0, 1))
-	s3 := mustEntry(t, data, entryIndex(0, 2))
 
 	if orbs, _ := ScanOrbs(s1); len(orbs) != 0 {
 		t.Fatalf("Spyro 1 entry holds orbs: %+v", orbs)
@@ -252,7 +255,18 @@ func Test100pctRefEntryScoping(t *testing.T) {
 	if tals, _ := ScanTalismans(s1); len(tals) != 0 {
 		t.Fatalf("Spyro 1 entry holds talismans: %+v", tals)
 	}
-	abilities, _ := ScanAbilities(s1)
+	checkAbilitiesUncollected(t, s1)
+	checkNoGems(t, "Spyro 1", s1)
+	checkNoDragons(t, "Spyro 2", mustEntry(t, data, entryIndex(0, 1)))
+	checkNoDragons(t, "Spyro 3", mustEntry(t, data, entryIndex(0, 2)))
+	t.Log("entry scoping: S1 entry clean of S2/S3 records, S2/S3 entries clean of S1 dragons: OK")
+}
+
+// checkAbilitiesUncollected asserts the entry carries all three ability records
+// and none is collected: S1 entries carry the types but never grant them.
+func checkAbilitiesUncollected(t *testing.T, entry []byte) {
+	t.Helper()
+	abilities, _ := ScanAbilities(entry)
 	if len(abilities) != 3 {
 		t.Fatalf("Spyro 1 100%% entry holds %d ability records, want 3 (all types)", len(abilities))
 	}
@@ -264,19 +278,25 @@ func Test100pctRefEntryScoping(t *testing.T) {
 			t.Fatalf("ability %q must carry no region, got %q", a.Name, a.Region)
 		}
 	}
-	if gems, _ := ScanSpyro2Gems(s1); len(gems) != 0 {
-		t.Fatalf("Spyro 1 entry holds Spyro 2 gems: %v", gems)
+}
+
+// checkNoGems asserts one entry holds no Spyro 2 or Spyro 3 gem records.
+func checkNoGems(t *testing.T, label string, entry []byte) {
+	t.Helper()
+	if gems, _ := ScanSpyro2Gems(entry); len(gems) != 0 {
+		t.Fatalf("%s entry holds Spyro 2 gems: %v", label, gems)
 	}
-	if gems, _ := ScanSpyro3Gems(s1); len(gems) != 0 {
-		t.Fatalf("Spyro 1 entry holds Spyro 3 gems: %v", gems)
+	if gems, _ := ScanSpyro3Gems(entry); len(gems) != 0 {
+		t.Fatalf("%s entry holds Spyro 3 gems: %v", label, gems)
 	}
-	if dragons, _ := ScanSave(s2); len(dragons) != 0 {
-		t.Fatalf("Spyro 2 entry holds Spyro 1 dragons: %+v", dragons)
+}
+
+// checkNoDragons asserts one entry holds no Spyro 1 dragon records.
+func checkNoDragons(t *testing.T, label string, entry []byte) {
+	t.Helper()
+	if dragons, _ := ScanSave(entry); len(dragons) != 0 {
+		t.Fatalf("%s entry holds Spyro 1 dragons: %+v", label, dragons)
 	}
-	if dragons, _ := ScanSave(s3); len(dragons) != 0 {
-		t.Fatalf("Spyro 3 entry holds Spyro 1 dragons: %+v", dragons)
-	}
-	t.Log("entry scoping: S1 entry clean of S2/S3 records, S2/S3 entries clean of S1 dragons: OK")
 }
 
 // Test100pctRefSpyro2DaemonBaseline drives the real pollOnce path on the 100%
@@ -285,12 +305,7 @@ func Test100pctRefEntryScoping(t *testing.T) {
 // carry exactly the 84 gem checks of the 21 gem-bearing levels — none on a
 // speedway, boss dungeon or Dragon Shores.
 func Test100pctRefSpyro2DaemonBaseline(t *testing.T) {
-	d := testDaemon(t, true)
-	d.saveDir = t.TempDir()
-	if err := os.WriteFile(filepath.Join(d.saveDir, "FalconSave.106.sav"), loadSave(t, ref100Save), 0644); err != nil {
-		t.Fatal(err)
-	}
-	writeSession(t, d, "slot=0\ngame=1\ntoken=s2full\n")
+	d := seedSave(t, true, "FalconSave.106.sav", ref100Save, "slot=0\ngame=1\ntoken=s2full\n")
 	d.pollOnce()
 	drop := readDrop(t, d)
 	if d.drops != 1 {
@@ -299,21 +314,28 @@ func Test100pctRefSpyro2DaemonBaseline(t *testing.T) {
 	if len(drop.Checks) != 64+14+3+3+21*4+16 {
 		t.Fatalf("backfill sent %d checks, want %d", len(drop.Checks), 64+14+3+3+21*4)
 	}
-	sent := map[string]bool{}
-	for _, n := range drop.Names {
-		sent[n] = true
-	}
-	for _, n := range []string{
+	sent := nameSet(drop.Names)
+	expectSent(t, sent,
 		"Spyro 2: Summer Forest: Swim Ability",
 		"Spyro 2: Autumn Plains: Climb Ability",
 		"Spyro 2: Winter Tundra: Headbash Ability",
-	} {
-		if !sent[n] {
-			t.Fatalf("ability location %q missing from the baseline drop %v", n, drop.Names)
-		}
-	}
+	)
 	// the speedways/bosses/Dragon Shores hold orbs and boss checks but must
 	// send no GEM checks
+	requireNoGemChecks(t, sent)
+	expectSent(t, sent,
+		"Spyro 2: Crush's Dungeon: Crush Defeated",
+		"Spyro 2: Gulp's Overlook: Gulp Defeated",
+		"Spyro 2: Ripto's Arena: Ripto Defeated",
+	)
+	t.Logf("100pct_ref Spyro 2 baseline: %d checks (%d orbs+talismans, %d abilities, %d bosses, %d gem checks): OK",
+		len(drop.Checks), 64+14, 3, 3, 21*4)
+}
+
+// requireNoGemChecks fails when a speedway, boss arena or Dragon Shores sent a
+// gem check.
+func requireNoGemChecks(t *testing.T, sent map[string]bool) {
+	t.Helper()
 	for _, region := range []string{"Ocean Speedway", "Icy Speedway", "Metro Speedway",
 		"Canyon Speedway", "Crush's Dungeon", "Gulp's Overlook", "Ripto's Arena", "Dragon Shores"} {
 		for _, label := range []string{"25% Gems", "50% Gems", "75% Gems", "All Gems"} {
@@ -323,17 +345,6 @@ func Test100pctRefSpyro2DaemonBaseline(t *testing.T) {
 			}
 		}
 	}
-	for _, n := range []string{
-		"Spyro 2: Crush's Dungeon: Crush Defeated",
-		"Spyro 2: Gulp's Overlook: Gulp Defeated",
-		"Spyro 2: Ripto's Arena: Ripto Defeated",
-	} {
-		if !sent[n] {
-			t.Fatalf("boss location %q missing from the baseline drop %v", n, drop.Names)
-		}
-	}
-	t.Logf("100pct_ref Spyro 2 baseline: %d checks (%d orbs+talismans, %d abilities, %d bosses, %d gem checks): OK",
-		len(drop.Checks), 64+14, 3, 3, 21*4)
 }
 
 func orbIn(records []Dragon, region, name string) bool {
@@ -356,34 +367,14 @@ func nameToIDForTest(t *testing.T) map[string]int {
 
 func spyro2RegionsForTest(t *testing.T) map[string]locRegion {
 	t.Helper()
-	var doc locationsDoc
-	if err := json.Unmarshal(locationsJSON, &doc); err != nil {
-		t.Fatalf("parse embedded locations.json: %v", err)
-	}
-	return doc.Games["spyro2"].Regions
+	return parsedDoc(t).Games["spyro2"].Regions
 }
 
-func levelGemsForTest(t *testing.T) map[string]int {
+// levelGemsForTest maps each of a game's regions to its gem total.
+func levelGemsForTest(t *testing.T, game string) map[string]int {
 	t.Helper()
-	var doc locationsDoc
-	if err := json.Unmarshal(locationsJSON, &doc); err != nil {
-		t.Fatalf("parse embedded locations.json: %v", err)
-	}
 	out := map[string]int{}
-	for region, r := range doc.Games["spyro1"].Regions {
-		out[region] = r.GemTotal
-	}
-	return out
-}
-
-func spyro3LevelGemsForTest(t *testing.T) map[string]int {
-	t.Helper()
-	var doc locationsDoc
-	if err := json.Unmarshal(locationsJSON, &doc); err != nil {
-		t.Fatalf("parse embedded locations.json: %v", err)
-	}
-	out := map[string]int{}
-	for region, r := range doc.Games["spyro3"].Regions {
+	for region, r := range parsedDoc(t).Games[game].Regions {
 		out[region] = r.GemTotal
 	}
 	return out

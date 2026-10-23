@@ -5,7 +5,6 @@
 package main
 
 import (
-	"encoding/binary"
 	"math"
 	"sort"
 )
@@ -18,68 +17,28 @@ const skillPointMarker = "EInventoryType::EIT_SkillPoint"
 // locations.json. Values outside the session game's range are ignored.
 var skillPointRanges [3][2]int
 
-// spSkip0 reads a u32 size field plus its u32 0 array index at o, returning
-// the offset past both.
-func spSkip0(data []byte, o int) int {
-	if o = skipU32(data, o); o < 0 {
-		return -1
-	}
-	return zeroU32(data, o)
-}
-
-// spStructHeader parses a StructProperty-style header at o after its
-// "StructProperty\0" tag: u32 size, u32 0 array index, type-name FString,
-// 16-byte GUID and the terminating NUL, returning the offset past it.
-func spStructHeader(data []byte, o int, typeName string) int {
-	if o = spSkip0(data, o); o < 0 {
-		return -1
-	}
-	if o = tagEnds(data, o, typeName); o < 0 {
-		return -1
-	}
-	if o+16 > len(data) {
-		return -1
-	}
-	o += 16
-	return zeroByte(data, o)
-}
-
 // spParam reads one saveParams element at o (a StructProperty body: property
 // list + "None" terminator) whose paramName must be an empty FString, and
 // returns the paramValue float.
 func spParam(data []byte, o int) (float32, int, bool) {
-	if o = tagEnds(data, o, "paramName"); o < 0 {
+	r := atReader(data, o)
+	r.tag("paramName")
+	r.tag("StrProperty")
+	r.skip0() // u32 size 4 (the empty FString's prefix) + ai 0
+	r.nul()
+	r.zero32() // the empty FString: u32 0
+	r.tag("paramValue")
+	r.tag("FloatProperty")
+	r.skip0() // u32 size 4 + ai 0
+	r.nul()
+	if !r.ok {
 		return 0, -1, false
 	}
-	if o = tagEnds(data, o, "StrProperty"); o < 0 {
+	bits, ok := readU32(data, r.o)
+	if !ok {
 		return 0, -1, false
 	}
-	if o = spSkip0(data, o); o < 0 { // u32 size 4 (the empty FString's prefix) + ai 0
-		return 0, -1, false
-	}
-	if o = zeroByte(data, o); o < 0 {
-		return 0, -1, false
-	}
-	if o = zeroU32(data, o); o < 0 { // the empty FString: u32 0
-		return 0, -1, false
-	}
-	if o = tagEnds(data, o, "paramValue"); o < 0 {
-		return 0, -1, false
-	}
-	if o = tagEnds(data, o, "FloatProperty"); o < 0 {
-		return 0, -1, false
-	}
-	if o = spSkip0(data, o); o < 0 { // u32 size 4 + ai 0
-		return 0, -1, false
-	}
-	if o = zeroByte(data, o); o < 0 {
-		return 0, -1, false
-	}
-	if o+4 > len(data) {
-		return 0, -1, false
-	}
-	v := math.Float32frombits(binary.LittleEndian.Uint32(data[o:]))
-	return v, o + 4, true
+	return math.Float32frombits(bits), r.o + 4, true
 }
 
 // spArrayBody parses the ArrayProperty<StructProperty> body at o (after the
@@ -91,56 +50,61 @@ func spParam(data []byte, o int) (float32, int, bool) {
 // (against bodyLen) are validated so a truncated record fails instead of
 // reading past the array.
 func spArrayBody(data []byte, o int) ([]float32, int, bool) {
-	count := -1
-	if o >= 0 && o+4 <= len(data) {
-		c := int(binary.LittleEndian.Uint32(data[o:]))
-		if c >= 0 && c <= 64 {
-			count = c
-		}
-	}
-	if count < 0 {
+	count, ok := spCount(data, o)
+	if !ok {
 		return nil, -1, false
 	}
-	o += 4
-	if o = tagEnds(data, o, "saveParams"); o < 0 {
+	r := atReader(data, o+4)
+	r.tag("saveParams")
+	r.tag("StructProperty")
+	bodyLen, ok := readU32(data, r.o)
+	if !ok {
 		return nil, -1, false
 	}
-	if o = tagEnds(data, o, "StructProperty"); o < 0 {
+	r.o += 4
+	r.zero32()
+	r.tag("PhasmidSaveParam")
+	r.guid()
+	r.nul()
+	if !r.ok {
 		return nil, -1, false
 	}
-	if o+4 > len(data) {
+	vals, end, ok := spParams(data, r.o, count)
+	if !ok || end-r.o != int(bodyLen) {
 		return nil, -1, false
 	}
-	bodyLen := int(binary.LittleEndian.Uint32(data[o:]))
-	o += 4
-	if o = zeroU32(data, o); o < 0 {
-		return nil, -1, false
+	return vals, end, true
+}
+
+// spCount reads the saveParams element count at o, which must be 0..64.
+func spCount(data []byte, o int) (int, bool) {
+	bits, ok := readU32(data, o)
+	if !ok {
+		return 0, false
 	}
-	if o = tagEnds(data, o, "PhasmidSaveParam"); o < 0 {
-		return nil, -1, false
+	c := int(bits)
+	if c < 0 || c > 64 {
+		return 0, false
 	}
-	if o+16 > len(data) {
-		return nil, -1, false
-	}
-	o += 16
-	if o = zeroByte(data, o); o < 0 {
-		return nil, -1, false
-	}
-	start := o
+	return c, true
+}
+
+// spParams reads n saveParams elements from o, returning their values and the
+// offset past the last one.
+func spParams(data []byte, o, n int) ([]float32, int, bool) {
 	var vals []float32
-	for i := 0; i < count; i++ {
-		var v float32
-		var ok bool
-		if v, o, ok = spParam(data, o); !ok {
+	for i := 0; i < n; i++ {
+		v, next, ok := spParam(data, o)
+		if !ok {
 			return nil, -1, false
 		}
-		if o = tagEnds(data, o, "None"); o < 0 {
+		r := atReader(data, next)
+		r.tag("None")
+		if !r.ok {
 			return nil, -1, false
 		}
+		o = r.o
 		vals = append(vals, v)
-	}
-	if o-start != bodyLen {
-		return nil, -1, false
 	}
 	return vals, o, true
 }
@@ -180,63 +144,48 @@ func scanSkillPointsOne(data []byte, m int) ([]float32, bool) {
 // saveParams paramValues. Skill points (collected=false) and the Spyro 1
 // flight rewards (collected=true) share it.
 func scanParamRecord(data []byte, m int, marker string, collected byte) ([]float32, bool) {
-	var o int
-	for _, skip := range []int{1, 2} { // the marker value's own NUL (1/2 bytes)
-		if e := tagEnds(data, m+len(marker)+skip, "collected"); e >= 0 {
-			o = e
-			break
-		}
-	}
+	o := spCollectedTag(data, m, marker)
 	if o <= 0 {
 		return nil, false
 	}
-	if o = tagEnds(data, o, "BoolProperty"); o < 0 {
+	r := atReader(data, o)
+	r.tag("BoolProperty")
+	r.skip0() // u32 size 0 + u32 arrayIndex 0
+	r.boolValue(collected)
+	r.nul()
+	r.tag("None")
+	r.tag("itemParamList")
+	r.tag("StructProperty")
+	r.structHeader("PhasmidSaveParamList")
+	r.tag("saveParams")
+	r.tag("ArrayProperty")
+	r.skip0() // u32 size + u32 arrayIndex 0
+	r.tag("StructProperty")
+	r.nul()
+	if !r.ok {
 		return nil, false
 	}
-	if o = spSkip0(data, o); o < 0 { // u32 size 0 + u32 arrayIndex 0
-		return nil, false
-	}
-	if o >= len(data) || data[o] != collected { // the value byte
-		return nil, false
-	}
-	if o = zeroByte(data, o+1); o < 0 {
-		return nil, false
-	}
-	if o = tagEnds(data, o, "None"); o < 0 {
-		return nil, false
-	}
-	if o = tagEnds(data, o, "itemParamList"); o < 0 {
-		return nil, false
-	}
-	if o = tagEnds(data, o, "StructProperty"); o < 0 {
-		return nil, false
-	}
-	if o = spStructHeader(data, o, "PhasmidSaveParamList"); o < 0 {
-		return nil, false
-	}
-	if o = tagEnds(data, o, "saveParams"); o < 0 {
-		return nil, false
-	}
-	if o = tagEnds(data, o, "ArrayProperty"); o < 0 {
-		return nil, false
-	}
-	if o = spSkip0(data, o); o < 0 { // u32 size + u32 arrayIndex 0
-		return nil, false
-	}
-	if o = tagEnds(data, o, "StructProperty"); o < 0 {
-		return nil, false
-	}
-	if o = zeroByte(data, o); o < 0 {
-		return nil, false
-	}
-	vals, end, ok := spArrayBody(data, o)
+	vals, end, ok := spArrayBody(data, r.o)
 	if !ok {
 		return nil, false
 	}
-	if o = tagEnds(data, end, "None"); o < 0 {
+	tail := atReader(data, end)
+	tail.tag("None")
+	if !tail.ok {
 		return nil, false
 	}
 	return vals, true
+}
+
+// spCollectedTag finds the "collected" property that follows the marker's own
+// NUL terminator (1 byte ASCII, 2 bytes UTF-16), returning its offset or -1.
+func spCollectedTag(data []byte, m int, marker string) int {
+	for _, skip := range []int{1, 2} {
+		if o := tagEnds(data, m+len(marker)+skip, "collected"); o >= 0 {
+			return o
+		}
+	}
+	return -1
 }
 
 // ScanSkillPoints extracts the ESkillPoint enum values of the earned skill

@@ -40,7 +40,7 @@ type Paths struct {
 
 // steamRoot returns the default Steam install root for the host OS. Both the
 // game (steamapps/common) and the Proton prefix (steamapps/compatdata) hang
-// off it.
+// off it. On Linux, $STEAM_ROOT overrides for a non-standard native install.
 func steamRoot() string {
 	if runtime.GOOS == "windows" {
 		// Steam's own default; libraries on other drives are handled by the
@@ -50,8 +50,22 @@ func steamRoot() string {
 		}
 		return `C:\Program Files (x86)\Steam`
 	}
+	if root := os.Getenv("STEAM_ROOT"); root != "" {
+		return root
+	}
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".local", "share", "Steam")
+}
+
+// flatpakSteamRoot is where Flatpak Steam keeps its data. It is a separate
+// root, not a library under the native one, so it must be searched as well.
+func flatpakSteamRoot() string {
+	if runtime.GOOS == "windows" {
+		return ""
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".var", "app", "com.valvesoftware.Steam",
+		".local", "share", "Steam")
 }
 
 // gameWin64 returns the default Falcon/Binaries/Win64 directory under the
@@ -75,17 +89,24 @@ func gameRel() string {
 		"Falcon", "Binaries", "Win64")
 }
 
-// steamLibraries returns the base Steam root plus every library listed in its
-// libraryfolders.vdf, best-effort. A missing or unreadable file yields just the
-// base root, so callers always have at least one candidate.
+// steamLibraries returns every Steam library root the launcher should search:
+// the base root, the Flatpak root when present, and any extra libraries listed
+// in their libraryfolders.vdf files. Best-effort — a missing or unreadable file
+// just yields fewer candidates, so callers always have at least one.
 func steamLibraries() []string {
-	base := steamRoot()
-	libs := []string{base}
-	data, err := os.ReadFile(filepath.Join(base, "steamapps", "libraryfolders.vdf"))
-	if err != nil {
-		return libs
+	roots := []string{steamRoot()}
+	if fp := flatpakSteamRoot(); fp != "" && fp != roots[0] && dirExists(fp) {
+		roots = append(roots, fp)
 	}
-	return append(libs, parseLibraryFolders(data)...)
+	libs := append([]string(nil), roots...)
+	for _, root := range roots {
+		data, err := os.ReadFile(filepath.Join(root, "steamapps", "libraryfolders.vdf"))
+		if err != nil {
+			continue
+		}
+		libs = append(libs, parseLibraryFolders(data)...)
+	}
+	return libs
 }
 
 // parseLibraryFolders extracts library roots from a libraryfolders.vdf body.

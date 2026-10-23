@@ -1,14 +1,14 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-26
--- Updated: 2026-10-11
+-- Updated: 2026-10-21
 
 -- Spec for client/ue4ss_mod/srt_bridge/Scripts/session_gate.lua: the AP
 -- session opens only once the player is in play on a Spyro 1, Spyro 2 or
 -- Spyro 3 save, and closes at the main menu.
 -- Run from the client repo root: lua tests/lua/test_session_gate.lua
 
-local here = debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "./"
-package.path = here .. "../../ue4ss_mod/srt_bridge/Scripts/?.lua;" .. package.path
+package.path = (debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "./") .. "support/?.lua;" .. package.path
+local H = require("harness")
 
 local GATE = require("session_gate")
 local MENU, LOADING, IN_PLAY, PAUSED = 0, 1, 3, 4
@@ -27,25 +27,11 @@ local function slot_reader(s, g)
     end
 end
 
-local passed, total = 0, 0
-local function case(name, fn)
-    total = total + 1
+local case, eq = H.test, H.eq
+H.before_each(function()
     fresh()
     reads = 0
-    local ok, err = pcall(fn)
-    if ok then
-        passed = passed + 1
-        print("PASS " .. name)
-    else
-        print("FAIL " .. name .. ": " .. tostring(err))
-    end
-end
-
-local function eq(got, want, what)
-    if got ~= want then
-        error(string.format("%s: got %s, want %s", what, tostring(got), tostring(want)), 2)
-    end
-end
+end)
 
 case("main menu never opens and never reads the slot", function()
     for _ = 1, 10 do eq(GATE.tick(MENU, slot_reader(0, 0)), nil, "menu tick") end
@@ -147,5 +133,27 @@ case("non-number states are ignored", function()
     eq(reads, 0, "slot reads")
 end)
 
-print(string.format("%d/%d passed", passed, total))
-if passed ~= total then os.exit(1) end
+case("a blocked gate never opens and never reads the slot", function()
+    GATE.block("region table missing (regions.lua) — reinstall the mod")
+    eq(GATE.is_blocked(), true, "is_blocked")
+    eq(GATE.block_reason(), "region table missing (regions.lua) — reinstall the mod",
+        "reason")
+    for _ = 1, 6 do
+        eq(GATE.tick(IN_PLAY, slot_reader(1, 0)), nil, "blocked tick")
+    end
+    eq(reads, 0, "slot reads while blocked")
+    eq(GATE.is_open(), false, "open")
+    eq(#logs, 1, "warn once")
+end)
+
+case("a blocked gate stays warned across a menu visit", function()
+    GATE.block("blocked")
+    GATE.tick(IN_PLAY, slot_reader(1, 0))
+    GATE.tick(IN_PLAY, slot_reader(1, 0))
+    eq(#logs, 1, "one warn")
+    GATE.tick(MENU, slot_reader(1, 0))
+    GATE.tick(IN_PLAY, slot_reader(1, 0))
+    eq(#logs, 1, "the warn-once flag never resets while blocked")
+end)
+
+H.finish()

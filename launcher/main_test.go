@@ -39,10 +39,17 @@ func useStateFile(t *testing.T, path string) {
 
 func testServer(t *testing.T, p Paths) *server {
 	t.Helper()
-	return &server{paths: p, tmpl: template.Must(template.New("index").Parse(indexHTML)), feed: NewFeed()}
+	return &server{paths: p, tmpl: template.Must(template.New("index").Parse(indexHTML)),
+		feed: NewFeed(), token: newToken()}
 }
 
-func postForm(h http.HandlerFunc, path string, form url.Values) *httptest.ResponseRecorder {
+// postForm posts a form to a handler with this server's CSRF token, as the
+// page's hidden field would. Pass a nil form for an empty post.
+func (s *server) postForm(h http.HandlerFunc, path string, form url.Values) *httptest.ResponseRecorder {
+	if form == nil {
+		form = url.Values{}
+	}
+	form.Set("csrf", s.token)
 	req := httptest.NewRequest("POST", path, strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
@@ -50,17 +57,101 @@ func postForm(h http.HandlerFunc, path string, form url.Values) *httptest.Respon
 	return rec
 }
 
+// TestApplyRejectsGet pins the method guard: /apply installs and launches, so a
+// GET (which any <img src> can trigger) must not reach it.
+func TestApplyRejectsGet(t *testing.T) {
+	useStateFile(t, filepath.Join(t.TempDir(), "paths.json"))
+	s := testServer(t, Paths{ConfigDir: t.TempDir(), GameWin64: t.TempDir()})
+
+	rec := httptest.NewRecorder()
+	s.handleApply(rec, httptest.NewRequest("GET", "/apply?action=install", nil))
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("GET /apply: got %d, want 405", rec.Code)
+	}
+}
+
+// TestApplyAndResetRejectBadToken pins the CSRF guard on both POST endpoints.
+func TestApplyAndResetRejectBadToken(t *testing.T) {
+	useStateFile(t, filepath.Join(t.TempDir(), "paths.json"))
+	s := testServer(t, Paths{ConfigDir: t.TempDir(), GameWin64: t.TempDir()})
+
+	for _, tc := range []struct {
+		name string
+		h    http.HandlerFunc
+		path string
+	}{
+		{"apply", s.handleApply, "/apply"},
+		{"reset", s.handleReset, "/reset"},
+	} {
+		for _, tok := range []string{"", "wrong"} {
+			req := httptest.NewRequest("POST", tc.path, strings.NewReader("action=save&csrf="+tok))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			rec := httptest.NewRecorder()
+			tc.h(rec, req)
+			if rec.Code != http.StatusForbidden {
+				t.Fatalf("%s with token %q: got %d, want 403", tc.name, tok, rec.Code)
+			}
+		}
+	}
+}
+
+// TestLocalOnlyRejectsForeignHost pins the DNS-rebinding guard: only loopback
+// Hosts may reach the handler while the listener is loopback.
+func TestLocalOnlyRejectsForeignHost(t *testing.T) {
+	ok := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	h := localOnly(ok, true)
+
+	for _, host := range []string{"evil.example", "evil.example:1234", "127.0.0.1.evil.example"} {
+		req := httptest.NewRequest("GET", "/", nil)
+		req.Host = host
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("Host %q: got %d, want 403", host, rec.Code)
+		}
+	}
+	for _, host := range []string{"127.0.0.1:1234", "localhost:1234", "[::1]:1234"} {
+		req := httptest.NewRequest("GET", "/", nil)
+		req.Host = host
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("Host %q: got %d, want 200", host, rec.Code)
+		}
+	}
+	// widened listener: the check is off
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Host = "evil.example"
+	localOnly(ok, false).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("disabled check: got %d, want 200", rec.Code)
+	}
+}
+
+// TestConfigSetStripsNewlines pins the injection guard: a value cannot add keys.
+func TestConfigSetStripsNewlines(t *testing.T) {
+	c := &Config{values: map[string]string{}}
+	c.Set("password", "pw\nspawn_checkd=0\rmore")
+	for _, line := range strings.Split(c.render(), "\n") {
+		if strings.HasPrefix(line, "spawn_checkd=") {
+			t.Fatalf("newline injected a key: %q", line)
+		}
+	}
+	if got := c.Get("password", ""); got != "pwspawn_checkd=0more" {
+		t.Fatalf("password = %q, want the newlines stripped", got)
+	}
+}
+
 func TestApplyUnreadableConfigLeftUnchanged(t *testing.T) {
 	useStateFile(t, filepath.Join(t.TempDir(), "paths.json"))
-	root := t.TempDir()
-	cfgPath := filepath.Join(root, "config.txt")
+	s, _, cfgPath := applyServer(t)
 	// a directory where config.txt should be: opens fine, reads fail
 	if err := os.MkdirAll(filepath.Join(cfgPath, "keep"), 0755); err != nil {
 		t.Fatal(err)
 	}
-	s := testServer(t, Paths{ConfigDir: root, GameWin64: filepath.Join(root, "win64")})
 
-	rec := postForm(s.handleApply, "/apply", url.Values{"action": {"save"}, "host": {"archipelago.gg"}, "slot": {"Me"}})
+	rec := s.postForm(s.handleApply, "/apply", url.Values{"action": {"save"}, "host": {"archipelago.gg"}, "slot": {"Me"}})
 	body := rec.Body.String()
 	if !strings.Contains(body, "Could not read config.txt, so it was left unchanged") {
 		t.Fatalf("flash should explain the config was left alone:\n%s", body)
@@ -79,14 +170,12 @@ func TestApplyUnreadableConfigLeftUnchanged(t *testing.T) {
 
 func TestApplySavesConfigAndPreservesExtras(t *testing.T) {
 	useStateFile(t, filepath.Join(t.TempDir(), "paths.json"))
-	root := t.TempDir()
-	cfgPath := filepath.Join(root, "config.txt")
+	s, _, cfgPath := applyServer(t)
 	if err := os.WriteFile(cfgPath, []byte("experimental_flag=42\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	s := testServer(t, Paths{ConfigDir: root, GameWin64: filepath.Join(root, "win64")})
 
-	rec := postForm(s.handleApply, "/apply", url.Values{"action": {"save"}, "host": {"http://h:1"}, "slot": {"Me"}})
+	rec := s.postForm(s.handleApply, "/apply", url.Values{"action": {"save"}, "host": {"http://h:1"}, "slot": {"Me"}})
 	if !strings.Contains(rec.Body.String(), "Config saved to") {
 		t.Fatalf("expected save flash:\n%s", rec.Body.String())
 	}
@@ -98,15 +187,10 @@ func TestApplySavesConfigAndPreservesExtras(t *testing.T) {
 }
 
 func TestApplyFlashesStateSaveError(t *testing.T) {
-	blocker := filepath.Join(t.TempDir(), "blocker")
-	if err := os.WriteFile(blocker, []byte("x"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	useStateFile(t, filepath.Join(blocker, "sub", "paths.json"))
-	root := t.TempDir()
-	s := testServer(t, Paths{ConfigDir: root, GameWin64: filepath.Join(root, "win64")})
+	useStateFileBlocked(t)
+	s, root, _ := applyServer(t)
 
-	rec := postForm(s.handleApply, "/apply", url.Values{"action": {"save"}, "slot": {"Me"}})
+	rec := s.postForm(s.handleApply, "/apply", url.Values{"action": {"save"}, "slot": {"Me"}})
 	body := rec.Body.String()
 	if !strings.Contains(body, "Config saved to") || !strings.Contains(body, "couldn&#39;t remember folder overrides") {
 		t.Fatalf("expected config saved + state error in flash:\n%s", body)
@@ -126,7 +210,7 @@ func TestApplyInstallActionRunsSteps(t *testing.T) {
 	mkfile(t, filepath.Join(win64, "Mods", "mods.txt"))
 	s := testServer(t, Paths{ConfigDir: filepath.Join(root, "bridge"), GameWin64: win64})
 
-	rec := postForm(s.handleApply, "/apply", url.Values{"action": {"install"}})
+	rec := s.postForm(s.handleApply, "/apply", url.Values{"action": {"install"}})
 	body := rec.Body.String()
 	if !strings.Contains(body, "Install") || !strings.Contains(body, "Enable mod") {
 		t.Fatalf("panel should show install step results:\n%s", body)
@@ -157,7 +241,7 @@ func TestResetPostResetsAndRedirects(t *testing.T) {
 	useStateFile(t, state)
 	s := testServer(t, Paths{ConfigDir: "/custom/cfg", GameWin64: "/custom/win64"})
 
-	rec := postForm(s.handleReset, "/reset", url.Values{"config_dir": {"/posted/ignored"}, "game_win64": {"/posted/ignored"}})
+	rec := s.postForm(s.handleReset, "/reset", url.Values{"config_dir": {"/posted/ignored"}, "game_win64": {"/posted/ignored"}})
 	if rec.Code != http.StatusSeeOther {
 		t.Fatalf("POST /reset: got %d, want 303", rec.Code)
 	}
@@ -184,14 +268,10 @@ func TestResetPostResetsAndRedirects(t *testing.T) {
 }
 
 func TestResetPostSurfacesSaveError(t *testing.T) {
-	blocker := filepath.Join(t.TempDir(), "blocker")
-	if err := os.WriteFile(blocker, []byte("x"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	useStateFile(t, filepath.Join(blocker, "sub", "paths.json"))
+	useStateFileBlocked(t)
 	s := testServer(t, Paths{ConfigDir: "/custom/cfg", GameWin64: "/custom/win64"})
 
-	rec := postForm(s.handleReset, "/reset", nil)
+	rec := s.postForm(s.handleReset, "/reset", nil)
 	loc := rec.Header().Get("Location")
 	if rec.Code != http.StatusSeeOther || !strings.Contains(loc, "err=") {
 		t.Fatalf("expected 303 with err marker, got %d %q", rec.Code, loc)
@@ -225,11 +305,7 @@ func TestRootNeverWritesState(t *testing.T) {
 }
 
 func TestSavePathsErrors(t *testing.T) {
-	blocker := filepath.Join(t.TempDir(), "blocker")
-	if err := os.WriteFile(blocker, []byte("x"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	useStateFile(t, filepath.Join(blocker, "sub", "paths.json"))
+	useStateFileBlocked(t)
 	if err := savePaths(Paths{ConfigDir: "x"}); err == nil {
 		t.Fatal("savePaths must fail when the state dir can't be created")
 	}
@@ -237,4 +313,24 @@ func TestSavePathsErrors(t *testing.T) {
 	if err := savePaths(Paths{ConfigDir: "x"}); err == nil {
 		t.Fatal("savePaths must fail with no state file path")
 	}
+}
+
+// useStateFileBlocked points the state file inside a path that cannot be
+// created, so savePaths fails.
+func useStateFileBlocked(t *testing.T) {
+	t.Helper()
+	blocker := filepath.Join(t.TempDir(), "blocker")
+	if err := os.WriteFile(blocker, []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	useStateFile(t, filepath.Join(blocker, "sub", "paths.json"))
+}
+
+// applyServer is a test server whose config and Win64 folders sit in one temp
+// root, returned with the root and the config path.
+func applyServer(t *testing.T) (*server, string, string) {
+	t.Helper()
+	root := t.TempDir()
+	s := testServer(t, Paths{ConfigDir: root, GameWin64: filepath.Join(root, "win64")})
+	return s, root, filepath.Join(root, "config.txt")
 }

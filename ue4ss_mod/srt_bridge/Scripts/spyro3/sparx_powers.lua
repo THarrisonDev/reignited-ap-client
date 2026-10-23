@@ -9,6 +9,8 @@
 -- default-on and is not randomized. See docs/game_state_control.md.
 
 local core = require("inventory_grants_core")
+local C = require("constants")
+local O = require("option")
 
 local SHORT = {
     ["Spyro 3: Sparx Gem Collect Range"] = "GemCollectRange",
@@ -19,14 +21,14 @@ local SHORT = {
 return core.new({
     tag = "[SPARX]",
     items = {
-        ["Spyro 3: Sparx Gem Collect Range"] = 45,
-        ["Spyro 3: Sparx Extra Hit Point"] = 47,
-        ["Spyro 3: Sparx Chest Breaking"] = 48,
+        ["Spyro 3: Sparx Gem Collect Range"] = C.eit.EIT_SparxPower_GemCollectRange,
+        ["Spyro 3: Sparx Extra Hit Point"] = C.eit.EIT_SparxPower_ExtraHP,
+        ["Spyro 3: Sparx Chest Breaking"] = C.eit.EIT_SparxPower_ChestBreaking,
     },
-    option = function(sd)
+    option = function(sd, log)
         local s3 = sd and type(sd.games) == "table" and sd.games.spyro3 or nil
         local val = s3 and type(s3.options) == "table" and s3.options.sparx_powers
-        return val == 1 or val == true
+        return O.flag(val, "sparx_powers", log)
     end,
     flag = "powers",
     short = function(name) return SHORT[name] end,

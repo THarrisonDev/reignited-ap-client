@@ -63,8 +63,6 @@ function M.log_debug(l) emit("debug", "debug ", "(debug) ", tostring(l)) end
 --- Return a leveled logger whose every line is prefixed with tag (plus a
 --- WARN/ERROR word for those levels). sink, used by the specs, receives each
 --- composed line as one string instead of the file+console router.
---- @param tag string
---- @param sink function|nil
 --- @return table
 function M.tagged(tag, sink)
     --- Compose one line for level and route it to sink or the real logger.
@@ -87,8 +85,6 @@ end
 
 --- Return log_opt when it is a logger table, else wrap it: a function becomes
 --- a tagged sink (the specs), and nil falls back to the real router.
---- @param tag string
---- @param log_opt table|function|nil
 --- @return table
 function M.leveled(tag, log_opt)
     if type(log_opt) == "table" then return log_opt end

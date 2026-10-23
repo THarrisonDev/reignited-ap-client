@@ -26,6 +26,47 @@ function U.valid(obj)
     return ok and v == true
 end
 
+--- Return the live FalconGameState, or nil when it is not valid.
+function U.game_state()
+    local gs = ok_res(function() return FindFirstOf("FalconGameState_C") end, nil)
+    if not U.valid(gs) then return nil end
+    return gs
+end
+
+--- Return whether UE4SS exposes the game-thread write API.
+--- @return boolean
+function U.can_write()
+    return type(ExecuteInGameThread) == "function"
+end
+
+--- Index a generated regions.lua path map by its /LSnnn_ portal code.
+--- @param regions table|nil map path -> region
+--- @return table map code -> region
+function U.region_codes(regions)
+    local codes = {}
+    for path, region in pairs(regions or {}) do
+        local code = path:match("^/(LS%d%d%d)_")
+        if code then codes[code] = region end
+    end
+    return codes
+end
+
+--- Return whether a homeworld gate watcher may poll this tick: the slot's
+--- option is on, the player is in a stable homeworld and the job runner is idle.
+--- @param world table game_state snapshot.
+--- @param enabled boolean
+--- @param homeworlds table region name -> true
+--- @param stable integer polls a region must hold before a write
+--- @param jobs table job runner
+--- @return boolean
+function U.gate_ready(world, enabled, homeworlds, stable, jobs)
+    if not world.ok or not enabled then return false end
+    local here = world.region
+    if not (here and homeworlds[here]) then return false end
+    if world.ticks < stable then return false end
+    return jobs.ready()
+end
+
 --- Read obj[key], unwrapping UE4SS's table-wrapped scalars (the out-param
 --- quirk) to a number or boolean.
 --- @return number|boolean|nil
@@ -82,10 +123,8 @@ end
 --- opts.log is a function returning the module's current logger (looked up per
 --- use); opts.timeout abandons an unrun job (default 5s, no backoff);
 --- opts.backoff is the quiet time after a failed job (default timeout).
---- @param opts table|nil
 --- @return table runner with ready(), submit(), busy() and status()
-function U.job_runner(opts)
-    opts = opts or {}
+function U.job_runner(opts)    opts = opts or {}
     local timeout = opts.timeout or 5
     local backoff = opts.backoff or timeout
     local get_log = opts.log
@@ -117,16 +156,46 @@ function U.job_runner(opts)
     --- Run fn on the game thread. fn throwing (ERROR "<o.fail>: err") or
     --- returning false starts the backoff; so does a missing or throwing
     --- ExecuteInGameThread. o.desc names the job in the abandon WARN.
+    ---
+    --- o.defer keeps the job in flight after fn returns: fn is handed a `done`
+    --- callback and must call it when its delayed work has finished. The fence
+    --- (ready()/busy()) then covers work that outlives the call — a write whose
+    --- re-asserts are still scheduled — and `timeout` still abandons a job that
+    --- never calls done.
     function r.submit(fn, o)
         local mine = {started = os.time(), desc = (o and o.desc) or "job"}
         local fail = (o and o.fail) or "apply failed"
+        local defer = o and o.defer
         if type(ExecuteInGameThread) ~= "function" then
             fail_later()
             get_log().error("ExecuteInGameThread: unavailable")
             return
         end
         job = mine
+        --- Clear the in-flight job when it is still ours.
+        local function finish()
+            if job == mine then job = nil end
+        end
         local ok, err = pcall(ExecuteInGameThread, function()
+            if defer then
+                local finished = false
+                --- Release the fence once, however often fn calls back.
+                local function done()
+                    if finished then return end
+                    finished = true
+                    finish()
+                end
+                local okJ, res = pcall(fn, done)
+                if not okJ then
+                    done()
+                    fail_later()
+                    get_log().error(fail .. ": " .. tostring(res))
+                elseif res == false then
+                    done()
+                    fail_later()
+                end
+                return
+            end
             local okJ, res = pcall(fn)
             if not okJ then
                 fail_later()
@@ -134,10 +203,10 @@ function U.job_runner(opts)
             elseif res == false then
                 fail_later()
             end
-            if job == mine then job = nil end
+            finish()
         end)
         if not ok then
-            if job == mine then job = nil end
+            finish()
             fail_later()
             get_log().error("ExecuteInGameThread: " .. tostring(err))
         end

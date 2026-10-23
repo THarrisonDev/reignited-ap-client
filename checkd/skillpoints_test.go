@@ -8,11 +8,8 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"math"
-	"os"
 	"path/filepath"
 	"testing"
-	"time"
 )
 
 // spRecord builds one GVAS skill-point record: the EIT_SkillPoint item with a
@@ -20,93 +17,82 @@ import (
 // scanSkillPointsOne pins, byte-verified against the real saves), followed by
 // a trailing filler byte.
 func spRecord(vals ...float32) []byte {
-	var b bytes.Buffer
-	enc := func(s string) {
-		_ = binary.Write(&b, binary.LittleEndian, int32(len(s)+1))
-		b.WriteString(s)
-		b.WriteByte(0)
-	}
-	u32 := func(v uint32) { _ = binary.Write(&b, binary.LittleEndian, v) }
-	guid := func() {
-		for i := 0; i < 16; i++ {
-			b.WriteByte(0)
-		}
-	}
+	var w gvasWriter
 	// itemData struct (sizes/array-indices/guids are never validated by the
 	// scanner — only the saveParams array's shape is)
-	enc("itemData")
-	enc("StructProperty")
-	u32(0)
-	u32(0)
-	enc("PhasmidInventoryData")
-	guid()
-	b.WriteByte(0)
-	enc("ItemType")
-	enc("EnumProperty")
-	u32(0)
-	u32(0)
-	enc("EInventoryType")
-	b.WriteByte(0) // the enum value byte (EIT_SkillPoint = 36)
-	enc(skillPointMarker)
+	w.str("itemData")
+	w.str("StructProperty")
+	w.u32(0)
+	w.u32(0)
+	w.str("PhasmidInventoryData")
+	w.guid()
+	w.WriteByte(0)
+	w.str("ItemType")
+	w.str("EnumProperty")
+	w.u32(0)
+	w.u32(0)
+	w.str("EInventoryType")
+	w.WriteByte(0) // the enum value byte (EIT_SkillPoint = 36)
+	w.str(skillPointMarker)
 	// collected BoolProperty: always false, only shape-checked
-	enc("collected")
-	enc("BoolProperty")
-	u32(0)
-	u32(0)
-	b.WriteByte(0) // value byte
-	b.WriteByte(0) // terminator
-	enc("None")
+	w.str("collected")
+	w.str("BoolProperty")
+	w.u32(0)
+	w.u32(0)
+	w.WriteByte(0) // value byte
+	w.WriteByte(0) // terminator
+	w.str("None")
 	// itemParamList struct
-	enc("itemParamList")
-	enc("StructProperty")
-	u32(0) // size
-	u32(0) // array index
-	enc("PhasmidSaveParamList")
-	guid()
-	b.WriteByte(0)
+	w.str("itemParamList")
+	w.str("StructProperty")
+	w.u32(0) // size
+	w.u32(0) // array index
+	w.str("PhasmidSaveParamList")
+	w.guid()
+	w.WriteByte(0)
 	// saveParams array: u64 bodyLen, inner type tag + its NUL + the array's
 	// own NUL, u32 count, repeated field name + member type, per-element header
-	enc("saveParams")
-	enc("ArrayProperty")
-	arrSizeAt := b.Len()
-	u32(0) // bodyLen low half, patched below
-	u32(0) // bodyLen high half
-	enc("StructProperty")
-	b.WriteByte(0) // the array's own NUL (real saves carry it before the count)
-	bodyStart := b.Len()
-	u32(uint32(len(vals)))
-	enc("saveParams")
-	enc("StructProperty")
-	elemBodyLenAt := b.Len()
-	u32(0) // element bodyLen, patched below
-	u32(0) // element array index
-	enc("PhasmidSaveParam")
-	guid()
-	b.WriteByte(0)
-	elemStart := b.Len()
+	w.str("saveParams")
+	w.str("ArrayProperty")
+	arrSizeAt := w.Len()
+	w.u32(0) // bodyLen low half, patched below
+	w.u32(0) // bodyLen high half
+	w.str("StructProperty")
+	w.WriteByte(0) // the array's own NUL (real saves carry it before the count)
+	bodyStart := w.Len()
+	w.u32(uint32(len(vals)))
+	w.str("saveParams")
+	w.str("StructProperty")
+	elemBodyLenAt := w.Len()
+	w.u32(0) // element bodyLen, patched below
+	w.u32(0) // element array index
+	w.str("PhasmidSaveParam")
+	w.guid()
+	w.WriteByte(0)
+	elemStart := w.Len()
 	for _, v := range vals {
-		enc("paramName")
-		enc("StrProperty")
-		u32(4)
-		u32(0)
-		b.WriteByte(0)
-		u32(0)
-		enc("paramValue")
-		enc("FloatProperty")
-		u32(4)
-		u32(0)
-		b.WriteByte(0)
-		_ = binary.Write(&b, binary.LittleEndian, math.Float32bits(v))
-		enc("None")
+		w.str("paramName")
+		w.str("StrProperty")
+		w.u32(4)
+		w.u32(0)
+		w.WriteByte(0)
+		w.u32(0)
+		w.str("paramValue")
+		w.str("FloatProperty")
+		w.u32(4)
+		w.u32(0)
+		w.WriteByte(0)
+		w.f32(v)
+		w.str("None")
 	}
-	elemEnd := b.Len()
-	enc("None") // PhasmidSaveParamList terminator
-	bodyEnd := b.Len()
+	elemEnd := w.Len()
+	w.str("None") // PhasmidSaveParamList terminator
+	bodyEnd := w.Len()
 	// patch: the array's u64 bodyLen and the elements' u32 bodyLen
-	binary.LittleEndian.PutUint32(b.Bytes()[arrSizeAt:], uint32(bodyEnd-bodyStart))
-	binary.LittleEndian.PutUint32(b.Bytes()[elemBodyLenAt:], uint32(elemEnd-elemStart))
-	b.WriteByte('E') // trailing byte past the record
-	return b.Bytes()
+	w.patchU32(arrSizeAt, uint32(bodyEnd-bodyStart))
+	w.patchU32(elemBodyLenAt, uint32(elemEnd-elemStart))
+	w.WriteByte('E') // trailing byte past the record
+	return w.Bytes()
 }
 
 func TestScanSkillPoints100pct(t *testing.T) {
@@ -293,28 +279,28 @@ func withSkillPointTable(t *testing.T, game int, table map[int]string) {
 	t.Cleanup(restore)
 }
 
+// skillPointDaemon is an S1 daemon with the synthetic enum table, the ids it
+// resolves to, and fixture stem as its only save file.
+func skillPointDaemon(t *testing.T, backfill bool, stem string) (*daemon, map[int]string, map[string]int) {
+	t.Helper()
+	table, ids := spTestNames(0)
+	withSkillPointTable(t, 0, table)
+	d := testDaemonWithIDs(t, backfill, ids)
+	d.saveDir = t.TempDir()
+	writeSave(t, d, "FalconSave.106.sav", stem)
+	return d, table, ids
+}
+
 // TestDaemonSkillPointBackfill drives the real pollOnce path on the 100% Spyro
 // 1 save: with backfill, the baseline drop contains exactly the 14 earned S1
 // skill points resolved through the (synthetic) enum table, alongside the
 // dragons/eggs/gems.
 func TestDaemonSkillPointBackfill(t *testing.T) {
-	table, ids := spTestNames(0)
-	withSkillPointTable(t, 0, table)
-	d := testDaemon(t, true)
-	for name, id := range ids {
-		d.nameToID[name] = id
-	}
-	d.saveDir = t.TempDir()
-	if err := os.WriteFile(filepath.Join(d.saveDir, "FalconSave.106.sav"), loadSave(t, ref100Save), 0644); err != nil {
-		t.Fatal(err)
-	}
+	d, table, ids := skillPointDaemon(t, true, ref100Save)
 	writeSession(t, d, "slot=0\ngame=0\ntoken=sps1\n")
 	d.pollOnce()
 	drop := readDrop(t, d)
-	sent := map[string]bool{}
-	for _, n := range drop.Names {
-		sent[n] = true
-	}
+	sent := nameSet(drop.Names)
 	for v := 1; v <= 14; v++ {
 		name := table[v]
 		if !sent[name] {
@@ -335,78 +321,36 @@ func TestDaemonSkillPointBackfill(t *testing.T) {
 // exactly that one skill point), then the 100% save's {1..14} drops the 13
 // fresh ones — enum 4 stays known and is not re-sent.
 func TestDaemonSkillPointFlip(t *testing.T) {
-	table, ids := spTestNames(0)
-	withSkillPointTable(t, 0, table)
-	d := testDaemon(t, true)
-	for name, id := range ids {
-		d.nameToID[name] = id
-	}
-	d.saveDir = t.TempDir()
-
-	path := filepath.Join(d.saveDir, "FalconSave.106.sav")
-	if err := os.WriteFile(path, loadSave(t, "mid_s1"), 0644); err != nil {
-		t.Fatal(err)
-	}
+	d, table, ids := skillPointDaemon(t, true, "mid_s1")
 	writeSession(t, d, "slot=0\ngame=0\ntoken=spflip\n")
 	d.pollOnce()
 	base := readDrop(t, d)
-	sent := map[string]bool{}
-	spBase := 0
-	for _, n := range base.Names {
-		sent[n] = true
-		if _, ok := ids[n]; ok {
-			spBase++
-		}
-	}
+	sent := nameSet(base.Names)
+	spBase := countIDs(base.Names, ids)
 	if spBase != 1 || !sent[table[4]] {
 		t.Fatalf("baseline must backfill exactly the mirror's 1 skill point, got %d (%v)", spBase, base.Names)
 	}
-	baseDrops := d.drops
 
 	// flip: the 100% save adds 13 new skill points
-	time.Sleep(20 * time.Millisecond)
-	if err := os.WriteFile(filepath.Join(d.saveDir, "FalconSave.105.sav"), loadSave(t, ref100Save), 0644); err != nil {
-		t.Fatal(err)
-	}
+	stampSave(t, filepath.Join(d.saveDir, "FalconSave.105.sav"), loadSave(t, ref100Save))
 	d.pollOnce()
 	got := readDrop(t, d)
-	spFlip := 0
-	for _, n := range got.Names {
-		if _, ok := ids[n]; ok {
-			spFlip++
-			sent[n] = true
-		}
-	}
-	if spFlip != 13 {
+	if spFlip := countIDs(got.Names, ids); spFlip != 13 {
 		t.Fatalf("flip must drop exactly the 13 new skill points, got %d (%v)", spFlip, got.Names)
 	}
-	if sent[table[4]] && spBase == 1 {
-		if n := table[4]; contains(got.Names, n) {
-			t.Fatalf("already-known skill point 4 re-sent in the flip drop")
-		}
+	if contains(got.Names, table[4]) {
+		t.Fatalf("already-known skill point 4 re-sent in the flip drop")
 	}
 	if len(d.spKnown) != 14 {
 		t.Fatalf("spKnown has %d entries, want 14", len(d.spKnown))
 	}
-	_ = baseDrops
 	t.Log("baseline {4} then flip {1..14}\\{4}: OK")
 }
 
 // TestDaemonSkillPointNoBackfill: with --no-backfill the baseline logs the
 // earned skill points but sends nothing until a new enum appears.
 func TestDaemonSkillPointNoBackfill(t *testing.T) {
-	table, ids := spTestNames(0)
-	withSkillPointTable(t, 0, table)
-	d := testDaemon(t, false)
-	for name, id := range ids {
-		d.nameToID[name] = id
-	}
-	d.saveDir = t.TempDir()
-
-	path := filepath.Join(d.saveDir, "FalconSave.106.sav")
-	if err := os.WriteFile(path, loadSave(t, "mid_s1"), 0644); err != nil {
-		t.Fatal(err)
-	}
+	d, table, ids := skillPointDaemon(t, false, "mid_s1")
 	writeSession(t, d, "slot=0\ngame=0\ntoken=spnb\n")
 	d.pollOnce()
 	if d.drops != 0 {
@@ -416,18 +360,9 @@ func TestDaemonSkillPointNoBackfill(t *testing.T) {
 		t.Fatalf("baseline must still learn {4}, spKnown=%v", d.spKnown)
 	}
 
-	time.Sleep(20 * time.Millisecond)
-	if err := os.WriteFile(filepath.Join(d.saveDir, "FalconSave.105.sav"), loadSave(t, ref100Save), 0644); err != nil {
-		t.Fatal(err)
-	}
+	stampSave(t, filepath.Join(d.saveDir, "FalconSave.105.sav"), loadSave(t, ref100Save))
 	d.pollOnce()
-	got := readDrop(t, d)
-	spSent := []string{}
-	for _, n := range got.Names {
-		if _, ok := ids[n]; ok {
-			spSent = append(spSent, n)
-		}
-	}
+	spSent := skillPointNames(readDrop(t, d).Names, ids)
 	if len(spSent) != 13 {
 		t.Fatalf("post-baseline flip must send the 13 new skill points, got %v", spSent)
 	}
@@ -439,6 +374,17 @@ func TestDaemonSkillPointNoBackfill(t *testing.T) {
 	t.Log("no-backfill: baseline logs only, first flip sends the 13 new enums: OK")
 }
 
+// skillPointNames filters a drop's names down to the synthetic skill points.
+func skillPointNames(names []string, ids map[string]int) []string {
+	var out []string
+	for _, n := range names {
+		if _, ok := ids[n]; ok {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
 // TestDaemonSpyro1IgnoresForeignSkillPoints pins the range filter: a Spyro 1
 // session must not send the S2/S3 enums its save entry does not hold (the
 // synthetic table only covers S1's 1..14, and out-of-range values never
@@ -446,10 +392,7 @@ func TestDaemonSkillPointNoBackfill(t *testing.T) {
 func TestDaemonSpyro1IgnoresForeignSkillPoints(t *testing.T) {
 	table, ids := spTestNames(0)
 	withSkillPointTable(t, 0, table)
-	d := testDaemon(t, true)
-	for name, id := range ids {
-		d.nameToID[name] = id
-	}
+	d := testDaemonWithIDs(t, true, ids)
 	sps := []int{1, 15, 31, 50}
 	got := d.spFlip(sps, 0)
 	if len(got) != 1 || got[0].name != "1" {

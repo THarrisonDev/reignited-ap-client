@@ -171,6 +171,110 @@ func skipU32(data []byte, o int) int {
 	return o + 4
 }
 
+// readU32 reads the u32 at o.
+func readU32(data []byte, o int) (uint32, bool) {
+	if o < 0 || o+4 > len(data) {
+		return 0, false
+	}
+	return binary.LittleEndian.Uint32(data[o:]), true
+}
+
+// reader walks a fixed-shape save record. The first field that does not match
+// latches ok false and leaves every later step a no-op, so a caller checks the
+// chain once.
+type reader struct {
+	data []byte
+	o    int
+	ok   bool
+}
+
+// atReader starts reading data at o.
+func atReader(data []byte, o int) *reader {
+	return &reader{data: data, o: o, ok: o >= 0}
+}
+
+// tag advances past the FString tag.
+func (r *reader) tag(name string) {
+	if r.ok {
+		if r.o = tagEnds(r.data, r.o, name); r.o < 0 {
+			r.ok = false
+		}
+	}
+}
+
+// skip32 advances past a u32 field's bytes without checking its value.
+func (r *reader) skip32() {
+	if r.ok {
+		if r.o = skipU32(r.data, r.o); r.o < 0 {
+			r.ok = false
+		}
+	}
+}
+
+// skip0 advances past a u32 size field and its u32 zero array index.
+func (r *reader) skip0() {
+	if r.ok {
+		if r.o = skipU32(r.data, r.o); r.o < 0 {
+			r.ok = false
+			return
+		}
+		if r.o = zeroU32(r.data, r.o); r.o < 0 {
+			r.ok = false
+		}
+	}
+}
+
+// zero32 advances past a u32 that must be 0.
+func (r *reader) zero32() {
+	if r.ok {
+		if r.o = zeroU32(r.data, r.o); r.o < 0 {
+			r.ok = false
+		}
+	}
+}
+
+// nul advances past a NUL byte.
+func (r *reader) nul() {
+	if r.ok {
+		if r.o = zeroByte(r.data, r.o); r.o < 0 {
+			r.ok = false
+		}
+	}
+}
+
+// guid advances past a 16-byte GUID.
+func (r *reader) guid() {
+	if !r.ok {
+		return
+	}
+	if r.o+16 > len(r.data) {
+		r.ok = false
+		return
+	}
+	r.o += 16
+}
+
+// boolValue advances past a BoolProperty's value byte, which must equal want.
+func (r *reader) boolValue(want byte) {
+	if !r.ok {
+		return
+	}
+	if r.o >= len(r.data) || r.data[r.o] != want {
+		r.ok = false
+		return
+	}
+	r.o++
+}
+
+// structHeader advances past a StructProperty body header: a u32 size, a u32
+// zero array index, the type-name FString, a 16-byte GUID and the NUL.
+func (r *reader) structHeader(typeName string) {
+	r.skip0()
+	r.tag(typeName)
+	r.guid()
+	r.nul()
+}
+
 // fstringBody splits the GVAS FString at off: i32 length prefix; positive =
 // ANSI bytes (length includes the NUL), negative = UTF-16LE (-length code
 // units including the NUL unit), 0 = empty. body is the raw content including
@@ -218,35 +322,18 @@ type levelKey struct {
 	path string
 }
 
-// isLevelKeyAt checks that the level-path FString whose NUL terminator sits
-// at nulOff is followed by the level struct's leading property name: i32
-// length then "objectDataMap" (ASCII or UTF-16 content). This separates true
-// levelObjectMap TMap keys from level paths that occur as paramName values
-// inside item params (followed by "paramValue" instead) — both appear in
-// live saves. Kept apart from tagEnds: it matches the content without its
-// NUL, and its UTF-16 branch expects length -13 where a NUL-terminated
-// "objectDataMap" FString would carry -14 (so that branch only matches an
-// unterminated tag; the fixtures' keys all take the ASCII branch).
+// isLevelKeyAt checks that the level-path FString whose NUL terminator sits at
+// nulOff is followed by the level struct's leading property name, the
+// "objectDataMap" FString. That tail is what separates a true levelObjectMap
+// TMap key from a level path occurring as a paramName value (followed by
+// "paramValue" instead) — both appear in live saves. The path's own terminator
+// width decides how far to step; the tag itself is an engine property name and
+// is matched in either encoding.
 func isLevelKeyAt(data []byte, nulOff int) bool {
-	at := nulOff + 1 // ASCII: NUL is 1 byte
-	if at+4 > len(data) {
-		return false
-	}
-	if int32(binary.LittleEndian.Uint32(data[at:])) == 14 &&
-		at+4+len("objectDataMap") <= len(data) &&
-		bytes.Equal(data[at+4:at+4+len("objectDataMap")], []byte("objectDataMap")) {
+	if tagEnds(data, nulOff+1, "objectDataMap") >= 0 { // ASCII path: 1-byte NUL
 		return true
 	}
-	at = nulOff + 2 // UTF-16: NUL is one 2-byte code unit
-	if at+4 > len(data) {
-		return false
-	}
-	if int32(binary.LittleEndian.Uint32(data[at:])) == -13 &&
-		at+4+2*len("objectDataMap") <= len(data) &&
-		bytes.Equal(data[at+4:at+4+2*len("objectDataMap")], utf16Bytes("objectDataMap")) {
-		return true
-	}
-	return false
+	return tagEnds(data, nulOff+2, "objectDataMap") >= 0 // UTF-16 path: 2-byte NUL unit
 }
 
 func validLevelPath(p string) bool {
@@ -264,9 +351,14 @@ func validLevelPath(p string) bool {
 	if i < 4 || i >= len(p) || p[i] != '_' {
 		return false
 	}
-	for j := i + 1; j < len(p); j++ {
-		c := p[j]
-		if !isIdentByte(c) {
+	return isIdent(p[i+1:])
+}
+
+// isIdent reports whether every byte of s can appear in a level-folder name
+// segment. An empty s passes.
+func isIdent(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if !isIdentByte(s[i]) {
 			return false
 		}
 	}
@@ -285,64 +377,99 @@ func isIdentByte(c byte) bool {
 // is included so the markers it owns (its gemCollectionMap) attribute to it
 // instead of the level key before it, and resolve to no region there.
 func findLevelKeys(data []byte) []levelKey {
+	out := mapsLevelKeys(data)
+	out = append(out, moneybagKeys(data)...)
+	sort.Slice(out, func(i, j int) bool { return out[i].off < out[j].off })
+	return out
+}
+
+// mapsLevelKeys finds the level keys whose path ends in "/Maps/".
+func mapsLevelKeys(data []byte) []levelKey {
 	var out []levelKey
 	for _, mapsPat := range [][]byte{[]byte("/Maps/"), utf16Bytes("/Maps/")} {
 		stride := 1
 		if len(mapsPat) == 12 {
 			stride = 2
 		}
-		off := 0
-		for {
-			i := bytes.Index(data[off:], mapsPat)
-			if i < 0 {
-				break
-			}
-			off += i
-			// content runs backward from the char preceding "/Maps/"
-			p := off - stride
-			start := -1
-			for k := 0; k < 64; k++ {
-				if p < 0 {
-					break
-				}
-				c := data[p]
-				if stride == 2 {
-					if data[p+1] != 0 {
-						break
-					}
-				}
-				if c == '/' && k > 0 {
-					start = p
-					break
-				}
-				if !isIdentByte(c) {
-					break
-				}
-				p -= stride
-			}
-			if start >= 0 {
-				content := data[start : off+6*stride]
-				var path string
-				if stride == 1 {
-					path = string(content)
-				} else {
-					codes := make([]uint16, len(content)/2)
-					for j := range codes {
-						codes[j] = binary.LittleEndian.Uint16(content[2*j:])
-					}
-					path = string(utf16.Decode(codes))
-				}
-				if validLevelPath(path) && isLevelKeyAt(data, off+6*stride) {
-					out = append(out, levelKey{start, path})
-				}
-			}
-			off++
-		}
+		out = append(out, keysBeforeMaps(data, mapsPat, stride)...)
 	}
-	// The "MoneybagGems" pseudo-key carries no "/Maps/" tail, so it is found
-	// directly. Resolves to no region (not in any path table) but stops the
-	// backward walk from filing its gems under Harbor Speedway, the level key
-	// before it in the 100% save.
+	return out
+}
+
+// keysBeforeMaps returns the level keys whose "/Maps/" match at the given
+// stride holds mapsPat.
+func keysBeforeMaps(data, mapsPat []byte, stride int) []levelKey {
+	var out []levelKey
+	off := 0
+	for {
+		i := bytes.Index(data[off:], mapsPat)
+		if i < 0 {
+			return out
+		}
+		off += i
+		if k, ok := levelKeyAt(data, off, stride); ok {
+			out = append(out, k)
+		}
+		off++
+	}
+}
+
+// levelKeyAt walks backward from the "/Maps/" match at mapsOff to the path's
+// start, returning the key when the record is a real level key.
+func levelKeyAt(data []byte, mapsOff, stride int) (levelKey, bool) {
+	start := pathStart(data, mapsOff, stride)
+	if start < 0 {
+		return levelKey{}, false
+	}
+	end := mapsOff + 6*stride
+	path := decodePath(data[start:end], stride)
+	if !validLevelPath(path) || !isLevelKeyAt(data, end) {
+		return levelKey{}, false
+	}
+	return levelKey{start, path}, true
+}
+
+// pathStart walks backward from the character before a "/Maps/" match to the
+// '/' that opens the level path, or -1 when none opens within 64 steps.
+func pathStart(data []byte, mapsOff, stride int) int {
+	p := mapsOff - stride
+	for k := 0; k < 64; k++ {
+		if p < 0 {
+			return -1
+		}
+		c := data[p]
+		if stride == 2 && data[p+1] != 0 {
+			return -1
+		}
+		if c == '/' && k > 0 {
+			return p
+		}
+		if !isIdentByte(c) {
+			return -1
+		}
+		p -= stride
+	}
+	return -1
+}
+
+// decodePath decodes path bytes at one stride (1 = ASCII, 2 = UTF-16LE).
+func decodePath(content []byte, stride int) string {
+	if stride == 1 {
+		return string(content)
+	}
+	codes := make([]uint16, len(content)/2)
+	for j := range codes {
+		codes[j] = binary.LittleEndian.Uint16(content[2*j:])
+	}
+	return string(utf16.Decode(codes))
+}
+
+// moneybagKeys finds the "MoneybagGems" pseudo-key, which carries no "/Maps/"
+// tail and so is matched directly. Resolves to no region (not in any path
+// table) but stops the backward walk from filing its gems under Harbor
+// Speedway, the level key before it in the 100% save.
+func moneybagKeys(data []byte) []levelKey {
+	var out []levelKey
 	for _, pat := range [][]byte{[]byte("MoneybagGems\x00"), utf16Bytes("MoneybagGems\x00")} {
 		off := 0
 		for {
@@ -351,16 +478,51 @@ func findLevelKeys(data []byte) []levelKey {
 				break
 			}
 			at := off + i
-			// "MoneybagGems\x00" already includes the NUL terminator, so the
-			// property tag starts at at+len(pat); isLevelKeyAt wants the NUL's
-			// offset (one back).
+			// the pattern includes the NUL terminator, so the property tag
+			// starts at at+len(pat); isLevelKeyAt wants the NUL's offset.
 			if isLevelKeyAt(data, at+len(pat)-1) {
 				out = append(out, levelKey{at, "MoneybagGems"})
 			}
 			off = at + 1
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].off < out[j].off })
+	return out
+}
+
+// framedTagStarts returns the offset of every FString whose i32 length prefix
+// and NUL framing are exactly tag: a real property/tag name, not the same bytes
+// inside some value. The returned offset is the length prefix, so callers slice
+// from the property boundary.
+func framedTagStarts(data []byte, tag string) []int {
+	var out []int
+	needle := []byte(tag)
+	for off := 0; ; {
+		i := bytes.Index(data[off:], needle)
+		if i < 0 {
+			return out
+		}
+		at := off + i - 4 // the FString length prefix precedes the content
+		off += i + 1
+		if at >= 0 && tagEnds(data, at, tag) >= 0 {
+			out = append(out, at)
+		}
+	}
+}
+
+// mapPropertyStarts returns the offset of every framed `name` immediately
+// followed by the framed "MapProperty" type tag: the structure of a
+// saveDataMapArray entry's levelObjectMap property (and of the file's single
+// globalFloatMap). Matching the structure, not the bare bytes, keeps a save
+// whose *value* reads the same as the property name from looking like an extra
+// entry — that mistake silently disabled scanning for the whole session.
+func mapPropertyStarts(data []byte, name string) []int {
+	var out []int
+	for _, at := range framedTagStarts(data, name) {
+		after := tagEnds(data, at, name)
+		if after >= 0 && tagEnds(data, after, "MapProperty") >= 0 {
+			out = append(out, at)
+		}
+	}
 	return out
 }
 

@@ -7,11 +7,9 @@
 -- See docs/game_gates.md.
 
 local core = require("level_locks_core")
+local C = require("constants")
 
-local HOMEWORLDS = {
-    ["Sunrise Spring"] = true, ["Midday Gardens"] = true,
-    ["Evening Lake"] = true, ["Midnight Mountain"] = true,
-}
+local HOMEWORLDS = C.homeworlds.spyro3
 
 return core.new({
     game = "spyro3",

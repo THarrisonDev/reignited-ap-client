@@ -1,385 +1,426 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-29
--- Updated: 2026-10-11
+-- Updated: 2026-10-21
 
--- Spec for client/ue4ss_mod/srt_bridge/Scripts/hud_banner.lua. Fakes the
--- UE4SS surface (FindFirstOf, StaticFindObject, timers, game thread) and
--- verifies the proven recipe: fanfare -> +100ms write -> convergence check.
+-- Spec for client/ue4ss_mod/srt_bridge/Scripts/hud_banner.lua. Fakes the UE4SS
+-- surface (FindFirstOf, StaticFindObject, timers, game thread, the fanfare
+-- widget) and drives the host tick, verifying the burst contract proven in
+-- docs/fanfare_text.md ("Burst mode"): one fanfare per burst, the Intro frozen
+-- to hold the window, one text swap per line, released with the Outro.
 -- Run from the client repo root: lua tests/lua/test_hud_banner.lua
 
-local here = debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "./"
-package.path = here .. "../../ue4ss_mod/srt_bridge/Scripts/?.lua;" .. package.path
+package.path = (debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "./") .. "support/?.lua;" .. package.path
+local H = require("harness")
+local fanfare = require("fanfare")
 
-local failures = 0
-local function check(name, cond, extra)
-    if not cond then
-        print("FAIL: " .. name .. (extra and (" (" .. extra .. ")") or ""))
-        failures = failures + 1
+local check, done = H.checker()
+
+-- fake UE4SS surface -------------------------------------------------------
+local jobs, timers = {}, {}
+local in_job, nested = false, 0
+
+local fake_now = H.now
+os.time = function() return fake_now end
+
+ExecuteInGameThread = function(fn)
+    if in_job then nested = nested + 1 end -- game thread -> game thread wedges UE4SS
+    jobs[#jobs + 1] = fn
+end
+ExecuteWithDelay = function(ms, fn) timers[#timers + 1] = { ms = ms, fn = fn } end
+
+--- Run the queued game-thread jobs once.
+local function run_jobs()
+    local js = jobs
+    jobs = {}
+    for _, fn in ipairs(js) do
+        in_job = true
+        fn()
+        in_job = false
     end
 end
 
--- fake UE4SS globals
-local game_thread_jobs, timers = {}, {}
--- controllable clock: the job runner backoff and the banner window are
--- os.time-based. Declared before the runners so they can advance it.
-local fake_now = os.time()
-ExecuteInGameThread = function(fn) game_thread_jobs[#game_thread_jobs + 1] = fn end
-ExecuteWithDelay = function(ms, fn) timers[#timers + 1] = {ms = ms, fn = fn} end
-
-local function run_game_thread()
-    for _ = 1, 20 do
-        if #game_thread_jobs == 0 then break end
-        local fns = game_thread_jobs
-        game_thread_jobs = {}
-        for _, fn in ipairs(fns) do fn() end
-    end
-end
-
+--- Run the queued timers once, advancing the clock by their delays.
 local function run_timers()
     local ts = timers
     timers = {}
     for _, t in ipairs(ts) do
-        fake_now = fake_now + (t.ms or 0) / 1000   -- ExecuteWithDelay advances time
+        fake_now = fake_now + (t.ms or 0) / 1000
         t.fn()
     end
 end
 
-local find_of = {}                  -- class -> table (per scenario)
-local find_first_calls = {}         -- class -> count (for the cache spec)
-FindFirstOf = function(class)
-    find_first_calls[class] = (find_first_calls[class] or 0) + 1
-    return find_of[class]
+--- Run queued game-thread jobs and due timers until both are empty.
+local function pump()
+    for _ = 1, 2000 do
+        local js = jobs
+        jobs = {}
+        for _, fn in ipairs(js) do
+            in_job = true
+            fn()
+            in_job = false
+        end
+        local ts = timers
+        timers = {}
+        for _, t in ipairs(ts) do
+            fake_now = fake_now + (t.ms or 0) / 1000
+            t.fn()
+        end
+        if #jobs == 0 and #timers == 0 then return end
+    end
 end
 
-local static_objects = {}
-StaticFindObject = function(path) return static_objects[path] end
+local writes, fanfares = {}, 0
+local widget
 
--- fake fanfare widget: a proxy where fmw["message text"] (write) sets
--- _written and fmw["message text"]:ToString() (read) returns it — mirroring
--- how UE4SS routes property reads/writes to the same backing field.
--- one stable fake lib (the module caches StaticFindObject results — in the
--- game it never changes); recorders reset per scenario
-local ftexts = {}
--- the HUD is cached by the module; bump the generation each scenario so any
--- previously cached HUD reports invalid, forcing a re-fetch (as a level
--- transition would in the game)
-local hud_gen = 0
+--- Build the fake fanfare widget: State follows the frozen window, the property
+--- is the lever, and Base mirrors what the player sees.
+local function new_widget()
+    local w = {
+        _prop = "Rescued ",
+        _base = "Rescued ",
+        _window_until = 0,
+        _paused = false,
+        _state_written = nil,
+        _valid = true,
+        intro_stops = 0,
+        outros = 0,
+    }
+    w.Intro = { GetStartTime = function() return 0 end, GetEndTime = function() return 0.6 end }
+    w.Outro = { GetStartTime = function() return 0 end, GetEndTime = function() return 0.267 end }
+    w.Base = {
+        SetText = function(_, ft) w._base = ft and ft.text or "?" end,
+        GetText = function() return { ToString = function() return "" end } end, -- blank while held
+    }
+    w.IsValid = function() return w._valid end
+    w.PauseAnimation = function() w._paused = true; return 0.4 end
+    w.StopAnimation = function()
+        w.intro_stops = w.intro_stops + 1
+        w._paused = false
+        w._window_until = 0
+    end
+    w.PlayAnimation = function(_, anim)
+        if anim == w.Outro then w.outros = w.outros + 1 end
+    end
+    return fanfare.attach(w, function() return fake_now end, function(text)
+        writes[#writes + 1] = text
+    end)
+end
 
-local function setup()
-    ftexts = {}
-    find_first_calls = {}
-    hud_gen = hud_gen + 1
-    local my_gen = hud_gen
-    widget = setmetatable({}, {
-        __index = function(_, k)
-            if k == "message text" then
-                -- the property we wrote. _prop_sticky=false simulates the game
-                -- rewriting the property; the displayed Base is separate.
-                local t = widget._prop_sticky and widget._prop_text or "Rescued "
-                return {ToString = function() return t end,
-                        IsValid = function() return true end}
-            end
-            if k == "State" then
-                return (fake_now < (widget._window_until or 0)) and 1 or 0
-            end
-            return rawget(widget, k)
-        end,
-        __newindex = function(_, k, v)
-            if k == "message text" then
-                widget._prop_text = type(v) == "table" and v.text or v
-                widget._writes = (widget._writes or 0) + 1
-                return
-            end
-            rawset(widget, k, v)
-        end,
-    })
-    widget._prop_sticky = true
-    widget._base_sticky = true
-    widget._window_open = false
-    -- State is what the module gates on. It reads like a plain field
-    -- (widget.State), so expose it via the metatable's __index fallback.
-    widget._state = 0
-    widget.IsValid = function() return true end
-    -- Base is the TextBlock the player sees. GetText reflects our SetText only
-    -- while _base_sticky; a game repaint reverts it to "Rescued ".
-    widget.Base = {
-        SetText = function(_, ft)
-            widget._base_text = type(ft) == "table" and ft.text or ft
-            widget._base_ftext = ft
-        end,
-        GetText = function()
-            local t = widget._base_sticky and widget._base_text or "Rescued "
-            return {ToString = function() return t end, text = t}
-        end,
-    }
-    find_of = {
-        PlayerController = {
-            GetHUD = function()
-                return {
-                    IsValid = function() return hud_gen == my_gen end,
-                    -- the game's fanfare path opens the widget for ~3s
-                    ShowFanfare = function()
-                        widget._window_until = fake_now + 3
-                        widget._fanfares = (widget._fanfares or 0) + 1
-                    end,
-                }
-            end,
-        },
-        UI_FanFareMessage_C = widget,
-    }
-    static_objects["/Script/Engine.Default__KismetTextLibrary"] = {
+local function hud_obj()
+    return {
         IsValid = function() return true end,
-        Conv_StringToText = function(_, s)
-            ftexts[#ftexts + 1] = s
-            return {text = s, ToString = function() return s end, IsValid = function() return true end}
+        ShowFanfare = function(a, b, c) -- dot call: (type, name); colon: (self, type, name)
+            fanfares = fanfares + 1
+            widget._window_until = fake_now + 2.8
+            widget._state_written = nil
+            local name = c or b
+            assert(name == "Nestor", "fanfare stand-in name")
         end,
     }
-    return widget, ftexts
 end
 
--- controllable clock: the job runner backoff is os.time-based (fake_now is
--- declared above setup and os.time is overridden just below)
-os.time = function() return fake_now end
+local function install()
+    widget = new_widget()
+    writes, fanfares, nested = {}, 0, 0
+    jobs, timers = {}, {}
+    local hud = hud_obj()
+    FindFirstOf = function(class)
+        if class == "PlayerController" then return { GetHUD = function() return hud end } end
+        if class == "UI_FanFareMessage_C" then return widget end
+        return nil
+    end
+    StaticFindObject = function(path)
+        if path == "/Script/Engine.Default__KismetTextLibrary" then
+            return {
+                IsValid = function() return true end,
+                Conv_StringToText = function(_, s)
+                    return { text = s, ToString = function() return s end }
+                end,
+            }
+        end
+        return nil
+    end
+    return widget
+end
 
 local banner = require("hud_banner")
-
--- scenario 1: happy path — fanfare, +100ms write, convergence no-op
-do
-    local widget = setup()
-    local lines = {}
-    banner.init({log = function(l) lines[#lines + 1] = l end})
-
-    banner.note_item("Nestor's Key")
-    run_game_thread()               -- submit job
-    run_game_thread()               -- execute job: fanfare + arm timer
-    check("s1 ftext not written before timer", #ftexts == 0)
-    local timer_count = #timers
-    check("s1 write timer armed", timer_count >= 1)
-    run_timers()                    -- +100ms
-    run_game_thread()               -- write job
-    check("s1 Conv_StringToText with our text", ftexts[1] == "Nestor's Key",
-        tostring(ftexts[1]))
-    check("s1 property written", widget._prop_text == "Nestor's Key",
-        tostring(widget._prop_text))
-    check("s1 Base textblock written",
-        widget._base_ftext and widget._base_ftext.text == "Nestor's Key")
-    check("s1 shown log",
-        table.concat(lines, "\n"):find("banner: Nestor's Key", 1, true) ~= nil)
-    -- +2s convergence: property already ours -> no new conversion... (the
-    -- readback equals text only via holder; ftext re-write is skipped by
-    -- the cur == text check)
-    local before = #ftexts
-    run_timers()
-    run_game_thread()
-    check("s1 convergence no-op when stuck", #ftexts == before)
+local logs = {}
+local function fresh()
+    install()
+    logs = {}
+    banner.reset()
+    banner.init({
+        log = function(line) logs[#logs + 1] = line end,
+    })
+    return widget
 end
 
--- scenario 2: backlog — tick-driven drain shows both, one at a time
+--- Return every captured log line joined.
+local function log_text()
+    return table.concat(logs, "\n")
+end
+
+--- Return whether a status line carries field=value as a whole field.
+local function has(st, kv)
+    return (" " .. st .. " "):find(" " .. kv .. " ", 1, true) ~= nil
+end
+
+local TICK = 250 -- the host poll interval the module paces itself against
+
+--- Advance n host ticks, moving the poll clock and pumping work after each.
+local function advance(n)
+    for _ = 1, n do
+        fake_now = fake_now + TICK / 1000
+        banner.tick()
+        pump()
+    end
+end
+
+--- Advance until the burst goes idle, optionally after an expected write count
+--- (a spill passes through idle between windows).
+local function drain(expected)
+    for _ = 1, 400 do
+        local st = banner.status()
+        if has(st, "state=idle") and (not expected or #writes == expected) then return end
+        advance(1)
+    end
+end
+
+-- scenario 1: one item = one fanfare, first line, freeze, then release
 do
-    local widget = setup()
-    local lines = {}
-    banner.init({log = function(l) lines[#lines + 1] = l end})
+    local w = fresh()
+    banner.note_item("Nestor's Key")
+    fake_now = fake_now + TICK / 1000
+    banner.tick() -- submits the open job
+    run_jobs() -- fire, arm the write and freeze timers
+    check("s1 one fanfare", fanfares == 1, tostring(fanfares))
+    check("s1 no write before the lead-in", #writes == 0, tostring(#writes))
+    run_timers() -- +100ms write, +300ms freeze
+    run_jobs()
+    check("s1 first line written", writes[1] == "Received Nestor's Key", tostring(writes[1]))
+    check("s1 property holds the line", w._prop == "Received Nestor's Key", w._prop)
+    check("s1 Base written for this frame", w._base == "Received Nestor's Key", w._base)
+    check("s1 Intro frozen", w._paused == true)
+    check("s1 window open", w.State == 1 or w._state_written == nil, tostring(w.State))
+    check("s1 status shows open", has(banner.status(), "state=open"), banner.status())
+    drain() -- hold for the dwell, then release
+    check("s1 only one line written", #writes == 1, tostring(#writes))
+    check("s1 Intro stopped", w.intro_stops >= 1, tostring(w.intro_stops))
+    check("s1 Outro played", w.outros == 1, tostring(w.outros))
+    check("s1 state reset", w._state_written == 0, tostring(w._state_written))
+    check("s1 back to idle", has(banner.status(), "state=idle"), banner.status())
+    check("s1 shown counter", has(banner.status(), "shown=1"), banner.status())
+end
+
+-- scenario 2: a run of items rides one fanfare, in order, one line each
+do
+    local w = fresh()
+    for _, name in ipairs({ "A", "B", "C" }) do banner.note_item(name) end
+    advance(1)
+    pump()
+    check("s2 one fanfare for three items", fanfares == 1, tostring(fanfares))
+    check("s2 first line", writes[1] == "Received A", table.concat(writes, ","))
+    drain()
+    check("s2 all three lines in order", table.concat(writes, ",") == "Received A,Received B,Received C", table.concat(writes, ","))
+    check("s2 one Outro for the burst", w.outros == 1, tostring(w.outros))
+    check("s2 shown counter", has(banner.status(), "shown=3"), banner.status())
+end
+
+-- scenario 3: a long backlog is shown in full, spilling at the window budget
+do
+    local w = fresh()
+    for i = 1, 30 do banner.note_item("Item " .. i) end
+    advance(1)
+    pump()
+    check("s3 the window's length follows the queue",
+        log_text():find("burst open: 30 line(s) from 30 queued, holding ~30.0s", 1, true) ~= nil, log_text())
+    for _ = 1, 400 do
+        local st = banner.status()
+        if has(st, "state=idle") and has(st, "waiting=0") then break end
+        advance(1)
+    end
+    check("s3 every item shown", #writes == 30, tostring(#writes))
+    check("s3 in order", writes[1] == "Received Item 1" and writes[30] == "Received Item 30",
+        (writes[1] or "") .. "..." .. (writes[#writes] or ""))
+    check("s3 budget spills into a second window", fanfares == 2, tostring(fanfares))
+    check("s3 the spill is logged",
+        log_text():find("burst closed at the budget, 15 line(s) left", 1, true) ~= nil, log_text())
+    check("s3 the queue drained", has(banner.status(), "waiting=0"), banner.status())
+end
+
+-- scenario 3b: repeats collapse into one counted line (the reason for batching)
+do
+    local w = fresh()
+    for _ = 1, 32 do banner.note_item("Dragon Egg") end
+    banner.note_item("Extra Life")
+    advance(1)
+    pump()
+    check("s3b a short burst", log_text():find("burst open: 2 line(s) from 33 queued, holding ~2.0s", 1, true) ~= nil,
+        log_text())
+    check("s3b every item counted as queued", has(banner.status(), "queued=33"), banner.status())
+    drain(2)
+    check("s3b two lines for 33 items", #writes == 2, tostring(#writes))
+    check("s3b the repeat is counted", writes[1] == "Received 32 Dragon Egg", table.concat(writes, " | "))
+    check("s3b the single stays singular", writes[2] == "Received Extra Life", table.concat(writes, " | "))
+    check("s3b two lines shown", has(banner.status(), "shown=2"), banner.status())
+    check("s3b one Outro for the pair", w.outros == 1, tostring(w.outros))
+end
+
+-- scenario 3c: sent checks are always individual, even when identical
+do
+    local w = fresh()
+    for _ = 1, 3 do banner.note_sent("To Bob: Orb") end
+    advance(1)
+    pump()
+    check("s3c the burst holds three lines", log_text():find("burst open: 3 line(s) from 3 queued", 1, true) ~= nil,
+        log_text())
+    drain(3)
+    check("s3c three separate lines", #writes == 3, tostring(#writes))
+    check("s3c verbatim, one per check",
+        table.concat(writes, " | ") == "To Bob: Orb | To Bob: Orb | To Bob: Orb",
+        table.concat(writes, " | "))
+    check("s3c all three counted", has(banner.status(), "sent=3"), banner.status())
+end
+
+-- scenario 3d: a mixed batch keeps items first, sends one per check
+do
+    local w = fresh()
+    for _ = 1, 2 do banner.note_item("Gem") end
+    banner.note_sent("To Bob: Orb")
+    banner.note_sent("To Bob: Orb")
+    advance(1)
+    pump()
+    drain(3)
+    check(
+        "s3d collapsed items first, then every send",
+        table.concat(writes, " | ") == "Received 2 Gem | To Bob: Orb | To Bob: Orb",
+        table.concat(writes, " | ")
+    )
+end
+
+-- scenario 4: received items outrank sent lines
+do
+    local w = fresh()
+    banner.note_sent("To Bob: Orb")
+    banner.note_item("Dragon")
+    advance(1)
+    pump()
+    drain()
+    check("s4 item shown first", writes[1] == "Received Dragon", table.concat(writes, ","))
+    check("s4 sent line follows", writes[2] == "To Bob: Orb", table.concat(writes, ","))
+    check("s4 sent counted", has(banner.status(), "sent=1"), banner.status())
+end
+
+-- scenario 5: a checkd notice preempts the waiting queues
+do
+    local w = fresh()
     banner.note_item("Item A")
     banner.note_item("Item B")
-    for _ = 1, 30 do fake_now = fake_now + 1
-        banner.tick()
-        run_game_thread()
-        run_timers()
-    end
-    check("s2 both eventually written", #ftexts >= 2, tostring(#ftexts))
-    check("s2 order kept (A first)", ftexts[1] == "Item A", tostring(ftexts[1]))
+    banner.note_system("Save Scanning Failed!")
+    advance(1)
+    pump()
+    drain()
+    check("s5 notice shown", writes[1] == "Save Scanning Failed!", table.concat(writes, ","))
+    check("s5 queued item dropped", table.concat(writes, ","):find("Item B", 1, true) == nil,
+        table.concat(writes, ","))
 end
 
--- scenario 3: no widget — item dropped with a WARN, no crash
+-- scenario 6: never inject while the game's own fanfare is up
 do
-    local widget = setup()
-    local lines = {}
-    banner.init({log = function(l) lines[#lines + 1] = l end})
-    find_of["UI_FanFareMessage_C"] = nil
-    banner.note_item("Item C")
-    for _ = 1, 6 do run_game_thread(); run_timers() end
-    check("s3 no writes", #ftexts == 0)
-    check("s3 drop warned", table.concat(lines, "\n"):find("no fanfare widget", 1, true) ~= nil,
-        table.concat(lines, "\n"))
+    local w = fresh()
+    w._window_until = fake_now + 2.8 -- the game is mid-fanfare
+    banner.note_item("Waits")
+    advance(1)
+    check("s6 no fanfare while busy", fanfares == 0, tostring(fanfares))
+    advance(14) -- let the game's window lapse
+    check("s6 fires once idle", fanfares == 1, tostring(fanfares))
+    pump()
+    check("s6 line lands", writes[1] == "Received Waits", tostring(writes[1]))
 end
 
--- scenario 4: status sanity after a shown item
+-- scenario 7: the widget dies mid-burst — the burst is abandoned, not crashed
 do
-    local widget = setup()
-    local lines = {}
-    banner.init({log = function(l) lines[#lines + 1] = l end})
-    banner.note_item("Item S")
-    for _ = 1, 30 do fake_now = fake_now + 1
-        banner.tick()
-        run_game_thread()
-        run_timers()
-    end
-    check("s4 status counts this run", banner.status():find("shown=1") ~= nil or
-        banner.status():find("shown=") ~= nil, banner.status())
-    check("s4 no backlog left", banner.status():find("waiting=0") ~= nil,
-        banner.status())
+    local w = fresh()
+    banner.note_item("A")
+    banner.note_item("B")
+    advance(1)
+    pump()
+    check("s7 first line up", w._prop == "Received A", w._prop)
+    w._valid = false
+    advance(8)
+    check("s7 burst abandoned", has(banner.status(), "state=idle"), banner.status())
+    local before = #writes
+    advance(8)
+    check("s7 no writes after the widget died", #writes == before, tostring(#writes))
 end
 
--- scenario 5: a sent line shows on the banner
+-- scenario 8: no HUD (menu/loading) is a quiet retry, not a stream of warnings
 do
-    local widget = setup()
-    local lines = {}
-    banner.init({log = function(l) lines[#lines + 1] = l end})
-    banner.note_sent("To Bob: Nestor's Key")
-    for _ = 1, 30 do fake_now = fake_now + 1
-        banner.tick()
-        run_game_thread()
-        run_timers()
-    end
-    check("s5 sent text written", ftexts[#ftexts] == "To Bob: Nestor's Key",
-        tostring(ftexts[#ftexts]))
-    check("s5 sent counted", banner.status():find("sent=1") ~= nil, banner.status())
+    local warned = 0
+    install()
+    banner.reset()
+    banner.init({ log = function() warned = warned + 1 end })
+    FindFirstOf = function() return nil end
+    banner.note_item("Later")
+    advance(6)
+    check("s8 nothing fired without a HUD", fanfares == 0, tostring(fanfares))
+    check("s8 no warning spam", warned == 0, tostring(warned))
 end
 
--- scenario 6: a received item outranks a sent line queued before it
+-- scenario 9: the game repaints its canned text mid-window -> re-assert once
 do
-    local widget = setup()
-    local lines = {}
-    banner.init({log = function(l) lines[#lines + 1] = l end})
-    banner.note_sent("To Bob: Orb")
-    banner.note_item("You found: Dragon")
-    for _ = 1, 30 do fake_now = fake_now + 1
-        banner.tick()
-        run_game_thread()
-        run_timers()
-    end
-    check("s6 received shows first", ftexts[1] == "You found: Dragon", tostring(ftexts[1]))
-    check("s6 sent follows", ftexts[#ftexts] == "To Bob: Orb", tostring(ftexts[#ftexts]))
+    local w = fresh()
+    banner.note_item("Holds")
+    advance(1)
+    pump()
+    check("s9 line up", w._prop == "Received Holds", w._prop)
+    w._prop = "Rescued " -- the game's Tick repainted the property
+    local before = #writes
+    advance(1)
+    check("s9 rewritten", w._prop == "Received Holds", w._prop)
+    check("s9 exactly one extra write", #writes == before + 1, tostring(#writes))
+    advance(1)
+    check("s9 no rewrite when it holds", #writes == before + 1, tostring(#writes))
 end
 
--- scenario 7: a sent backlog collapses to its newest line
+-- scenario 10: after a burst closes, the next item opens a new window
 do
-    local widget = setup()
-    local lines = {}
-    banner.init({log = function(l) lines[#lines + 1] = l end})
-    for i = 1, 5 do banner.note_sent("To Bob: Item " .. i) end
-    for _ = 1, 30 do fake_now = fake_now + 1
-        banner.tick()
-        run_game_thread()
-        run_timers()
-    end
-    check("s7 first shown", ftexts[1] == "To Bob: Item 1", tostring(ftexts[1]))
-    check("s7 newest collapsed in", ftexts[#ftexts] == "To Bob: Item 5", tostring(ftexts[#ftexts]))
-    check("s7 collapse logged",
-        table.concat(lines, "\n"):find("backlog collapsed", 1, true) ~= nil,
-        table.concat(lines, "\n"))
-    check("s7 sent backlog empty", banner.status():find("sent_waiting=0") ~= nil,
-        banner.status())
+    local w = fresh()
+    banner.note_item("First")
+    advance(1)
+    pump()
+    drain()
+    check("s10 one fanfare so far", fanfares == 1, tostring(fanfares))
+    banner.note_item("Second")
+    advance(3) -- a gap of ticks precedes a new burst
+    check("s10 second fanfare", fanfares == 2, tostring(fanfares))
+    pump()
+    check("s10 second line up", w._prop == "Received Second", w._prop)
+    drain()
 end
 
--- scenario 8: the game wipes the `message text` property, so the write is
--- unconfirmed: it is counted failed and the re-asserts rewrite until it holds.
+-- scenario 11: status and reset
 do
-    local widget = setup()
-    local lines = {}
-    banner.init({log = function(l) lines[#lines + 1] = l end})
-    widget._prop_sticky = false        -- game repaint wipes the property
-    banner.note_item("Wiped Item")
-    run_game_thread()
-    run_game_thread()
-    run_timers()
-    run_game_thread()
-    check("s8 first write attempted", widget._writes == 1, tostring(widget._writes))
-    run_timers()                       -- run the re-assert timers
-    run_game_thread()
-    check("s8 re-assert retried the write", widget._writes >= 3, tostring(widget._writes))
-    local joined = table.concat(lines, "\n")
-    check("s8 unconfirmed logged", joined:find("not confirmed", 1, true) ~= nil, joined)
-    check("s8 status failed", banner.status():find("failed=1") ~= nil, banner.status())
+    local w = fresh()
+    banner.note_item("A")
+    banner.note_sent("S")
+    local st = banner.status()
+    check(
+        "s11 status fields",
+        has(st, "queued=1") and has(st, "sent_queued=1") and has(st, "waiting=2"),
+        st
+    )
+    banner.reset()
+    st = banner.status()
+    check("s11 reset clears", has(st, "queued=0") and has(st, "waiting=0") and has(st, "state=idle"), st)
+    banner.note_item("After reset")
+    advance(1)
+    pump()
+    check("s11 still works after reset", w._prop == "Received After reset", w._prop)
+    drain()
 end
 
--- scenario 8b: property-vs-display divergence. The property holds our text but
--- the Base the player sees is canned (Base is bound and a direct SetText is
--- overridden). Judging on the property means success, no re-assert, and no
--- extra writes — chasing Base is what closed the window (regression guard).
-do
-    local widget = setup()
-    local lines = {}
-    banner.init({log = function(l) lines[#lines + 1] = l end})
-    fake_now = fake_now + 10           -- clear scenario 8's backoff
-    widget._prop_sticky = true         -- property holds our text
-    widget._base_sticky = false        -- but the displayed Base is canned
-    banner.note_item("Divergent Item")
-    run_game_thread()
-    run_game_thread()
-    run_timers()
-    run_game_thread()
-    local writes_after_first = widget._writes
-    run_timers()                       -- run the re-assert timers
-    run_game_thread()
-    local joined = table.concat(lines, "\n")
-    check("s8b judged on property, not Base",
-        joined:find("banner: Divergent Item", 1, true) ~= nil
-            and joined:find("not confirmed", 1, true) == nil, joined)
-    check("s8b no re-assert when property holds",
-        widget._writes == writes_after_first, tostring(widget._writes))
-end
+-- invariant: the module never schedules game-thread work from the game thread
+check("no nested game-thread jobs", nested == 0, tostring(nested))
 
--- scenario 9: a stale widget pointer is rejected, item dropped with a WARN
-do
-    local widget = setup()
-    local lines = {}
-    banner.init({log = function(l) lines[#lines + 1] = l end})
-    widget.IsValid = function() return false end
-    banner.note_item("Stale Item")
-    for _ = 1, 6 do fake_now = fake_now + 1; banner.tick(); run_game_thread(); run_timers() end
-    check("s9 no writes", #ftexts == 0)
-    check("s9 drop warned", table.concat(lines, "\n"):find("no fanfare widget", 1, true) ~= nil,
-        table.concat(lines, "\n"))
-end
-
--- scenario 10: the HUD is cached across banners
-do
-    local widget = setup()
-    local lines = {}
-    banner.init({log = function(l) lines[#lines + 1] = l end})
-    banner.note_item("Cache A")
-    for _ = 1, 30 do fake_now = fake_now + 1
-        banner.tick()
-        run_game_thread()
-        run_timers()
-    end
-    banner.note_item("Cache B")
-    for _ = 1, 30 do fake_now = fake_now + 1
-        banner.tick()
-        run_game_thread()
-        run_timers()
-    end
-    check("s10 two banners shown", #ftexts >= 2, tostring(#ftexts))
-    check("s10 PlayerController fetched once", find_first_calls["PlayerController"] == 1,
-        tostring(find_first_calls["PlayerController"]))
-end
-
--- scenario 11: the widget is mid-game-fanfare (State=1) when our banner is
--- due. We must NOT inject yet; we wait for idle, then fire our own fanfare.
-do
-    local widget = setup()
-    local lines = {}
-    banner.init({log = function(l) lines[#lines + 1] = l end})
-    widget._window_until = fake_now + 3    -- the game's own fanfare is showing
-    banner.note_item("Waits For Idle")
-    run_game_thread()                      -- submit + run show()
-    check("s11 no fanfare while game window up", (widget._fanfares or 0) == 0,
-        tostring(widget._fanfares))
-    -- let the game's window lapse, then tick so the idle wait proceeds
-    for _ = 1, 20 do
-        fake_now = fake_now + 0.5
-        banner.tick()
-        run_game_thread()
-        run_timers()
-        run_game_thread()
-    end
-    check("s11 our fanfare fired after idle", (widget._fanfares or 0) >= 1,
-        tostring(widget._fanfares))
-    check("s11 text eventually shown", (widget._base_text == "Waits For Idle")
-        or table.concat(lines, "\n"):find("banner: Waits For Idle", 1, true) ~= nil,
-        table.concat(lines, "\n"))
-end
-
-print(failures == 0 and "hud_banner spec: OK" or ("hud_banner spec: " .. failures .. " failures"))
-os.exit(failures == 0 and 0 or 1)
+os.exit(done("hud_banner spec") == 0 and 0 or 1)

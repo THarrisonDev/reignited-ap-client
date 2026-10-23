@@ -80,7 +80,15 @@ type gameDoc struct {
 type locationsDoc struct {
 	Game          string             `json:"game"`
 	GemThresholds [][]any            `json:"gemThresholds"` // [[pct, label], ...], shared by all games
+	GemValues     []gemValueRow      `json:"gemValues"`     // [{tag, value}, ...], per gem type
 	Games         map[string]gameDoc `json:"games"`         // "spyro1", "spyro2", "spyro3"
+}
+
+// gemValueRow is one per-gem-type value from locations.json's "gemValues"
+// (generated from world/data/client.json).
+type gemValueRow struct {
+	Tag   string `json:"tag"`
+	Value int    `json:"value"`
 }
 
 // embeddedDoc is the embedded locations.json, parsed once by init().
@@ -152,6 +160,24 @@ func parseGemThresholds(rows [][]any) ([]gemThreshold, error) {
 	return out, nil
 }
 
+// parseGemValues converts the doc's [{tag, value}, ...] rows into the scan's
+// gem table, rejecting an empty tag, a non-positive value or a repeat.
+func parseGemValues(rows []gemValueRow) ([]gemType, error) {
+	out := make([]gemType, 0, len(rows))
+	seen := map[string]bool{}
+	for _, r := range rows {
+		if r.Tag == "" || r.Value <= 0 {
+			return nil, fmt.Errorf("gemValues row %+v needs a tag and a positive value", r)
+		}
+		if seen[r.Tag] {
+			return nil, fmt.Errorf("gemValues repeats tag %q", r.Tag)
+		}
+		seen[r.Tag] = true
+		out = append(out, gemType{tag: r.Tag, value: r.Value})
+	}
+	return out, nil
+}
+
 // embeddedLocations derives the daemon's lookups from the embedded doc that
 // init() parsed once.
 func embeddedLocations() (map[string]int, map[string][]string, map[string]int, error) {
@@ -166,36 +192,56 @@ func deriveLocations(doc *locationsDoc) (map[string]int, map[string][]string, ma
 	if len(s1.Regions) == 0 || len(s2.Regions) == 0 || len(s3.Regions) == 0 {
 		return nil, nil, nil, fmt.Errorf("locations.json has no spyro1/spyro2/spyro3 regions")
 	}
-	nameToID, eggCatalog, levelGems, pathToRegion := s1.derive()
+	nameToID, eggCatalog, levelGems, s1Paths := s1.derive()
 	s2IDs, _, s2Gems, s2Paths := s2.derive()
 	s3IDs, _, s3Gems, s3Paths := s3.derive()
-	if len(nameToID) == 0 || len(s2IDs) == 0 || len(s3IDs) == 0 {
-		return nil, nil, nil, fmt.Errorf("locations.json regions have no checks")
+	if err := requireSections([3]map[string]string{s1Paths, s2Paths, s3Paths},
+		[3]map[string]int{nameToID, s2IDs, s3IDs}); err != nil {
+		return nil, nil, nil, err
 	}
-	if len(pathToRegion) == 0 || len(s2Paths) == 0 || len(s3Paths) == 0 {
-		return nil, nil, nil, fmt.Errorf("locations.json regions have no level paths")
-	}
-	for name, id := range s2IDs {
-		nameToID[name] = id
-	}
-	for name, id := range s3IDs {
-		nameToID[name] = id
-	}
-	// one gem-total table for all three games (gemEvents looks up by region):
-	// region names are game-unique, which this guards
-	for region, total := range s2Gems {
-		if _, dup := levelGems[region]; dup {
-			return nil, nil, nil, fmt.Errorf("locations.json region %q is in more than one game", region)
+	mergeIDs(nameToID, s2IDs)
+	mergeIDs(nameToID, s3IDs)
+	for _, gems := range []map[string]int{s2Gems, s3Gems} {
+		if err := mergeGems(levelGems, gems); err != nil {
+			return nil, nil, nil, err
 		}
-		levelGems[region] = total
-	}
-	for region, total := range s3Gems {
-		if _, dup := levelGems[region]; dup {
-			return nil, nil, nil, fmt.Errorf("locations.json region %q is in more than one game", region)
-		}
-		levelGems[region] = total
 	}
 	return nameToID, eggCatalog, levelGems, nil
+}
+
+// requireSections guards that every game section carries checks and level
+// paths.
+func requireSections(paths [3]map[string]string, ids [3]map[string]int) error {
+	for _, m := range ids {
+		if len(m) == 0 {
+			return fmt.Errorf("locations.json regions have no checks")
+		}
+	}
+	for _, m := range paths {
+		if len(m) == 0 {
+			return fmt.Errorf("locations.json regions have no level paths")
+		}
+	}
+	return nil
+}
+
+// mergeIDs adds one game's location ids to the cross-game table.
+func mergeIDs(to, from map[string]int) {
+	for name, id := range from {
+		to[name] = id
+	}
+}
+
+// mergeGems adds one game's gem totals, refusing a region two games share
+// because gemEvents looks a region up without its game.
+func mergeGems(to, from map[string]int) error {
+	for region, total := range from {
+		if _, dup := to[region]; dup {
+			return fmt.Errorf("locations.json region %q is in more than one game", region)
+		}
+		to[region] = total
+	}
+	return nil
 }
 
 // Internal level path -> region name. Loaded from the embedded locations.json
@@ -288,21 +334,53 @@ func init() {
 	}
 	doc := &embeddedDoc
 	s1, s2, s3 := doc.Games["spyro1"], doc.Games["spyro2"], doc.Games["spyro3"]
-	if s1.LocationPrefix == "" || s2.LocationPrefix == "" || s3.LocationPrefix == "" {
-		panic("checkd: embedded locations.json has no per-game locationPrefix; regenerate with scripts/gen_locations.py")
+	requirePrefixes(s1, s2, s3)
+	loadThresholds(doc)
+	loadGemTypes(doc)
+	loadSkillPointRanges(s1, s2, s3)
+	loadTables(s1, s2, s3)
+}
+
+// requirePrefixes panics when a game section carries no location prefix.
+func requirePrefixes(games ...gameDoc) {
+	for _, g := range games {
+		if g.LocationPrefix == "" {
+			panic("checkd: embedded locations.json has no per-game locationPrefix; regenerate with scripts/gen_locations.py")
+		}
 	}
+}
+
+// loadThresholds sets the gem value checkpoints from the doc.
+func loadThresholds(doc *locationsDoc) {
 	ths, err := parseGemThresholds(doc.GemThresholds)
 	if err != nil || len(ths) == 0 {
 		panic(fmt.Sprintf("checkd: embedded locations.json has no valid gemThresholds (%v); regenerate with scripts/gen_locations.py", err))
 	}
 	gemThresholds = ths
-	for game, g := range []gameDoc{s1, s2, s3} {
+}
+
+// loadGemTypes sets the per-gem-type values from the doc.
+func loadGemTypes(doc *locationsDoc) {
+	gems, err := parseGemValues(doc.GemValues)
+	if err != nil || len(gems) == 0 {
+		panic(fmt.Sprintf("checkd: embedded locations.json has no valid gemValues (%v); regenerate with scripts/gen_locations.py", err))
+	}
+	gemTypes = gems
+}
+
+// loadSkillPointRanges sets each game's ESkillPoint enum range.
+func loadSkillPointRanges(games ...gameDoc) {
+	for game, g := range games {
 		r := g.SkillPointRange
 		if len(r) != 2 || r[0] < 1 || r[0] > r[1] {
 			panic(fmt.Sprintf("checkd: embedded locations.json game %d has no valid skillPointRange %v; regenerate with scripts/gen_locations.py", game, r))
 		}
 		skillPointRanges[game] = [2]int{r[0], r[1]}
 	}
+}
+
+// loadTables fills the per-game lookup tables the scans resolve through.
+func loadTables(s1, s2, s3 gameDoc) {
 	spyro1SkillPoints = skillPointTable(&s1)
 	spyro2SkillPoints = skillPointTable(&s2)
 	spyro3SkillPoints = skillPointTable(&s3)
@@ -310,37 +388,52 @@ func init() {
 	_, _, _, levelPathToRegion = s1.derive()
 	locationPrefix = s1.LocationPrefix
 	_, _, _, spyro2PathToRegion = s2.derive()
-	spyro2Locations = map[checkKey]string{}
-	for region, r := range s2.Regions {
+	spyro2Locations = spyro2CheckTable(&s2)
+	_, _, _, spyro3PathToRegion = s3.derive()
+	spyro3Locations, spyro3SparxPowers = spyro3CheckTable(&s3)
+}
+
+// checkName is the name a check keys by: a gem check by its threshold's label,
+// every other check by its own name.
+func checkName(c locCheck) string {
+	if c.Type == KindGem {
+		return gemLabel(c.Threshold)
+	}
+	return c.Name
+}
+
+// spyro2CheckTable builds the check key -> location table of the Spyro 2
+// section. Abilities are bare-named with an empty region (the inventory record
+// is global, not level-scoped).
+func spyro2CheckTable(doc *gameDoc) map[checkKey]string {
+	out := map[checkKey]string{}
+	for region, r := range doc.Regions {
 		for _, c := range r.Checks {
-			name := c.Name
-			if c.Type == KindGem {
-				name = gemLabel(c.Threshold)
-			}
 			if c.Type == KindAbility {
-				spyro2Locations[checkKey{KindAbility, "", c.Ability}] = c.Location
+				out[checkKey{KindAbility, "", c.Ability}] = c.Location
 				continue
 			}
-			spyro2Locations[checkKey{c.Type, region, name}] = c.Location
+			out[checkKey{c.Type, region, checkName(c)}] = c.Location
 		}
 	}
-	_, _, _, spyro3PathToRegion = s3.derive()
-	spyro3Locations = map[checkKey]string{}
-	spyro3SparxPowers = map[string]string{}
-	for region, r := range s3.Regions {
+	return out
+}
+
+// spyro3CheckTable builds the check key -> location table of the Spyro 3
+// section, plus the Sparx-power suffix -> location table.
+func spyro3CheckTable(doc *gameDoc) (map[checkKey]string, map[string]string) {
+	out := map[checkKey]string{}
+	powers := map[string]string{}
+	for region, r := range doc.Regions {
 		for _, c := range r.Checks {
-			name := c.Name
-			if c.Type == KindGem {
-				name = gemLabel(c.Threshold)
-			}
 			// Spyro 3 boss kills save as the boss dungeon's named egg record
 			// (no EIT_S3Boss exists in saves): ScanS3Eggs emits the record's
 			// egg param as an "egg" check, so the boss row registers under
 			// both keys — the event-name key (name-resolvable like S2's) and
 			// the egg-param alias its scan flow resolves through.
 			if c.Type == KindBoss {
-				spyro3Locations[checkKey{KindBoss, region, c.Name}] = c.Location
-				spyro3Locations[checkKey{KindEgg, region, c.SaveKey}] = c.Location
+				out[checkKey{KindBoss, region, c.Name}] = c.Location
+				out[checkKey{KindEgg, region, c.SaveKey}] = c.Location
 				continue
 			}
 			// Sparx-power rows register under their globalFloatMap key's
@@ -350,11 +443,12 @@ func init() {
 			// region (the map key is file-global).
 			if c.Type == KindSparxPower {
 				power := strings.TrimPrefix(c.Name, sparxPowerTag)
-				spyro3Locations[checkKey{KindSparx, "", power}] = c.Location
-				spyro3SparxPowers[power] = c.Location
+				out[checkKey{KindSparx, "", power}] = c.Location
+				powers[power] = c.Location
 				continue
 			}
-			spyro3Locations[checkKey{c.Type, region, name}] = c.Location
+			out[checkKey{c.Type, region, checkName(c)}] = c.Location
 		}
 	}
+	return out, powers
 }

@@ -26,6 +26,14 @@ files' expectations:
   - 100pct_ref: a synthetic 100% playthrough of all three games (80 dragons,
     64 orbs, 14 talismans, 150 named S3 eggs, all gem totals, all skill
     points, 3 obtained Sparx powers)
+  - unicode_s1: one S1 dragon whose name is non-ASCII. The save writes a
+    non-ASCII FString as UTF-16LE (negative length prefix), so the scanner's
+    value read must be encoding-aware; the name resolves to no location.
+  - keyword_collision: one S1 dragon named exactly "levelObjectMap". The raw
+    byte count of that property name is then ten, so the entry finder must
+    match the property's structure, not the bare bytes.
+  (The last two are layout probes with no goldens; Go tests pin their
+  behaviour, and --check still guards the .sav bytes.)
 
 Outputs (checked in; regenerate after editing any content):
   - ../testdata/<stem>.sav
@@ -336,6 +344,15 @@ def global_level(objects):
     return ("Global", objects, {})
 
 
+def append_level(levels, level_path, items, gem_total):
+    """Append one saveDataList entry for a level, with its gem record when the
+    level records gems; a level with nothing at all is left out."""
+    counts = {} if gem_total == 0 else {"EIT_S2RedGem": gem_total}
+    if items or counts:
+        levels.append((level_path, {"Main": items} if items else {"Main": []},
+                       counts))
+
+
 def skill_point_record(enums):
     return item(SKILL_POINT, False, [(None, float(e)) for e in enums])
 
@@ -522,10 +539,7 @@ def full_s2_levels(games):
                 items.append(named_item(TALISMAN, c["name"]))
             elif c["type"] == "boss":
                 items.append(item(BOSS, True))
-        counts = {} if r["gemTotal"] == 0 else {"EIT_S2RedGem": r["gemTotal"]}
-        if items or counts:
-            levels.append((r["levelPath"], {"Main": items} if items else {"Main": []},
-                           counts))
+        append_level(levels, r["levelPath"], items, r["gemTotal"])
     return levels
 
 
@@ -542,10 +556,7 @@ def full_s3_levels(games):
                 items.append(named_item(tag, c["name"]))
             elif c["type"] == "boss":
                 items.append(named_item(S3_EGG, c["saveKey"]))
-        counts = {} if r["gemTotal"] == 0 else {"EIT_S2RedGem": r["gemTotal"]}
-        if items or counts:
-            levels.append((r["levelPath"], {"Main": items} if items else {"Main": []},
-                           counts))
+        append_level(levels, r["levelPath"], items, r["gemTotal"])
     levels.append(("MoneybagGems", {}, {"EIT_S2RedGem": 100}))
     return levels
 
@@ -663,14 +674,40 @@ def pct100_ref():
     return build_save(entries, ref100_gfm())
 
 
+def unicode_s1():
+    """One S1 dragon whose name carries a non-ASCII character ("Nestor" with an
+    acute e), which the save writes as a UTF-16LE FString."""
+    games = load_locations()
+    levels = [
+        global_level({"Global": [skill_point_record([])] + abilities_items()}),
+        s1_dragon_level(games, "Stone Hill", ["N\u00e9stor"]),
+    ]
+    entries = [save_entry_struct(levels)]
+    entries += [empty_entry() for _ in range(SAVE_ENTRIES - 1)]
+    return build_save(entries, MENU_GFM + sparx_keys(0))
+
+
+def keyword_collision():
+    """One S1 dragon whose name is exactly the levelObjectMap property name."""
+    games = load_locations()
+    levels = [
+        global_level({"Global": [skill_point_record([])] + abilities_items()}),
+        s1_dragon_level(games, "Stone Hill", ["levelObjectMap"]),
+    ]
+    entries = [save_entry_struct(levels)]
+    entries += [empty_entry() for _ in range(SAVE_ENTRIES - 1)]
+    return build_save(entries, MENU_GFM + sparx_keys(0))
+
+
 BUILDERS = {
-    "snapshot1": snapshot1,
-    "snapshot2": snapshot2,
+    "snapshot1": snapshot1,    "snapshot2": snapshot2,
     "snapshot3": snapshot3,
     "mid_s1": mid_s1,
     "mixed_s1_s2": mixed_s1_s2,
     "s1_events": s1_events,
     "100pct_ref": pct100_ref,
+    "unicode_s1": unicode_s1,
+    "keyword_collision": keyword_collision,
 }
 
 

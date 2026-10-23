@@ -6,7 +6,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"os"
 	"strconv"
 	"strings"
@@ -38,28 +37,37 @@ func readSession(path string) (session, bool) {
 	s := session{slot: -1, game: -1}
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
-		key, val, found := strings.Cut(strings.TrimSpace(sc.Text()), "=")
-		if !found {
-			continue
-		}
-		val = strings.TrimSpace(val)
-		switch strings.TrimSpace(key) {
-		case "slot":
-			if n, err := strconv.Atoi(val); err == nil {
-				s.slot = n
-			}
-		case "game":
-			if n, err := strconv.Atoi(val); err == nil {
-				s.game = n
-			}
-		case "token":
-			s.token = val
-		}
+		s.set(strings.TrimSpace(sc.Text()))
 	}
 	if s.slot < 0 || s.slot >= saveEntries/gamesPerSlot || s.game < 0 || s.game >= gamesPerSlot {
 		return session{}, false
 	}
 	return s, true
+}
+
+// set applies one key=value line of session.txt, ignoring unknown keys and
+// unparsable values.
+func (s *session) set(line string) {
+	key, val, found := strings.Cut(line, "=")
+	if !found {
+		return
+	}
+	val = strings.TrimSpace(val)
+	switch strings.TrimSpace(key) {
+	case "slot":
+		assignInt(&s.slot, val)
+	case "game":
+		assignInt(&s.game, val)
+	case "token":
+		s.token = val
+	}
+}
+
+// assignInt stores val in dst when it parses as an int.
+func assignInt(dst *int, val string) {
+	if n, err := strconv.Atoi(val); err == nil {
+		*dst = n
+	}
 }
 
 // entryIndex maps an in-game (slot, game) to its saveDataMapArray entry.
@@ -70,19 +78,22 @@ func entryIndex(slot, game int) int {
 }
 
 // saveEntry returns one saveDataMapArray entry of a FalconSave blob, prefixed
-// with the GVAS magic the scanners gate on. Each entry starts at its
-// levelObjectMap property name; the last one ends at the globalFloatMap that
-// follows the array. Any other levelObjectMap count means an unknown layout.
+// with the GVAS magic the scanners gate on. Each entry starts at its framed
+// levelObjectMap property (the finder matches the property's structure, so a
+// value that merely reads "levelObjectMap" is not mistaken for a tenth entry);
+// the last entry ends at the globalFloatMap that follows the array. Any other
+// entry count means an unknown layout.
 func saveEntry(data []byte, idx int) ([]byte, bool) {
-	starts := findAll(data, []byte("levelObjectMap"))
+	starts := mapPropertyStarts(data, "levelObjectMap")
 	if len(starts) != saveEntries || idx < 0 || idx >= saveEntries {
 		return nil, false
 	}
-	start, end := starts[idx], len(data)
+	start := starts[idx]
+	end := len(data)
 	if idx+1 < len(starts) {
 		end = starts[idx+1]
-	} else if g := bytes.Index(data[start:], []byte("globalFloatMap")); g >= 0 {
-		end = start + g
+	} else if tails := mapPropertyStarts(data, "globalFloatMap"); len(tails) > 0 && tails[0] >= start {
+		end = tails[0]
 	}
 	out := make([]byte, 0, 4+end-start)
 	out = append(out, "GVAS"...)

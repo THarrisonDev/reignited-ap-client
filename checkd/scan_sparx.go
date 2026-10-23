@@ -27,42 +27,50 @@ func ScanSparxPowers(data []byte, slot, game int) ([]string, ScanStats) {
 	if len(data) < 4 || string(data[:4]) != "GVAS" {
 		return nil, stats
 	}
-	off := bytes.Index(data, []byte("globalFloatMap\x00"))
-	if off < 0 {
+	o, count, ok := gfmBody(data)
+	if !ok {
 		return nil, stats
 	}
-	o := off + len("globalFloatMap") + 1
-	if o = tagEnds(data, o, "MapProperty"); o < 0 {
-		return nil, stats
-	}
-	if o = skipU32(data, o); o < 0 { // u32 body size
-		return nil, stats
-	}
-	if o = skipU32(data, o); o < 0 { // u32 array index (the two u32s
-		return nil, stats // read as a u64 size by the tag's GVAS form)
-	}
-	if o = tagEnds(data, o, "StrProperty"); o < 0 {
-		return nil, stats
-	}
-	if o = tagEnds(data, o, "FloatProperty"); o < 0 {
-		return nil, stats
-	}
-	if o = zeroByte(data, o); o < 0 { // the tag's NUL terminator
-		return nil, stats
-	}
-	if o = zeroU32(data, o); o < 0 { // allocation flags
-		return nil, stats
-	}
-	if o+4 > len(data) {
-		return nil, stats
-	}
-	count := int(int32(binary.LittleEndian.Uint32(data[o:])))
-	if count < 0 || count > 4096 {
-		return nil, stats
-	}
-	o += 4
 	stats.Markers = count
 	prefix := []byte("collected." + strconv.Itoa(slot) + "." + strconv.Itoa(game) + "." + sparxPowerTag)
+	return gfmPowers(data, o, count, prefix, &stats), stats
+}
+
+// gfmBody walks the file's globalFloatMap header and returns the offset of its
+// first entry and the entry count.
+func gfmBody(data []byte) (int, int, bool) {
+	// The property is matched by structure so a value that reads the same
+	// cannot be picked up instead (see mapPropertyStarts).
+	starts := mapPropertyStarts(data, "globalFloatMap")
+	if len(starts) == 0 {
+		return 0, 0, false
+	}
+	r := atReader(data, starts[0])
+	r.tag("globalFloatMap")
+	r.tag("MapProperty")
+	r.skip32() // u32 body size
+	r.skip32() // u32 array index (read as a u64 size by the tag's GVAS form)
+	r.tag("StrProperty")
+	r.tag("FloatProperty")
+	r.nul()    // the tag's NUL terminator
+	r.zero32() // allocation flags
+	if !r.ok {
+		return 0, 0, false
+	}
+	bits, ok := readU32(data, r.o)
+	if !ok {
+		return 0, 0, false
+	}
+	count := int(int32(bits))
+	if count < 0 || count > 4096 {
+		return 0, 0, false
+	}
+	return r.o + 4, count, true
+}
+
+// gfmPowers returns the sorted, deduped suffix names of the map entries whose
+// key starts with prefix and whose value is non-zero.
+func gfmPowers(data []byte, o, count int, prefix []byte, stats *ScanStats) []string {
 	seen := make(map[string]bool)
 	for i := 0; i < count; i++ {
 		key, val, next, ok := gfmEntry(data, o)
@@ -87,7 +95,7 @@ func ScanSparxPowers(data []byte, slot, game int) ([]string, ScanStats) {
 		out = append(out, name)
 	}
 	sort.Strings(out)
-	return out, stats
+	return out
 }
 
 // gfmEntry parses one globalFloatMap entry at o (key FString + 4-byte float),

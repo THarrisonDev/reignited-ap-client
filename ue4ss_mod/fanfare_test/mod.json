@@ -1,6 +1,0 @@
-fanfare_test : {
-    Files : {
-        Scripts/main.lua
-    }
-    Dir : Scripts
-}

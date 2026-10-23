@@ -1,14 +1,15 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-26
--- Updated: 2026-10-11
+-- Updated: 2026-10-21
 
 -- Spec for client/ue4ss_mod/srt_bridge/Scripts/main.lua module loading.
 --
--- main.lua loads its optional modules through load_module(), which swaps in
--- an inert stub when require fails; a stub missing a field main later reads
--- kills the mod ("attempt to call a nil value", "table index is nil").
--- session_gate is core: a failed load must be one FATAL line and a clean stop
--- (no LoopAsync registered), not a crash halfway through init.
+-- main.lua loads the modules listed in modules.lua, and a failed require (or a
+-- throwing init) leaves an inert stand-in; a stand-in that could not answer a
+-- call the host makes would kill the mod ("attempt to call a nil value",
+-- "table index is nil").
+-- session_gate and the inventory are core: a failed load must be one FATAL line
+-- and a clean stop (no LoopAsync registered), not a crash halfway through init.
 --
 -- Loads the real main.lua under a stubbed UE4SS environment: logger (lines
 -- collected, bridge dir -> a temp prefix), lua-apclientpp (records handlers),
@@ -17,10 +18,10 @@
 -- error it swallows, so a stub gap inside the poll loop still fails the spec.
 -- Run from the client repo root: lua tests/lua/test_main_load.lua
 
-local here = debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "./"
-local SCRIPTS = here .. "../../ue4ss_mod/srt_bridge/Scripts/"
+package.path = (debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "./") .. "support/?.lua;" .. package.path
+local H = require("harness")
+local SCRIPTS = H.scripts
 local MAIN = SCRIPTS .. "main.lua"
-package.path = SCRIPTS .. "?.lua;" .. package.path
 
 local function read_file(path)
     local f = assert(io.open(path, "r"), "cannot open " .. path)
@@ -29,11 +30,10 @@ local function read_file(path)
     return text
 end
 
--- every optional module main loads through load_module (so a new module is
--- covered without touching this spec), plus regions (its own FATAL path)
+-- every optional module the inventory (modules.lua) lists, so a new module is
+-- covered without touching this spec, plus regions (its own FATAL path)
 local OPTIONAL = {"regions"}
--- %s* tolerates a reformatted call that puts the name on its own line
-for name in read_file(MAIN):gmatch('load_module%(%s*"([%w_%.]+)"') do
+for name in read_file(SCRIPTS .. "modules.lua"):gmatch('name%s*=%s*"([%w_%.]+)"') do
     OPTIONAL[#OPTIONAL + 1] = name
 end
 
@@ -114,7 +114,10 @@ end})
 local function load_main(failing)
     lines, swallowed, loop_fn, ap_obj = {}, {}, nil, nil
     gs_state, gs_game = 0, 0
-    for _, name in ipairs({"logger", "util", "lua-apclientpp", "session_gate"}) do
+    -- The bridge's own parts re-require per boot too: they close over the
+    -- session-gate instance and the shared state table.
+    for _, name in ipairs({"logger", "util", "lua-apclientpp", "session_gate", "modules",
+                           "state", "checkd", "ap_client", "session", "watch"}) do
         package.loaded[name] = nil
     end
     for _, name in ipairs(OPTIONAL) do package.loaded[name] = nil end
@@ -141,18 +144,15 @@ local function count(pat)
     return n
 end
 
-local passed, total = 0, 0
-local function case(name, fn)
-    total = total + 1
-    local ok, err = pcall(fn)
-    if ok then
-        passed = passed + 1
-        print("PASS " .. name)
-    else
-        print("FAIL " .. name .. ": " .. tostring(err))
-    end
-end
+local case = H.test
 local function check(cond, msg) if not cond then error(msg, 2) end end
+
+-- The slot data the AP client hands slot_connected in both session drives.
+local SLOT_DATA = {
+    locationNameToId = {["Spyro 1: Artisans: Free Nestor"] = 100011},
+    included_games = {"spyro1", "spyro2", "spyro3"},
+    games = {spyro1 = {options = {dragon_shuffle = "dragonsanity"}}},
+}
 
 case("session_gate load failure: one FATAL line, clean stop, no poll loop", function()
     local ok, err = load_main({"session_gate"})
@@ -163,11 +163,25 @@ case("session_gate load failure: one FATAL line, clean stop, no poll loop", func
     check(loop_fn == nil, "LoopAsync was registered without a session gate")
 end)
 
+-- Regions is core, like session_gate: a session with no region table is refused
+-- outright, so every run below loads the real table (its own case is "regions
+-- load failure"). `keep` names modules to load for real as well.
+local function failing_optional(...)
+    local keep = {...}
+    local excluded = {}
+    for _, name in ipairs(keep) do excluded[name] = true end
+    local out = {}
+    for _, name in ipairs(OPTIONAL) do
+        if name ~= "regions" and not excluded[name] then out[#out + 1] = name end
+    end
+    return out
+end
+
 -- drives one full session on `game` with every optional module stubbed out:
 -- open -> slot_connected -> items -> 480 polls (heartbeats) -> disconnect ->
 -- main menu (close)
 local function drive_session(game)
-    local ok, err = load_main(OPTIONAL)
+    local ok, err = load_main(failing_optional())
     check(ok, "main.lua raised: " .. tostring(err))
     check(type(loop_fn) == "function", "LoopAsync not registered")
     gs_game, gs_state = game, 3
@@ -175,9 +189,7 @@ local function drive_session(game)
     check(ap_obj ~= nil, "session never opened (no AP client)")
     local h = ap_obj.handlers
     h.room_info()
-    h.slot_connected({locationNameToId = {["Spyro 1: Artisans: Free Nestor"] = 100011},
-                      included_games = {"spyro1", "spyro2", "spyro3"},
-                      games = {spyro1 = {options = {dragon_shuffle = "dragonsanity"}}}})
+    h.slot_connected(SLOT_DATA)
     h.location_info({{location = 100011, item = 2, player = 1}})
     h.items_received({{item = 1, index = 0, player = 1, location = 100011},
                       {item = 2, index = 1, player = 0, location = -1}})
@@ -192,23 +204,40 @@ end
 
 case("every optional module stubbed: Spyro 1 session runs end to end", function()
     drive_session(0)
-    check(count("ERROR dragons: require('spyro1.dragons') failed (") == 1, "dragons stub not in use")
-    check(count("[DRAGONS] hb: unavailable") == 1, "Spyro 1 heartbeat did not read the stub status")
+    check(count("ERROR spyro1.dragons: require failed (") == 1, "dragons stub not in use")
+    check(count("[spyro1.dragons] hb: unavailable") == 1, "Spyro 1 heartbeat did not read the stub status")
+    check(count("[death_link] hb: unavailable") == 1, "a sender module heartbeats too")
+    check(count("[hud_banner] hb: unavailable") == 1, "a display module heartbeats too")
+    check(count("[checks_drop] hb: unavailable") == 1, "a plumbing module heartbeats too")
 end)
 case("every optional module stubbed: Spyro 2 session runs end to end", function()
     drive_session(1)
-    check(count("[LOCKS2] hb: unavailable") == 1, "Spyro 2 heartbeat did not read the stub status")
+    check(count("[spyro2.orbs] hb: unavailable") == 1, "Spyro 2 heartbeat did not read the stub status")
 end)
 case("every optional module stubbed: Spyro 3 session runs end to end", function()
     drive_session(2)
-    check(count("[SPARX] hb: unavailable") == 1, "Spyro 3 heartbeat did not read the stub status")
+    check(count("[spyro3.sparx_powers] hb: unavailable") == 1, "Spyro 3 heartbeat did not read the stub status")
+end)
+
+case("regions load failure: FATAL, session refused, one notice", function()
+    local ok, err = load_main({"regions"})
+    check(ok, "main.lua raised: " .. tostring(err))
+    check(count("ERROR FATAL region table: require('regions') failed (") == 1,
+        "expected one FATAL region line; got:\n" .. table.concat(lines, "\n"))
+    gs_game, gs_state = 0, 3
+    for _ = 1, 5 do loop_fn() end
+    check(ap_obj == nil, "a session must not open without the region table")
+    check(count("region table missing (regions.lua)") == 1,
+        "the refusal should be logged once; got:\n" .. table.concat(lines, "\n"))
+    -- The banner itself cannot run in this environment (no ExecuteInGameThread),
+    -- so the one-shot notice shows up as a single failed submit: proof it was
+    -- requested exactly once across those five polls.
+    check(count("[BANNER] ERROR ExecuteInGameThread: unavailable") == 1,
+        "expected exactly one refused-session notice; got:\n" .. table.concat(lines, "\n"))
 end)
 
 case("checks_drop still resolves ids after open_session resets id_to_name (regression)", function()
-    local failing = {}
-    for _, name in ipairs(OPTIONAL) do
-        if name ~= "checks_drop" then failing[#failing + 1] = name end
-    end
+    local failing = failing_optional("checks_drop")
     local ok, err = load_main(failing)
     check(ok, "main.lua raised: " .. tostring(err))
     check(type(loop_fn) == "function", "LoopAsync not registered")
@@ -217,9 +246,7 @@ case("checks_drop still resolves ids after open_session resets id_to_name (regre
     check(ap_obj ~= nil, "session never opened (no AP client)")
     local h = ap_obj.handlers
     h.room_info()
-    h.slot_connected({locationNameToId = {["Spyro 1: Artisans: Free Nestor"] = 100011},
-                      included_games = {"spyro1", "spyro2", "spyro3"},
-                      games = {spyro1 = {options = {dragon_shuffle = "dragonsanity"}}}})
+    h.slot_connected(SLOT_DATA)
     local drop = assert(io.open(BRIDGE .. "checks.json", "w"))
     drop:write('{"seq":1,"checks":[100011],"names":["Spyro 1: Artisans: Free Nestor"]}')
     drop:close()
@@ -232,5 +259,4 @@ end)
 
 os.remove(BRIDGE .. "session.txt")
 os.remove(BRIDGE .. "checks.json")
-print(string.format("%d/%d passed", passed, total))
-os.exit(passed == total and 0 or 1)
+H.finish()

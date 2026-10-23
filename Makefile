@@ -10,7 +10,7 @@ DIST    := dist
 
 WINDOWS_TARGETS := GOOS=windows GOARCH=amd64
 
-.PHONY: all vet lint test build build-windows build-linux package-mod package-client deploy deploy-mod deploy-checkd dist regen audit lua-tests clean
+.PHONY: all vet lint luacheck deadcode test build build-windows build-linux package-mod package-client deploy deploy-mod deploy-checkd dist regen audit lua-tests clean
 
 # Paths the deploy target writes into, defaulted for a standard Steam install
 # on this Linux/Proton box. `make deploy` needs no arguments; override a path
@@ -25,14 +25,31 @@ all: vet test build
 
 # Lint (requires golangci-lint: https://golangci-lint.run; config in
 # .golangci.yml). Falls back to go vet when golangci-lint is unavailable.
+# golangci-lint discovers .golangci.yml by walking up from the module dir, so
+# run each module from inside it (its own `-C` flag is gone in v2).
 lint:
 	@if command -v golangci-lint >/dev/null 2>&1; then \
-		golangci-lint run -C checkd ./...; \
-		golangci-lint run -C launcher ./...; \
+		(cd checkd && golangci-lint run ./...) && \
+		(cd launcher && golangci-lint run ./...); \
 	else \
 		echo "golangci-lint not found; running go vet only" >&2; \
 		$(MAKE) --no-print-directory vet; \
 	fi
+	$(MAKE) --no-print-directory luacheck
+
+# Unused locals, arguments and dead branches in the UE4SS mod. Config in
+# .luacheckrc (requires luacheck: https://github.com/lunarmodules/luacheck).
+luacheck:
+	@if command -v luacheck >/dev/null 2>&1; then \
+		luacheck ue4ss_mod/srt_bridge/Scripts --codes --no-color; \
+	else \
+		echo "ERROR: luacheck not installed (luarocks install luacheck)" >&2; exit 1; \
+	fi
+
+# Dead code: module functions nothing in the mod calls (Go side is covered by
+# the `unused` linter in make lint).
+deadcode:
+	python3 scripts/audit_dead_lua.py
 
 vet:
 	$(MAKE) --no-print-directory -C checkd vet GOFLAGS="$(GOFLAGS)"
@@ -165,6 +182,7 @@ regen:
 # CI guard: the checked-in generated files match the data sources.
 audit:
 	python3 checkd/scripts/audit_locations.py
+	python3 scripts/audit_client_version.py
 
 clean:
 	rm -rf $(DIST) checkd/srtap_checkd.exe launcher/srtap_launcher.exe launcher/srtap_launcher launcher/launcher

@@ -39,8 +39,11 @@ func collectedOff(data []byte, m, end int) int {
 	if b < 0 {
 		return -1
 	}
-	valOff := b + bLen + 8 // tag + NUL, u64 size, value byte
-	if valOff >= len(data) {
+	// tag + NUL, u64 size, then the value byte. Bounded by the record window,
+	// not the buffer: past `end` is the next record, and reading its first byte
+	// as this record's flag silently misclassifies a collected item.
+	valOff := b + bLen + 8
+	if valOff >= end {
 		return -1
 	}
 	return valOff
@@ -225,6 +228,22 @@ func abilityOne(data []byte, m, end int) (Dragon, bool) {
 	return d, true
 }
 
+// regionOfRecord reads a level-scoped record and resolves its region from the
+// backward level-key walk. ok is false when the record has no collected
+// BoolProperty or no region (another game's save entry).
+func regionOfRecord(data []byte, keys []levelKey, m, end int,
+	regions map[string]string) (Dragon, bool) {
+	d, ok := abilityOne(data, m, end)
+	if !ok {
+		return d, false
+	}
+	d.Region = regionFor(keys, m, regions)
+	if d.Region == "" {
+		return d, false
+	}
+	return d, true
+}
+
 // ScanAbilities extracts the Spyro 2 Money Bags ability records from a GVAS
 // FalconSave blob (global inventory, one per ability type; EIT_Superflame is
 // not a Money Bags purchase and never scans). Dedup across save entries is
@@ -270,13 +289,9 @@ func ScanS2Bosses(data []byte) ([]Dragon, ScanStats) {
 	keys := findLevelKeys(data)
 	var set recordSet
 	scanRecords(data, findMarkers(data, s2BossMarker), &stats, &set, func(m, end int) (Dragon, bool) {
-		d, ok := abilityOne(data, m, end)
-		if !ok {
-			return d, false
-		}
-		d.Region = regionFor(keys, m, spyro2PathToRegion)
+		d, ok := regionOfRecord(data, keys, m, end, spyro2PathToRegion)
 		d.Name = bossNameByRegion[d.Region]
-		return d, d.Name != ""
+		return d, ok && d.Name != ""
 	})
 	return set.out, stats
 }

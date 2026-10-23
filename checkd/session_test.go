@@ -56,32 +56,44 @@ func TestEntryIndexGameMajor(t *testing.T) {
 func TestSaveEntryScopesFixtures(t *testing.T) {
 	for _, stem := range fixtureStems[:4] {
 		data := loadSave(t, stem)
-		entry, ok := saveEntry(data, 0)
+		checkEntryZero(t, stem, data)
+		checkOtherEntriesEmpty(t, stem, data)
+	}
+}
+
+// checkEntryZero asserts scanning entry 0 matches the whole-file scan.
+func checkEntryZero(t *testing.T, stem string, data []byte) {
+	t.Helper()
+	entry, ok := saveEntry(data, 0)
+	if !ok {
+		t.Fatalf("%s: no entry 0", stem)
+	}
+	wantDragons, _ := ScanSave(data)
+	gotDragons, _ := ScanSave(entry)
+	wantEggs, _ := ScanEggs(data)
+	gotEggs, _ := ScanEggs(entry)
+	wantGems, _ := ScanGems(data)
+	gotGems, _ := ScanGems(entry)
+	if !reflect.DeepEqual(gotDragons, wantDragons) || !reflect.DeepEqual(gotEggs, wantEggs) ||
+		!reflect.DeepEqual(gotGems, wantGems) {
+		t.Fatalf("%s: entry 0 scan differs from the whole-file scan", stem)
+	}
+}
+
+// checkOtherEntriesEmpty asserts entries 1..8 hold nothing to send.
+func checkOtherEntriesEmpty(t *testing.T, stem string, data []byte) {
+	t.Helper()
+	for idx := 1; idx < saveEntries; idx++ {
+		other, ok := saveEntry(data, idx)
 		if !ok {
-			t.Fatalf("%s: no entry 0", stem)
+			t.Fatalf("%s: no entry %d", stem, idx)
 		}
-		wantDragons, _ := ScanSave(data)
-		gotDragons, _ := ScanSave(entry)
-		wantEggs, _ := ScanEggs(data)
-		gotEggs, _ := ScanEggs(entry)
-		wantGems, _ := ScanGems(data)
-		gotGems, _ := ScanGems(entry)
-		if !reflect.DeepEqual(gotDragons, wantDragons) || !reflect.DeepEqual(gotEggs, wantEggs) ||
-			!reflect.DeepEqual(gotGems, wantGems) {
-			t.Fatalf("%s: entry 0 scan differs from the whole-file scan", stem)
-		}
-		for idx := 1; idx < saveEntries; idx++ {
-			other, ok := saveEntry(data, idx)
-			if !ok {
-				t.Fatalf("%s: no entry %d", stem, idx)
-			}
-			dragons, _ := ScanSave(other)
-			eggs, _ := ScanEggs(other)
-			gems, _ := ScanGems(other)
-			if len(dragons) != 0 || len(eggs) != 0 || len(gems) != 0 {
-				t.Fatalf("%s entry %d: want nothing, got %d dragons %d eggs %d gem regions",
-					stem, idx, len(dragons), len(eggs), len(gems))
-			}
+		dragons, _ := ScanSave(other)
+		eggs, _ := ScanEggs(other)
+		gems, _ := ScanGems(other)
+		if len(dragons) != 0 || len(eggs) != 0 || len(gems) != 0 {
+			t.Fatalf("%s entry %d: want nothing, got %d dragons %d eggs %d gem regions",
+				stem, idx, len(dragons), len(eggs), len(gems))
 		}
 	}
 }

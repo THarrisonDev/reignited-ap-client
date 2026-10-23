@@ -13,29 +13,15 @@ type gemType struct {
 	value int
 }
 
-// Gem tags and values, mirroring GEM_VALUES in scripts/gen_golden.py. Values
-// are per gem type, not per game. All three games record the same two tag
-// families: the plain S1 tags and the EIT_S2* tags (the S2 scheme: red 1,
-// green 2, purple 5, yellow 10, magenta 25). The 100% Spyro 3 fixture holds
-// no EIT_S3* tag at all — S3 levels record EIT_S2* gems (Sheila's Alp also
-// 10 plain EIT_RedGem), so the EIT_S3* rows stay unused placeholders.
-var gemTypes = []gemType{
-	{"EIT_RedGem", 1},
-	{"EIT_GreenGem", 2},
-	{"EIT_BlueGem", 5},
-	{"EIT_YellowGem", 10},
-	{"EIT_PurpleGem", 25},
-	{"EIT_S2RedGem", 1},
-	{"EIT_S2GreenGem", 2},
-	{"EIT_S2PurpleGem", 5},
-	{"EIT_S2YellowGem", 10},
-	{"EIT_S2MagentaGem", 25},
-	{"EIT_S3RedGem", 1},
-	{"EIT_S3GreenGem", 2},
-	{"EIT_S3BlueGem", 5},
-	{"EIT_S3GoldGem", 10},
-	{"EIT_S3PurpleGem", 25},
-}
+// Gem tags and values, one row per gem type (values are per type, not per game).
+// All three games record the same two tag families: the plain S1 tags and the
+// EIT_S2* tags (the S2 scheme: red 1, green 2, purple 5, yellow 10, magenta 25).
+// The 100% Spyro 3 fixture holds no EIT_S3* tag at all — S3 levels record
+// EIT_S2* gems (Sheila's Alp also 10 plain EIT_RedGem), so the EIT_S3* rows
+// stay unused placeholders. The table is NOT hardcoded here: init() fills it
+// from the embedded locations.json's "gemValues" (generated from
+// world/data/client.json), which scripts/gen_golden.py reads too.
+var gemTypes []gemType
 
 // gemMarkerCount parses the GemHashArray element count behind a gem-type tag
 // marker content end at m. The structural layout that must follow:

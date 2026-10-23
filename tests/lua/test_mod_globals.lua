@@ -13,7 +13,18 @@
 -- Run from the client repo root: lua tests/lua/test_mod_globals.lua
 
 local DIR = "ue4ss_mod/srt_bridge/Scripts/"
-local FILES = {"main.lua", "logger.lua", "util.lua", "regions.lua", "level_locks_core.lua", "inventory_grants_core.lua", "session_gate.lua", "data_pkg.lua", "goal_watch.lua", "fillers.lua", "death_link.lua", "level_tracker.lua", "checks_drop.lua", "spyro1/dragons.lua", "spyro1/level_locks.lua", "spyro1/balloonists.lua", "spyro2/abilities.lua", "spyro2/level_locks.lua", "spyro3/level_locks.lua", "spyro3/sparx_powers.lua"}
+
+-- Every mod script, discovered rather than listed, so a new file is covered
+-- without touching this spec.
+local FILES = {}
+do
+    local p = assert(io.popen("find " .. DIR .. " -name '*.lua' -type f | sort", "r"))
+    for path in p:lines() do
+        FILES[#FILES + 1] = path:gsub("^" .. DIR, "")
+    end
+    p:close()
+    assert(#FILES > 0, "no mod scripts found under " .. DIR)
+end
 
 local LUAC = "luac"
 if os.execute("command -v luac5.4 >/dev/null 2>&1") then LUAC = "luac5.4" end

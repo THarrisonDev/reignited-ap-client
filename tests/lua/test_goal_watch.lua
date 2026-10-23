@@ -1,14 +1,14 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-26
--- Updated: 2026-10-11
+-- Updated: 2026-10-21
 
 -- Stub-based spec for client/ue4ss_mod/srt_bridge/Scripts/goal_watch.lua.
 -- Fakes send()/log; exercises slot-data configuration, event detection across
 -- backlog batches, once-only GOAL reporting and reconnect re-delivery.
 -- Run from the client repo root: lua tests/lua/test_goal_watch.lua
 
-local here = debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "./"
-package.path = here .. "../../ue4ss_mod/srt_bridge/Scripts/?.lua;" .. package.path
+package.path = (debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "./") .. "support/?.lua;" .. package.path
+local H = require("harness")
 
 local RIPTO_LOC = 226000
 local GNASTY_LOC = 102031
@@ -18,13 +18,14 @@ local function sd(required, games)
     return {required_games = required, games = games or {}}
 end
 
-local lines, sends, G
+local sends
 local function fresh()
     package.loaded["goal_watch"] = nil
     local mod = require("goal_watch")
-    lines, sends = {}, {}
+    H.clear_log()
+    sends = {}
     mod.init({
-        log = function(l) lines[#lines + 1] = l end,
+        log = H.collect,
         send = function()
             sends[#sends + 1] = true
             return true
@@ -33,18 +34,7 @@ local function fresh()
     return mod
 end
 
-local tests, failed = 0, 0
-local function test(name, fn)
-    tests = tests + 1
-    local ok, err = pcall(fn)
-    if ok then
-        print("PASS " .. name)
-    else
-        failed = failed + 1
-        print("FAIL " .. name .. ": " .. tostring(err))
-        for _, l in ipairs(lines) do print("    | " .. l) end
-    end
-end
+local test = H.test
 
 test("goal event arrival sends GOAL exactly once", function()
     local G = fresh()
@@ -119,7 +109,7 @@ test("send failure is logged and not retried from the same batch", function()
     sends = {}
     local fail = true
     mod.init({
-        log = function(l) lines[#lines + 1] = l end,
+        log = H.collect,
         send = function()
             sends[#sends + 1] = true
             return not fail
@@ -144,5 +134,4 @@ test("status() names the pending goal locations", function()
     assert(G.status():find("sent=true", 1, true), "got " .. G.status())
 end)
 
-print(string.format("%d/%d passed", tests - failed, tests))
-os.exit(failed == 0 and 0 or 1)
+H.finish()

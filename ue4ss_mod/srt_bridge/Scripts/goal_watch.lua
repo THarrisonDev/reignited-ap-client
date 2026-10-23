@@ -9,10 +9,13 @@
 -- Pure logic: send() (StatusUpdate) and log are injected.
 
 local logger = require("logger")
+local O = require("option")
 
 local M = {}
 
-local log = logger.tagged("[GOAL]")
+local TAG = "[GOAL]"
+
+local log = logger.tagged(TAG)
 local send = function() return false end
 local pending = {}   -- goal location id -> true (not yet received)
 local goals = {}     -- required game key -> goal location id
@@ -25,47 +28,68 @@ end
 
 --- Install the injected logger and goal sender.
 function M.init(opts)
-    log = logger.leveled("[GOAL]", opts and opts.log)
+    log = logger.leveled(TAG, opts and opts.log)
     send = (opts and opts.send) or send
+end
+
+--- Return the required games whose slot data carries a usable goal location.
+local function read_goals(sd)
+    local out = {}
+    local required = type(sd) == "table" and type(sd.required_games) == "table"
+        and sd.required_games or {}
+    for _, key in ipairs(required) do
+        local gid = O.game_data(sd, key).goal_location
+        if usable_id(gid) then
+            out[key] = gid
+        end
+    end
+    return out
+end
+
+--- Log what goal reporting is waiting for, or why it stays off.
+local function log_goals(sd, found)
+    if next(found) == nil then
+        local required = type(sd) == "table" and type(sd.required_games) == "table"
+            and sd.required_games or {}
+        if #required > 0 then
+            log.info("goal tracking: no required game exposes a goal_location; goal reporting stays off")
+        end
+        return
+    end
+    local names = {}
+    for key, gid in pairs(found) do
+        names[#names + 1] = key .. "@" .. gid
+    end
+    table.sort(names)
+    log.info("goal tracking: waiting for " .. table.concat(names, ", "))
 end
 
 --- Build the pending-goal set from slot data's required games.
 function M.configure(sd)
-    pending, goals = {}, {}
+    pending, goals = {}, read_goals(sd)
     sent = false
-    local required = type(sd) == "table" and type(sd.required_games) == "table"
-        and sd.required_games or {}
-    for _, key in ipairs(required) do
-        local g = type(sd.games) == "table" and sd.games[key] or nil
-        local gid = type(g) == "table" and g.goal_location or nil
-        if usable_id(gid) then
-            goals[key] = gid
-            pending[gid] = true
-        end
+    for _, gid in pairs(goals) do
+        pending[gid] = true
     end
-    if #required > 0 and next(pending) == nil then
-        log.info("goal tracking: no required game exposes a goal_location; goal reporting stays off")
-    elseif next(pending) ~= nil then
-        local names = {}
-        for key, gid in pairs(goals) do
-            names[#names+1] = key .. "@" .. gid
+    log_goals(sd, goals)
+end
+
+--- Drop the pending goals this batch delivered.
+local function clear_received(received)
+    local got = {}
+    for _, info in ipairs(received or {}) do
+        got[info.location] = true
+    end
+    for gid in pairs(pending) do
+        if got[gid] then
+            pending[gid] = nil
+            log.info("goal event received: location " .. gid)
         end
-        table.sort(names)
-        log.info("goal tracking: waiting for " .. table.concat(names, ", "))
     end
 end
 
---- Clear goal locations seen in received, then report GOAL when all are in.
-function M.note_batch(received)
-    for gid in pairs(pending) do
-        for _, info in ipairs(received or {}) do
-            if info.location == gid then
-                pending[gid] = nil
-                log.info("goal event received: location " .. gid)
-                break
-            end
-        end
-    end
+--- Report GOAL when every required game is complete; returns whether it did.
+local function report()
     if sent or next(pending) ~= nil or next(goals) == nil then return false end
     local ok, err = pcall(send)
     -- pcall's first result is "did not throw"; send() itself reports success
@@ -80,6 +104,12 @@ function M.note_batch(received)
     return ok
 end
 
+--- Clear goal locations seen in received, then report GOAL when all are in.
+function M.note_batch(received)
+    clear_received(received)
+    return report()
+end
+
 --- Return a one-line sent/waiting state for debugging.
 function M.status()
     local waiting = {}
@@ -91,5 +121,6 @@ end
 
 --- Return whether GOAL has been reported.
 function M.sent() return sent end
+M.tag = TAG
 
 return M

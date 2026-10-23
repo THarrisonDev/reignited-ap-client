@@ -12,17 +12,20 @@
 
 local U = require("util")
 local logger = require("logger")
+local O = require("option")
 
 local M = {}
 
 local PAWN_CLASS = "BP_CPS1999_Playable_C"  -- Spyro's player pawn blueprint
 local JOB_TIMEOUT = 5       -- seconds before an unfinished job is abandoned (and failed-job backoff)
 
-local log = logger.tagged("[DEATHLINK]")
+local TAG = "[DEATHLINK]"
+
+local log = logger.tagged(TAG)
 local send = function() return false end
 local now = function() return 0 end
 local me = function() return "?" end
-local enabled = false       -- slot_data.options.death_link == 1
+local enabled = false       -- slot_data.options.death_link (option.flag decodes it)
 local dead = false          -- last observed pawn IsDead
 local suppress = false      -- our induced kill is in flight: its death must not bounce
 local last_death_time = nil -- our last bounce's time (echo protection)
@@ -69,20 +72,42 @@ end
 --- Wire the injected logger and send/now/me callables, and detect the
 --- game-thread write API.
 function M.init(opts)
-    log = logger.leveled("[DEATHLINK]", opts and opts.log)
+    log = logger.leveled(TAG, opts and opts.log)
     send = (opts and opts.send) or send
     now = (opts and opts.now) or now
     me = (opts and opts.me) or me
-    can_write = type(ExecuteInGameThread) == "function"
+    can_write = U.can_write()
 end
 
 --- Read the death_link option from slot data and reset per-session state.
 function M.configure(sd)
     enabled = type(sd) == "table" and type(sd.options) == "table"
-        and sd.options.death_link == 1
+        and O.flag(sd.options.death_link, "death_link", log)
     dead, suppress, pending_kill = false, false, false
     last_death_time = nil
     log.info("configured: enabled=" .. tostring(enabled))
+end
+
+--- Return whether the bounce carries the DeathLink tag.
+local function death_tagged(cmd)
+    for _, t in ipairs(cmd.tags) do
+        if t == "DeathLink" then return true end
+    end
+    return false
+end
+
+--- Return whether the bounce is our own echo or older than our last bounce.
+local function stale_bounce(data)
+    if data.source == me() then
+        log.debug("ignoring own bounce (echo)")
+        return true
+    end
+    if type(data.time) == "number" and last_death_time ~= nil
+        and data.time <= last_death_time then
+        log.debug("ignoring stale bounce (time " .. tostring(data.time) .. ")")
+        return true
+    end
+    return false
 end
 
 --- Queue a kill for a DeathLink-tagged bounce unless it is our own echo or
@@ -92,53 +117,46 @@ function M.on_bounced(cmd)
     if type(cmd) ~= "table" or type(cmd.data) ~= "table" or type(cmd.tags) ~= "table" then
         return
     end
-    local tagged = false
-    for _, t in ipairs(cmd.tags) do
-        if t == "DeathLink" then tagged = true break end
-    end
-    if not tagged then return end
-    local data = cmd.data
-    if data.source == me() then
-        log.debug("ignoring own bounce (echo)")
-        return
-    end
-    if type(data.time) == "number" and last_death_time ~= nil
-        and data.time <= last_death_time then
-        log.debug("ignoring stale bounce (time " .. tostring(data.time) .. ")")
-        return
-    end
+    if not death_tagged(cmd) or stale_bounce(cmd.data) then return end
     pending_kill = true
-    log.info("death from " .. tostring(data.source or "?") .. " — kill pending")
+    log.info("death from " .. tostring(cmd.data.source or "?") .. " — kill pending")
+end
+
+--- Apply a pending kill when the pawn is alive and the runner is free.
+local function apply_pending(pawn, is_dead)
+    if not (pending_kill and not is_dead and can_write and jobs.ready()) then return end
+    pending_kill = false
+    submit(pawn)
+end
+
+--- Bounce a fresh player death unless it is our own induced one.
+local function bounce_death()
+    if suppress then
+        suppress = false
+        log.debug("induced death suppressed (not bounced)")
+        return
+    end
+    if not enabled then return end
+    local t = now()
+    local okS, r = pcall(send, {time = t, source = me(), cause = "death"})
+    if okS and r == true then
+        last_death_time = t
+        log.info(string.format("death bounced (time %.2f)", t))
+        return
+    end
+    log.warn("bounce send failed (" .. tostring(r) .. "); not retried on this death")
 end
 
 --- Poll the pawn: apply a pending kill, then bounce a fresh player death
 --- (unless it is our own suppressed induced death).
-function M.tick(gs)
+function M.tick()
     local pawn = safe(function() return FindFirstOf(PAWN_CLASS) end, nil)
     if not valid(pawn) then return end
     local is_dead = safe(function() return pawn:IsDead() end, nil)
     if is_dead == nil then is_dead = false end
-
-    if pending_kill and not is_dead and can_write and jobs.ready() then
-        pending_kill = false
-        submit(pawn)
-    end
-
+    apply_pending(pawn, is_dead)
     if not dead and is_dead then
-        if suppress then
-            suppress = false
-            log.debug("induced death suppressed (not bounced)")
-        elseif enabled then
-            local t = now()
-            local okS, r = pcall(send, {time = t, source = me(), cause = "death"})
-            if okS and r == true then
-                last_death_time = t
-                log.info(string.format("death bounced (time %.2f)", t))
-            else
-                log.warn("bounce send failed (" .. tostring(r) ..
-                    "); not retried on this death")
-            end
-        end
+        bounce_death()
     end
     dead = is_dead
 end
@@ -148,5 +166,6 @@ function M.status()
     return string.format("enabled=%s dead=%s pending=%s suppressed=%s",
         tostring(enabled), tostring(dead), tostring(pending_kill), tostring(suppress))
 end
+M.tag = TAG
 
 return M

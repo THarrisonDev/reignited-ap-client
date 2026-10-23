@@ -6,10 +6,8 @@ package main
 
 import (
 	"bytes"
-	"os"
 	"path/filepath"
 	"testing"
-	"time"
 )
 
 func TestScanS2BossesMatchesGolden(t *testing.T) {
@@ -137,17 +135,8 @@ func TestDaemonBossFlipDrop(t *testing.T) {
 	d := testDaemon(t, true)
 	d.saveDir = t.TempDir()
 
-	ripValOff := func(data []byte) int {
-		// Ripto's Arena is the third (last) boss marker in the file
-		m := bytes.LastIndex(data, []byte(s2BossMarker))
-		if m < 0 {
-			t.Fatal("no boss marker in the save")
-		}
-		return mustCollectedOff(t, data, m)
-	}
-
 	data := loadSave(t, "100pct_ref")
-	valOff := ripValOff(data)
+	valOff := lastBossValueOff(t, data)
 	if data[valOff] != 1 {
 		t.Fatalf("fixture precondition: Ripto value byte at %d must be 1", valOff)
 	}
@@ -155,33 +144,21 @@ func TestDaemonBossFlipDrop(t *testing.T) {
 	// de-kill: Ripto uncollected at first sight
 	killed := append([]byte(nil), data...)
 	killed[valOff] = 0
-	path := filepath.Join(d.saveDir, "FalconSave.106.sav")
-	if err := os.WriteFile(path, killed, 0644); err != nil {
-		t.Fatal(err)
-	}
+	writeSaveBytes(t, d, "FalconSave.106.sav", killed)
 	writeSession(t, d, "slot=0\ngame=1\ntoken=s2boss\n")
 	d.pollOnce()
 	if d.drops != 1 {
 		t.Fatalf("baseline must drop once, drops=%d", d.drops)
 	}
-	sent := map[string]bool{}
-	for _, n := range readDrop(t, d).Names {
-		sent[n] = true
-	}
+	sent := nameSet(readDrop(t, d).Names)
 	if sent["Spyro 2: Ripto's Arena: Ripto Defeated"] {
 		t.Fatal("uncollected Ripto must not be in the baseline drop")
 	}
-	if !sent["Spyro 2: Crush's Dungeon: Crush Defeated"] || !sent["Spyro 2: Gulp's Overlook: Gulp Defeated"] {
-		t.Fatal("the collected Crush/Gulp bosses must backfill")
-	}
+	expectSent(t, sent, "Spyro 2: Crush's Dungeon: Crush Defeated", "Spyro 2: Gulp's Overlook: Gulp Defeated")
 	baseDrops := d.drops
 
 	// kill: re-collect Ripto, exactly one new check drops
-	time.Sleep(20 * time.Millisecond)
-	path = filepath.Join(d.saveDir, "FalconSave.105.sav")
-	if err := os.WriteFile(path, data, 0644); err != nil {
-		t.Fatal(err)
-	}
+	stampSave(t, filepath.Join(d.saveDir, "FalconSave.105.sav"), data)
 	d.pollOnce()
 	got := readDrop(t, d)
 	if d.drops != baseDrops+1 {
@@ -195,4 +172,15 @@ func TestDaemonBossFlipDrop(t *testing.T) {
 	if d.drops != baseDrops+1 {
 		t.Fatalf("already-sent boss check must not drop again, drops=%d", d.drops)
 	}
+}
+
+// lastBossValueOff is the collected byte of the save's last Spyro 2 boss record
+// (Ripto's Arena).
+func lastBossValueOff(t *testing.T, data []byte) int {
+	t.Helper()
+	m := bytes.LastIndex(data, []byte(s2BossMarker))
+	if m < 0 {
+		t.Fatal("no boss marker in the save")
+	}
+	return mustCollectedOff(t, data, m)
 }

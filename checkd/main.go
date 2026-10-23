@@ -7,6 +7,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -48,54 +49,84 @@ func (d *daemon) writeHeartbeat() {
 }
 
 func main() {
+	o := parseFlags()
+	if err := os.MkdirAll(o.dropDir, 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "cannot create drop dir %s: %v\n", o.dropDir, err)
+		os.Exit(1)
+	}
+	d := startDaemon(o)
+	d.run()
+}
+
+// options are the parsed command-line flags.
+type options struct {
+	saveDir, dropDir, logPath string
+	poll                      time.Duration
+	backfill                  bool
+}
+
+// parseFlags parses the command line into the daemon's options.
+func parseFlags() options {
 	saveDir := flag.String("save-dir", defaultSaveDir(), "directory holding FalconSave.*.sav")
 	dropDir := flag.String("drop-dir", defaultDropDir, "bridge directory for checks.json drops")
 	poll := flag.Duration("poll", time.Second, "save poll interval")
 	noBackfill := flag.Bool("no-backfill", false, "do not drop already-collected dragons and eggs at baseline")
 	logPath := flag.String("log", defaultLogPath, "log file path (falls back to stderr if unwritable)")
 	flag.Parse()
+	return options{saveDir: *saveDir, dropDir: *dropDir, logPath: *logPath, poll: *poll, backfill: !*noBackfill}
+}
 
-	if err := os.MkdirAll(*dropDir, 0755); err != nil {
-		fmt.Fprintf(os.Stderr, "cannot create drop dir %s: %v\n", *dropDir, err)
-		os.Exit(1)
-	}
-
-	var logWriter = os.Stderr
-	if f, err := os.OpenFile(*logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644); err == nil {
-		logWriter = f
-	} else {
-		fmt.Fprintf(os.Stderr, "log %s unwritable (%v); logging to stderr\n", *logPath, err)
-	}
-	logger := log.New(logWriter, "", log.LstdFlags)
-	logf := func(format string, args ...any) { logger.Printf(format, args...) }
-
+// startDaemon builds the daemon over the embedded tables, refuses to start
+// beside a live instance, and logs the boot line.
+func startDaemon(o options) *daemon {
+	logf := newLogger(o.logPath)
 	nameToID, eggCatalog, levelGems, err := embeddedLocations()
 	if err != nil {
 		logf("FATAL: embedded locations.json: %v", err)
 		os.Exit(1)
 	}
-
 	d := newDaemon(nameToID, eggCatalog, levelGems, logf)
-	d.saveDir = *saveDir
-	d.dropDir = *dropDir
-	d.poll = *poll
-	d.backfill = !*noBackfill
-
-	hbPath := filepath.Join(*dropDir, hbName)
-	if b, err := os.ReadFile(hbPath); err == nil {
-		if secs, err := strconv.ParseInt(string(b), 10, 64); err == nil {
-			if age := time.Now().Unix() - secs; age < hbFreshSecs {
-				logf("another instance alive (heartbeat %ds old); exiting", age)
-				os.Exit(0)
-			}
-		}
+	d.saveDir, d.dropDir, d.poll, d.backfill = o.saveDir, o.dropDir, o.poll, o.backfill
+	if age, alive := heartbeat(o.dropDir); alive {
+		logf("another instance alive (heartbeat %ds old); exiting", age)
+		os.Exit(0)
 	}
-
 	logf("checkd boot: save-dir=%s drop-dir=%s session=%s poll=%s backfill=%t log=%s locations=%d egg-regions=%d gem-regions=%d",
-		*saveDir, *dropDir, sessionName, *poll, d.backfill, *logPath, len(nameToID), len(eggCatalog), len(levelGems))
-
+		o.saveDir, o.dropDir, sessionName, o.poll, d.backfill, o.logPath, len(nameToID), len(eggCatalog), len(levelGems))
 	d.writeHeartbeat()
+	return d
+}
 
+// newLogger returns the daemon's log function, falling back to stderr when the
+// log file is unwritable.
+func newLogger(path string) func(string, ...any) {
+	var w io.Writer = os.Stderr
+	if f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644); err == nil {
+		w = f
+	} else {
+		fmt.Fprintf(os.Stderr, "log %s unwritable (%v); logging to stderr\n", path, err)
+	}
+	logger := log.New(w, "", log.LstdFlags)
+	return func(format string, args ...any) { logger.Printf(format, args...) }
+}
+
+// heartbeat reports a previous instance's heartbeat age in seconds and whether
+// it is still fresh.
+func heartbeat(dropDir string) (int64, bool) {
+	b, err := os.ReadFile(filepath.Join(dropDir, hbName))
+	if err != nil {
+		return 0, false
+	}
+	secs, err := strconv.ParseInt(string(b), 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	age := time.Now().Unix() - secs
+	return age, age < hbFreshSecs
+}
+
+// run polls the save folder and writes the heartbeat until interrupted.
+func (d *daemon) run() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt)
 

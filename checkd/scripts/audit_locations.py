@@ -5,11 +5,11 @@
 
 """Guard: the generated client files match what gen_locations.py would produce.
 
-Regenerates client/checkd/locations.json and the mod's regions.lua in memory
-(from world/data/*.json via gen_locations.py) and diffs them against the
-checked-in files. Exits non-zero if they drift — i.e. a source was edited but
-gen_locations.py wasn't re-run, so the client would resolve a region or
-location name (or ID) the apworld no longer uses.
+Regenerates client/checkd/locations.json, the mod's regions.lua and its
+constants.lua in memory (from world/data/*.json via gen_locations.py) and diffs
+them against the checked-in files. Exits non-zero if they drift — i.e. a source
+was edited but gen_locations.py wasn't re-run, so the client would resolve a
+region or location name (or ID, or EIT type) the apworld no longer uses.
 """
 import json
 import os
@@ -55,6 +55,11 @@ def main():
             problems.append(f"{os.path.relpath(gen.OUT_LUA, gen.REPO)} is "
                             "STALE — run client/checkd/scripts/gen_locations.py")
 
+    with open(gen.OUT_LUA_CONST, encoding="utf-8") as f:
+        if f.read() != gen.constants_lua_text():
+            problems.append(f"{os.path.relpath(gen.OUT_LUA_CONST, gen.REPO)} is "
+                            "STALE — run client/checkd/scripts/gen_locations.py")
+
     if problems:
         print("DRIFT — generated files out of sync with sources:")
         for p in problems:
@@ -66,7 +71,7 @@ def main():
         r = doc["regions"]
         checks = sum(len(x["checks"]) + len(x.get("events", [])) for x in r.values())
         parts.append(f"{game} {len(r)} regions / {checks} checks")
-    print(f"OK: {'; '.join(parts)} — locations.json + regions.lua match the data sources.")
+    print(f"OK: {'; '.join(parts)} — locations.json + regions.lua + constants.lua match the data sources.")
 
 
 if __name__ == "__main__":

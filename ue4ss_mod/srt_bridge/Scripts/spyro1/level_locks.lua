@@ -10,9 +10,10 @@
 -- portals are never lock targets — balloonists.lua gates homeworlds instead).
 --
 -- API (main.lua): init{log, regions}, configure(slot_data), note_item(name),
--- tick(gamestate), status().
+-- tick(world), status().
 
 local core = require("level_locks_core")
+local C = require("constants")
 
 return core.new({
     game = "spyro1",
@@ -20,8 +21,5 @@ return core.new({
     label = "",
     prefix = "",
     portal_class = "PortalTransporter_C",
-    homeworlds = {
-        ["Artisans"] = true, ["Peace Keepers"] = true, ["Magic Crafters"] = true,
-        ["Beast Makers"] = true, ["Dream Weavers"] = true, ["Gnorc Gnexus"] = true,
-    },
+    homeworlds = C.homeworlds.spyro1,
 })

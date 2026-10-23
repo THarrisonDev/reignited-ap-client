@@ -55,21 +55,26 @@ func resolverFor(game int) gameResolver {
 // It logs and returns false for a key that is absent.
 func (res *tableResolver) resolve(d *daemon, k checkKey) (string, bool) {
 	if k.kind == KindSkillPoint {
-		n, err := strconv.Atoi(k.name)
-		if err != nil {
-			d.logf("unknown %s skill point location: %s (skipped)", res.name, k.name)
-			return "", false
-		}
-		resolved, ok := res.sps[n]
-		if !ok {
-			d.logf("unknown %s skill point location: %d (skipped)", res.name, n)
-			return "", false
-		}
-		return resolved, true
+		return res.resolveSkillPoint(d, k)
 	}
 	resolved, ok := res.locs[k]
 	if !ok {
 		d.logf("unknown %s %s location: %s: %s (skipped)", res.name, k.kind, k.region, k.name)
+		return "", false
+	}
+	return resolved, true
+}
+
+// resolveSkillPoint resolves a skill-point key through the enum table.
+func (res *tableResolver) resolveSkillPoint(d *daemon, k checkKey) (string, bool) {
+	n, err := strconv.Atoi(k.name)
+	if err != nil {
+		d.logf("unknown %s skill point location: %s (skipped)", res.name, k.name)
+		return "", false
+	}
+	resolved, ok := res.sps[n]
+	if !ok {
+		d.logf("unknown %s skill point location: %d (skipped)", res.name, n)
 		return "", false
 	}
 	return resolved, true
@@ -80,15 +85,9 @@ func (res *tableResolver) resolve(d *daemon, k checkKey) (string, bool) {
 // dragon, named from its region. It logs and returns false for a key that is
 // absent.
 func (spyro1Resolver) resolve(d *daemon, k checkKey) (string, bool) {
-	switch k.kind {
+	switch k.kind { //nolint:exhaustive // eggs, gems, skill points and completion events only; the default is a dragon
 	case KindEgg:
-		if n, err := strconv.Atoi(k.name); err == nil {
-			if resolved, ok := d.eggLocation(Egg{Region: k.region, Ordinal: n}); ok {
-				return resolved, true
-			}
-		}
-		d.logf("unknown egg location: %s #%s (skipped)", k.region, k.name)
-		return "", false
+		return s1EggLocation(d, k)
 	case KindGem:
 		resolved, ok := d.gemLocation(k)
 		if !ok {
@@ -97,13 +96,7 @@ func (spyro1Resolver) resolve(d *daemon, k checkKey) (string, bool) {
 		}
 		return resolved, true
 	case KindSkillPoint:
-		if n, err := strconv.Atoi(k.name); err == nil {
-			if resolved, ok := spyro1SkillPoints[n]; ok {
-				return resolved, true
-			}
-		}
-		d.logf("unknown skill point location: %s (skipped)", k.name)
-		return "", false
+		return s1SkillPointLocation(d, k)
 	case KindEvent:
 		resolved, ok := spyro1Events[k.region]
 		if !ok {
@@ -113,6 +106,30 @@ func (spyro1Resolver) resolve(d *daemon, k checkKey) (string, bool) {
 		return resolved, true
 	}
 	return locationPrefix + k.region + ": Free " + k.name, true
+}
+
+// s1EggLocation resolves a Spyro 1 egg key through its region's ordinal
+// catalog.
+func s1EggLocation(d *daemon, k checkKey) (string, bool) {
+	if n, err := strconv.Atoi(k.name); err == nil {
+		if resolved, ok := d.eggLocation(Egg{Region: k.region, Ordinal: n}); ok {
+			return resolved, true
+		}
+	}
+	d.logf("unknown egg location: %s #%s (skipped)", k.region, k.name)
+	return "", false
+}
+
+// s1SkillPointLocation resolves a Spyro 1 skill-point key through its enum
+// table.
+func s1SkillPointLocation(d *daemon, k checkKey) (string, bool) {
+	if n, err := strconv.Atoi(k.name); err == nil {
+		if resolved, ok := spyro1SkillPoints[n]; ok {
+			return resolved, true
+		}
+	}
+	d.logf("unknown skill point location: %s (skipped)", k.name)
+	return "", false
 }
 
 // game returns the session's game index, or 0 when no session is open. Both a
