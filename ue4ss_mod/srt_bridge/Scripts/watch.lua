@@ -5,7 +5,7 @@
 -- watch: the poll loop (250 ms, async thread). Refreshes the one game_state
 -- snapshot, drives the session gate, the AP poll, the check-drop and notice
 -- ingestion, the per-game watcher ticks, and the heartbeat. Reads state.world,
--- state.mods and state.watch. See docs/mod_architecture.md §3 and §5.
+-- state.mods and state.watch.
 
 local U = require("util")
 local L = require("logger")

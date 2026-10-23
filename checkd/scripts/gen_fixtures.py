@@ -20,7 +20,7 @@ files' expectations:
     skill point 4 earned)
   - mixed_s1_s2: slot-0 full-ish S1 playthrough, slot-1 S1 (skill point 1)
     and S2 (Glimmer) playthroughs
-  - s1_events: Spyro 1 level-completion records (docs/s1_level_completion.md)
+  - s1_events: Spyro 1 level-completion records
     in slot 0 (exits, Gnasty's S1Boss, full/partial flights, a full Loot) and
     slot 1 (a Loot exit at half gems, a partial flight)
   - 100pct_ref: a synthetic 100% playthrough of all three games (80 dragons,

@@ -3,7 +3,7 @@
 -- Updated: 2026-10-21
 
 -- Fake PortalTransporter actors for the level-lock specs, with the behaviour
--- observed live (docs/game_state_control.md §9.5.1):
+-- observed live:
 --   setPortalEnabled(en): EnableTransport = PreloadEnabled = en; glyphs hidden = not en
 --   REMAKE text: display text = text; old glyphs destroyed, new ones spawn hidden
 -- Every write asserts the harness game-thread flag: a write from the async

@@ -5,8 +5,7 @@
 -- inventory_grants_core: factory behind the per-game global-inventory item
 -- modules (spyro2/abilities.lua, spyro3/sparx_powers.lua). It forces each
 -- item's owned flag to match the received set via the gamestate inventory
--- UFunctions, reconciling vanilla grants back off until the AP item arrives
--- (docs/game_state_control.md §9.1).
+-- UFunctions, reconciling vanilla grants back off until the AP item arrives.
 
 local U = require("util")
 local logger = require("logger")

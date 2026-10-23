@@ -5,8 +5,7 @@
 -- SRTAP bridge: the in-game Archipelago client. This file is the boot and the
 -- host API: it wires the parts (checkd, ap_client, session, watch), loads the
 -- modules listed in modules.lua and hands each one the HOST capabilities it
--- needs. Per-part detail lives in those files; see docs/mod_architecture.md,
--- docs/game_gates.md and docs/game_state_control.md.
+-- needs. Per-part detail lives in those files.
 
 -- Scripts/ on package.path before the first require.
 do
@@ -74,7 +73,7 @@ local function loc_id(name)
 end
 
 -- The one per-poll game snapshot: watch.lua refreshes it, every module's tick
--- reads the same table. See docs/mod_architecture.md §3.
+-- reads the same table.
 state.world = require("game_state").new({ regions = REGIONS })
 
 -- Everything a module may use. Built once here; every field reads live state (or

@@ -5,7 +5,6 @@
 -- session: which save is open. Loads the region table the modules resolve
 -- against, polls the game state through session_gate and opens or closes the
 -- session as it directs, and resets the per-session module state on a change.
--- See docs/game_gates.md.
 
 local U = require("util")
 local L = require("logger")

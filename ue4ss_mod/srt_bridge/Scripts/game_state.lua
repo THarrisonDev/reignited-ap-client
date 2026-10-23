@@ -16,8 +16,6 @@
 --   changed       -- this poll saw a new path: a world transition
 --   epoch         -- path changes since reset (module-side cache key)
 --   prev_path, prev_gstate -- values before this poll's update, for the log line
---
--- See docs/mod_architecture.md §3.2.
 
 local U = require("util")
 

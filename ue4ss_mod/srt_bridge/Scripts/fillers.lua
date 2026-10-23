@@ -3,7 +3,7 @@
 -- Updated: 2026-10-11
 
 -- fillers: apply received filler items — Extra Life, cheat-code looks (colors,
--- Big Head, Flat Spyro) and Damage Trap. See docs/game_state_control.md.
+-- Big Head, Flat Spyro) and Damage Trap.
 
 local U = require("util")
 local logger = require("logger")

@@ -12,7 +12,7 @@ local logger = require("logger")
 
 local M = {}
 
--- EFalconGameState (docs/falcon_sdk_dump Falcon_enums.hpp)
+-- EFalconGameState values, as the game's own enum defines them
 M.MAIN_MENU = 0
 M.IN_PLAY = 3
 M.SPYRO1 = 0           -- game indices in the trilogy menu / save

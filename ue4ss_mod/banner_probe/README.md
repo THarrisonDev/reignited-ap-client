@@ -6,8 +6,8 @@ notices — whether the fanfare window can be extended or held open, whether we
 can spawn a fanfare widget of our own, and whether the HUD's canvas can draw
 text instead of the fanfare at all.
 
-What is already proven lives in `docs/fanfare_text.md`. The API surface comes
-from `docs/falcon_sdk_dump/UI_FanFareMessage.hpp` (the widget: `Intro`/`Outro`
+What is already proven lives in the fanfare research notes. The API surface
+comes from the game's `UI_FanFareMessage.hpp` (the widget: `Intro`/`Outro`
 animations, `State`, `message text` — no duration field), `UMG.hpp`
 (`SetPlaybackSpeed`, `PauseAnimation`, `PlayAnimation`, `GetEndTime`,
 `WidgetBlueprintLibrary::Create`, `AddToViewport`) and `Engine.hpp`
@@ -263,7 +263,7 @@ at `bShowHUD`), so the canvas route is off the table.
 | 5 draws text | no widget at all; cheapest per frame, but unstyled (engine font, our own position/backdrop) |
 | none of them | today's recipe stays; the stripped `hud_banner.lua` is the floor |
 
-Record whichever answers come back in `docs/fanfare_text.md` (a short section
+Record whichever answers come back in the fanfare research notes (a short section
 per check, with the log excerpt), then delete this mod — it is a probe, not a
 feature.
 

@@ -4,10 +4,10 @@
 
 -- Stub-based spec for client/ue4ss_mod/srt_bridge/Scripts/spyro1/balloonists.lua.
 -- Fakes the UE4SS surfaces the module touches (FindAllOf, Marco actors,
--- ExecuteInGameThread) with the behaviour observed live
--- (docs/game_state_control.md §9.5.1): each CNS1127_MarcoTheBalloonist_C has
--- LevelPath (FString, spelling may differ from the level path), GoalType
--- (EInventoryItemType number) and GoalValue (int); Marcos stream in late.
+-- ExecuteInGameThread) with the behaviour observed live: each
+-- CNS1127_MarcoTheBalloonist_C has LevelPath (FString, spelling may differ from
+-- the level path), GoalType (EInventoryItemType number) and GoalValue (int);
+-- Marcos stream in late.
 -- ExecuteInGameThread only QUEUES work; H.pump() runs it with the game-thread
 -- flag set. Every write asserts that flag.
 -- Run from the client repo root: lua tests/lua/test_balloonists.lua

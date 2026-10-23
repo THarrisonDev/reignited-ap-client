@@ -8,7 +8,7 @@
 -- An entry is:
 --   name  -- require name (also its file under Scripts/)
 --   shape -- how the session reset treats it ("sender" goes back to
---            unconfigured, everything else is reset); see docs/mod_architecture.md
+--            unconfigured, everything else is reset)
 --   games -- the sessions whose watcher list includes it (absent = host-driven,
 --            never ticked by the poll loop)
 --   opts  -- build this module's init opts from the host capabilities it uses

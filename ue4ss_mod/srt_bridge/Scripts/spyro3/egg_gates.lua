@@ -5,7 +5,7 @@
 -- egg_gates (Spyro 3): lower each S3 homeworld egg portal's EggRequirement as
 -- Dragon Egg items are received (spyro3_egg_shuffle), forcing the gate open
 -- once the write reaches 0; the displayed requirement stays vanilla. Writes
--- run one at a time on the game thread. See docs/game_state_control.md.
+-- run one at a time on the game thread.
 
 local U = require("util")
 local logger = require("logger")

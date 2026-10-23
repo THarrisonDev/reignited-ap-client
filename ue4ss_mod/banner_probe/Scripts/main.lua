@@ -6,8 +6,8 @@
 -- held open, can we spawn and drive our own widget, and can we draw text
 -- through the HUD's canvas instead of borrowing the fanfare at all.
 --
--- Facts already proven are in docs/fanfare_text.md; the API surface comes from
--- docs/falcon_sdk_dump/UI_FanFareMessage.hpp, UMG.hpp and Engine.hpp.
+-- Facts already proven are in the fanfare research notes; the API surface comes
+-- from the game's UI_FanFareMessage.hpp, UMG.hpp and Engine.hpp.
 --
 -- Read-only vs the save: message text and widget lifetimes only, no progression
 -- writes. It does disturb the live fanfare widget, which is the point — key 0

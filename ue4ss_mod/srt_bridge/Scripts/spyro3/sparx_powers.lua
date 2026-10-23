@@ -6,7 +6,7 @@
 -- vanilla Sparx realm completion reward while the power is unowned in AP, via
 -- the shared inventory_grants_core.lua (levers and threading there).
 -- EIT_SparxPower_GemFinder (46) is deliberately absent: the gem radar ships
--- default-on and is not randomized. See docs/game_state_control.md.
+-- default-on and is not randomized.
 
 local core = require("inventory_grants_core")
 local C = require("constants")

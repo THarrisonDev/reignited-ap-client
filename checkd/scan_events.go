@@ -8,7 +8,7 @@ import (
 	"sort"
 )
 
-// Spyro 1 level-completion records (docs/s1_level_completion.md). Every one
+// Spyro 1 level-completion records. Every one
 // is written collected=true only, so presence means done.
 const (
 	portalExitMarker   = "EInventoryType::EIT_PortalExit"

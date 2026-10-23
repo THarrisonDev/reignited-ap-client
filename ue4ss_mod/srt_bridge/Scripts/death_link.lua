@@ -5,7 +5,7 @@
 -- death_link: AP DeathLink — Spyro's own deaths bounce to the other DeathLink
 -- players, and an incoming bounce kills Spyro here with the full-strength
 -- damage-trap lever (pawn health set HealthCurrent -> 0). Echo protection runs
--- both ways. See docs/game_state_control.md.
+-- both ways.
 --
 -- Pure logic: send/now/me are injected (main wires ap:Bounce,
 -- ap:get_server_time, ap:get_slot); the spec runs without UE4SS.

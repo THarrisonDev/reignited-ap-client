@@ -5,8 +5,7 @@
 -- player. checkd is option-blind and, when it cannot read a save, sends nothing
 -- at all — this banner is the only in-game signal of that. Reads
 -- <bridge>/checkd.status.json ({"text":"..."}; "" means no notice) and hands
--- each new text to the host once. Shown by hud_banner; see docs/fanfare_text.md
--- ("Player notices").
+-- each new text to the host once. Shown by hud_banner ("Player notices").
 --
 -- The file is state, not a queue: the same text never re-shows, and a notice
 -- that clears and returns shows again.

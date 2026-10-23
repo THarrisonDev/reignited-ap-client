@@ -61,7 +61,7 @@ for _, entry in ipairs(INVENTORY) do
     ACCOUNTED[entry.name:gsub("%.", "/") .. ".lua"] = true
 end
 
--- What the host calls on each shape (see docs/mod_architecture.md).
+-- What the host calls on each shape.
 local SHAPES = {
     plumbing = { "init", "tick" },
     watcher = { "init", "configure", "tick", "status" },

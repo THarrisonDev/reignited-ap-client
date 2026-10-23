@@ -4,9 +4,9 @@
 
 -- Spec for client/ue4ss_mod/srt_bridge/Scripts/hud_banner.lua. Fakes the UE4SS
 -- surface (FindFirstOf, StaticFindObject, timers, game thread, the fanfare
--- widget) and drives the host tick, verifying the burst contract proven in
--- docs/fanfare_text.md ("Burst mode"): one fanfare per burst, the Intro frozen
--- to hold the window, one text swap per line, released with the Outro.
+-- widget) and drives the host tick, verifying the burst contract: one fanfare
+-- per burst, the Intro frozen to hold the window, one text swap per line,
+-- released with the Outro.
 -- Run from the client repo root: lua tests/lua/test_hud_banner.lua
 
 package.path = (debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "./") .. "support/?.lua;" .. package.path

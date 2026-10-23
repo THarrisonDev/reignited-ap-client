@@ -12,7 +12,7 @@ import (
 const skillPointMarker = "EInventoryType::EIT_SkillPoint"
 
 // skillPointRanges is the ESkillPoint enum range per game index (0/1/2):
-// S1 1..14, S2 15..30, S3 31..50 (docs/falcon_sdk_dump/Falcon_enums.hpp),
+// S1 1..14, S2 15..30, S3 31..50 (the game's own Falcon_enums),
 // populated by init() from each game's "skillPointRange" in the embedded
 // locations.json. Values outside the session game's range are ignored.
 var skillPointRanges [3][2]int

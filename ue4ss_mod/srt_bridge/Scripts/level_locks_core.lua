@@ -5,8 +5,7 @@
 -- level_locks_core: factory behind the per-game spyroN/level_locks.lua
 -- modules. It locks homeworld portals whose level key item is still missing,
 -- re-asserting the lock when the game re-enables a portal, and unlocks when
--- the key arrives. Levers and ordering are live-proven
--- (docs/game_state_control.md §9.5.1).
+-- the key arrives. Levers and ordering are live-proven.
 
 local U = require("util")
 local logger = require("logger")

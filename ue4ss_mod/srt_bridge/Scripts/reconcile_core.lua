@@ -10,7 +10,7 @@
 -- field), and never writing before the level has been playable for two ticks
 -- (a write on the load screen hardlocks the game). Writes are idempotent and
 -- refused while disarmed / vanilla / no-baseline. The [RECONCILE] debug lines
--- are the live verification surface. See docs/game_state_control.md.
+-- are the live verification surface.
 
 local U = require("util")
 local logger = require("logger")

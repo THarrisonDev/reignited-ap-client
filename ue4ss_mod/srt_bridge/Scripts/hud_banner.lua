@@ -7,10 +7,10 @@
 --
 -- Fire the game's fanfare, freeze the Intro so the window stays up, then swap
 -- the message text line by line; release with the Outro once the queue drains.
--- The measured recipe, freeze points and failure modes are in
--- docs/fanfare_text.md ("Burst mode"). The `message text` property is the lever
--- (Base is bound to it) and the only trustworthy readback — Base:GetText() reads
--- back empty while a window is held.
+-- The measured recipe, freeze points and failure modes are in the "burst mode"
+-- notes. The `message text` property is the lever (Base is bound to it) and the
+-- only trustworthy readback — Base:GetText() reads back empty while a window is
+-- held.
 --
 -- Received items are aggregated: the queue is drained into one line per distinct
 -- item, so a batch of 32 Dragon Eggs is "Received 32 Dragon Egg" once instead of
@@ -359,7 +359,7 @@ local function step()
 end
 
 --- Open the burst on the game thread, if the widget is there and idle. The
---- game's own fanfare wins: injecting into it collides (docs/fanfare_text.md).
+--- game's own fanfare wins: injecting into it collides.
 local function try_open()
   local h, w = get_hud(), get_widget()
   if not h or not w or not get_kt_lib() then

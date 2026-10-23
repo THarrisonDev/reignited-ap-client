@@ -5,7 +5,7 @@
 -- balloonists (Spyro 1): enforce the seed's balloonist gates by raising each
 -- Marco's GoalValue to the seed's requirement (slot_data.games.spyro1.
 -- gate_requirements). Values are only ever raised, so vanilla seeds send the
--- vanilla numbers (no-op). See docs/game_state_control.md §9.5.1.
+-- vanilla numbers (no-op).
 --
 -- Every write runs inside one ExecuteInGameThread job at a time; the async
 -- tick only reads and decides (U.job_runner).

@@ -4,7 +4,6 @@
 
 -- level_locks (Spyro 3): lock unreceived sub-level portals inside the S3
 -- homeworlds, via the shared level_locks_core.lua (levers and threading there).
--- See docs/game_gates.md.
 
 local core = require("level_locks_core")
 local C = require("constants")

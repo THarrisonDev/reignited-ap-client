@@ -10,7 +10,7 @@
 -- Every option read now goes through flag(): it accepts the int/boolean
 -- encodings, keeps the legacy name strings working where a module passes one,
 -- and logs a loud, once-per-encoding WARN for anything else so drift shows up
--- in bridge.log instead of a quiet no-op. See docs/game_state_control.md.
+-- in bridge.log instead of a quiet no-op.
 
 local M = {}
 
