@@ -10,7 +10,7 @@ DIST    := dist
 
 WINDOWS_TARGETS := GOOS=windows GOARCH=amd64
 
-.PHONY: all vet lint luacheck deadcode test build build-windows build-linux package-mod package-client deploy deploy-mod deploy-checkd dist regen audit lua-tests clean
+.PHONY: all vet lint luacheck deadcode test build build-windows build-linux package-mod check-player-docs package-client deploy deploy-mod deploy-checkd dist regen audit lua-tests clean
 
 # Paths the deploy target writes into, defaulted for a standard Steam install
 # on this Linux/Proton box. `make deploy` needs no arguments; override a path
@@ -121,7 +121,20 @@ $(DIST)/srt_bridge.zip: $(shell find ue4ss_mod/srt_bridge -type f)
 # daemon, the packaged mod, the install wrappers, INSTALL.md, and the
 # third-party notices — one folder plus a zip. Players extract it and run
 # install.bat / install.sh.
-package-client: build-windows build-linux package-mod
+#
+# INSTALL.md and THIRD-PARTY-NOTICES.md are owned by the parent reignited-ap
+# checkout (one copy, no drift), so packaging only runs from that layout; a
+# standalone `client` checkout fails in check-player-docs with a clear message
+# instead of a bare "cannot stat" from cp.
+check-player-docs:
+	@for f in ../INSTALL.md ../THIRD-PARTY-NOTICES.md; do \
+		test -f "$$f" || { \
+			echo "ERROR: $$f missing — run this from a reignited-ap checkout" >&2; \
+			echo "       (the client submodule alone carries no player docs)" >&2; \
+			exit 1; }; \
+	done
+
+package-client: check-player-docs build-windows build-linux package-mod
 	rm -rf $(DIST)/client
 	mkdir -p $(DIST)/client
 	cp -f checkd/srtap_checkd.exe     $(DIST)/client/
