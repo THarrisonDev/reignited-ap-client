@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-10-16
--- Updated: 2026-10-16
+-- Updated: 2026-10-23
 
 -- modules: the bridge's module inventory — the one host-side description of
 -- every module main.lua loads and drives.

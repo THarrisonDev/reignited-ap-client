@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Author: Tim Harrison
 # Created: 2026-09-26
-# Updated: 2026-10-11
+# Updated: 2026-10-23
 
 """Generate the comprehensive location data the client tools consume.
 

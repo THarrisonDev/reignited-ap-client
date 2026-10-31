@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-26
--- Updated: 2026-10-11
+-- Updated: 2026-10-23
 
 -- level_locks (Spyro 3): lock unreceived sub-level portals inside the S3
 -- homeworlds, via the shared level_locks_core.lua (levers and threading there).

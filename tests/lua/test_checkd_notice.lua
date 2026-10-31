@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-10-15
--- Updated: 2026-10-21
+-- Updated: 2026-10-23
 
 -- Spec for client/ue4ss_mod/srt_bridge/Scripts/checkd_notice.lua: the checkd
 -- player-notice channel. Run from the client repo root:

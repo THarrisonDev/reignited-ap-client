@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-26
--- Updated: 2026-10-11
+-- Updated: 2026-10-23
 
 -- level_locks (Spyro 1): Archipelago level locks — a homeworld portal whose
 -- level has a key in this seed (slot_data.games.spyro1.level_keys) stays locked

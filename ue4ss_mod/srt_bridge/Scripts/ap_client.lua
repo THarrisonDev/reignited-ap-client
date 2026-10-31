@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-10-16
--- Updated: 2026-10-16
+-- Updated: 2026-10-23
 
 -- ap_client: the bridge's single AP connection — the client, its handlers, the
 -- verbs modules use to reach the server, and the send/receive log lines. It

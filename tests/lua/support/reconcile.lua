@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-10-21
--- Updated: 2026-10-21
+-- Updated: 2026-10-23
 
 -- Reconcile-core scenarios shared by the dragons / orbs / eggs_hud specs: the
 -- fake gamestate behind the signed debug-extra drive, and the arming, baseline,

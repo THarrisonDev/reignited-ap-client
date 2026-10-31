@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-10-16
--- Updated: 2026-10-17
+-- Updated: 2026-10-23
 
 -- watch: the poll loop (250 ms, async thread). Refreshes the one game_state
 -- snapshot, drives the session gate, the AP poll, the check-drop and notice

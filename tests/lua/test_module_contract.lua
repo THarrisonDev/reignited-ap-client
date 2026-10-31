@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-10-16
--- Updated: 2026-10-16
+-- Updated: 2026-10-23
 
 -- Spec for the host <-> module contract.
 --

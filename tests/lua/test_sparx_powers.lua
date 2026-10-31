@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-26
--- Updated: 2026-10-21
+-- Updated: 2026-10-23
 
 -- Stub-based spec for client/ue4ss_mod/srt_bridge/Scripts/spyro3/sparx_powers.lua
 -- (and, through it, inventory_grants_core.lua). Fakes the gamestate's

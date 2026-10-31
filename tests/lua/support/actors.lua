@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-10-21
--- Updated: 2026-10-21
+-- Updated: 2026-10-23
 
 -- Fake GAS health actors shared by the specs that write Spyro's health: the
 -- pawn's own attribute set (found through an Outer chain) and an enemy's set,

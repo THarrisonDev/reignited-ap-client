@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-10-05
--- Updated: 2026-10-21
+-- Updated: 2026-10-23
 
 -- Stub-based spec for client/ue4ss_mod/srt_bridge/Scripts/level_tracker.lua.
 -- Fakes the gamestate's current-level string, injects send/regions and

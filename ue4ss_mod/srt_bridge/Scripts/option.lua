@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-10-16
--- Updated: 2026-10-16
+-- Updated: 2026-10-23
 
 -- option: decode the world's slot-data options.
 --

@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-10-21
--- Updated: 2026-10-21
+-- Updated: 2026-10-23
 
 -- Fake PortalTransporter actors for the level-lock specs, with the behaviour
 -- observed live:

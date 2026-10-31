@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-27
--- Updated: 2026-10-21
+-- Updated: 2026-10-23
 
 -- Stub-based spec for client/ue4ss_mod/srt_bridge/Scripts/spyro2/orbs.lua.
 -- Fakes the gamestate's current-level string + inventory readback +

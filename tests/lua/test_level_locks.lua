@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-26
--- Updated: 2026-10-21
+-- Updated: 2026-10-23
 
 -- Stub-based spec for client/ue4ss_mod/srt_bridge/Scripts/spyro1/level_locks.lua.
 -- The scenarios live in support/level_locks_suite.lua with the fake portals;

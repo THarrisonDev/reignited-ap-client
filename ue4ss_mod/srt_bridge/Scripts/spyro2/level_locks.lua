@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-26
--- Updated: 2026-10-11
+-- Updated: 2026-10-23
 
 -- level_locks (Spyro 2): lock homeworld portals whose level has a key in this
 -- seed until that key is received. Implementation shared in

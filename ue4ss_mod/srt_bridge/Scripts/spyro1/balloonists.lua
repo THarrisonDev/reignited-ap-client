@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-26
--- Updated: 2026-10-11
+-- Updated: 2026-10-23
 
 -- balloonists (Spyro 1): enforce the seed's balloonist gates by raising each
 -- Marco's GoalValue to the seed's requirement (slot_data.games.spyro1.

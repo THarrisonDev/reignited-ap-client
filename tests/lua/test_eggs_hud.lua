@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-27
--- Updated: 2026-10-21
+-- Updated: 2026-10-23
 
 -- Spec for client/ue4ss_mod/srt_bridge/Scripts/spyro3/eggs_hud.lua. The
 -- module has no actor watcher (checkd owns egg checks), so the cases from

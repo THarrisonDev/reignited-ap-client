@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-27
--- Updated: 2026-10-21
+-- Updated: 2026-10-23
 
 -- Spec for client/ue4ss_mod/srt_bridge/Scripts/spyro3/egg_gates.lua, using
 -- fakes for the UE4SS surfaces the module touches. Covers the

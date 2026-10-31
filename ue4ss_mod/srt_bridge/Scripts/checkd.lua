@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-10-16
--- Updated: 2026-10-16
+-- Updated: 2026-10-23
 
 -- checkd: the save-scanner sidecar — the files it reads, the spawn, and the
 -- session file that tells it which save is open. The Go daemon owns the drop

@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-27
--- Updated: 2026-10-16
+-- Updated: 2026-10-23
 
 -- spyro2 orbs: the signed debug_extra_orbs reconcile (spyro2_orb_shuffle;
 -- spec = tests/lua/test_orbs.lua). Drives the orb counter so the game's orb

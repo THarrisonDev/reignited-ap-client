@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-10-16
--- Updated: 2026-10-17
+-- Updated: 2026-10-23
 
 -- state: the bridge's shared runtime state, plus the module calls that act on
 -- it. checkd, ap_client, session and watch all read and write this one table;

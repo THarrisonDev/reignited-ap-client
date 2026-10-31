@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-10-17
--- Updated: 2026-10-17
+-- Updated: 2026-10-23
 
 -- game_state: the one per-poll snapshot of the running game. The poll loop
 -- refreshes it once and hands the same table to every module's tick, so the

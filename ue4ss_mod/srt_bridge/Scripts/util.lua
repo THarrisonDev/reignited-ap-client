@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-26
--- Updated: 2026-10-11
+-- Updated: 2026-10-23
 
 -- util: shared UE4SS Lua helpers — pcall-safe reads, out-param unwrapping,
 -- actor identity and the one-job game-thread runner. Pure logic, no mod state.

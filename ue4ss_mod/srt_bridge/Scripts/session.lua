@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-10-16
--- Updated: 2026-10-16
+-- Updated: 2026-10-23
 
 -- session: which save is open. Loads the region table the modules resolve
 -- against, polls the game state through session_gate and opens or closes the

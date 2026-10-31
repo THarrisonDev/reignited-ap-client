@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-26
--- Updated: 2026-10-16
+-- Updated: 2026-10-23
 
 -- spyro1 dragons: send named checks from Collectable_Dragon_C actors and drive
 -- the signed debug_extra_dragons counter so the game's count matches the

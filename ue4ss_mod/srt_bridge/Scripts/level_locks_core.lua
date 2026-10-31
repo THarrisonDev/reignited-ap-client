@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-26
--- Updated: 2026-10-11
+-- Updated: 2026-10-23
 
 -- level_locks_core: factory behind the per-game spyroN/level_locks.lua
 -- modules. It locks homeworld portals whose level key item is still missing,

@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-10-21
--- Updated: 2026-10-21
+-- Updated: 2026-10-23
 
 -- Shared harness for the stub-based module specs: the UE4SS surfaces every
 -- spec fakes (the game-thread queue, the fake clock, the world fixture, the

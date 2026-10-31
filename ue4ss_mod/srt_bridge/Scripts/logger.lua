@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-26
--- Updated: 2026-10-11
+-- Updated: 2026-10-23
 
 -- logger: leveled logging and config for the bridge (split out of main.lua).
 -- Every line lands in bridge.log; info/warn/error also reach the UE4SS

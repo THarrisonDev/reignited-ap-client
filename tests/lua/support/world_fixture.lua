@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-10-17
--- Updated: 2026-10-17
+-- Updated: 2026-10-23
 
 -- world_fixture: a real game_state snapshot for the module specs. A spec keeps
 -- its fake gamestate (the "game") and calls fx.tick(module, gs) where it used

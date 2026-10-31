@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-10-05
--- Updated: 2026-10-11
+-- Updated: 2026-10-23
 
 -- level_tracker: bounces the slot's current level (region) to the player's own
 -- connections so the PopTracker pack can follow level-to-level. Read-only on

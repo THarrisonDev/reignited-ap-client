@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-10-21
--- Updated: 2026-10-21
+-- Updated: 2026-10-23
 
 -- The level-lock scenarios every game's module shares, parameterized by the
 -- game-specific slot-data shape, keys and portals. test_level_locks.lua and
