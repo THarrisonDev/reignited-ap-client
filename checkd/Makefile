@@ -13,12 +13,12 @@ test:
 	$(GO) test $(GOFLAGS) -v ./...
 
 build:
-	$(GO) build $(GOFLAGS) -o "$(OUT)" .
+	$(GO) build -trimpath $(GOFLAGS) -o "$(OUT)" .
 
 # Windows x64 build — the artifact players copy into the bridge folder as
 # srtap_checkd.exe (see ../launcher/verify.go's "Check daemon" check).
 build-windows:
-	GOOS=windows GOARCH=amd64 $(GO) build $(GOFLAGS) -o srtap_checkd.exe .
+	GOOS=windows GOARCH=amd64 $(GO) build -trimpath $(GOFLAGS) -o srtap_checkd.exe .
 
 .PHONY: clean
 clean:

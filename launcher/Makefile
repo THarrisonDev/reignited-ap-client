@@ -13,15 +13,15 @@ test:
 	$(GO) test $(GOFLAGS) -v ./...
 
 build:
-	$(GO) build $(GOFLAGS) -o "$(OUT)" .
+	$(GO) build -trimpath $(GOFLAGS) -o "$(OUT)" .
 
 # Windows x64 build — srtap_launcher.exe.
 build-windows:
-	GOOS=windows GOARCH=amd64 $(GO) build $(GOFLAGS) -o srtap_launcher.exe .
+	GOOS=windows GOARCH=amd64 $(GO) build -trimpath $(GOFLAGS) -o srtap_launcher.exe .
 
 # Linux x64 build — native launcher for Proton players (same installer).
 build-linux:
-	GOOS=linux GOARCH=amd64 $(GO) build $(GOFLAGS) -o srtap_launcher .
+	GOOS=linux GOARCH=amd64 $(GO) build -trimpath $(GOFLAGS) -o srtap_launcher .
 
 .PHONY: clean
 clean:
