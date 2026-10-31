@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-29
--- Updated: 2026-10-18
+-- Updated: 2026-10-31
 
 -- hud_banner.lua: show received items, sent checks and checkd notices on the
 -- game's dragon fanfare banner, one fanfare per burst.
@@ -13,7 +13,7 @@
 -- held.
 --
 -- Received items are aggregated: the queue is drained into one line per distinct
--- item, so a batch of 32 Dragon Eggs is "Received 32 Dragon Egg" once instead of
+-- item, so a batch of 32 Dragon Eggs is "Received 32x Dragon Egg" once instead of
 -- 32 banners. Sent checks are always individual lines, in order, one per check.
 -- The window's length follows that line count (one line per ~1s), and a burst
 -- longer than one window's budget spills into the next burst.
@@ -124,7 +124,7 @@ local function format_line(entry)
     return entry.raw
   end
   if entry.count > 1 then
-    return "Received " .. entry.count .. " " .. entry.raw
+    return "Received " .. entry.count .. "x " .. entry.raw
   end
   return "Received " .. entry.raw
 end

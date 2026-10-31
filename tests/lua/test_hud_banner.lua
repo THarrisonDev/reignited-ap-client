@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-29
--- Updated: 2026-10-21
+-- Updated: 2026-10-31
 
 -- Spec for client/ue4ss_mod/srt_bridge/Scripts/hud_banner.lua. Fakes the UE4SS
 -- surface (FindFirstOf, StaticFindObject, timers, game thread, the fanfare
@@ -260,7 +260,7 @@ do
     check("s3b every item counted as queued", has(banner.status(), "queued=33"), banner.status())
     drain(2)
     check("s3b two lines for 33 items", #writes == 2, tostring(#writes))
-    check("s3b the repeat is counted", writes[1] == "Received 32 Dragon Egg", table.concat(writes, " | "))
+    check("s3b the repeat is counted", writes[1] == "Received 32x Dragon Egg", table.concat(writes, " | "))
     check("s3b the single stays singular", writes[2] == "Received Extra Life", table.concat(writes, " | "))
     check("s3b two lines shown", has(banner.status(), "shown=2"), banner.status())
     check("s3b one Outro for the pair", w.outros == 1, tostring(w.outros))
@@ -293,7 +293,7 @@ do
     drain(3)
     check(
         "s3d collapsed items first, then every send",
-        table.concat(writes, " | ") == "Received 2 Gem | To Bob: Orb | To Bob: Orb",
+        table.concat(writes, " | ") == "Received 2x Gem | To Bob: Orb | To Bob: Orb",
         table.concat(writes, " | ")
     )
 end
