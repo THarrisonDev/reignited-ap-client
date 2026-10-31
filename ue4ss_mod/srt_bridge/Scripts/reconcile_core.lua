@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-10-16
--- Updated: 2026-10-16
+-- Updated: 2026-10-31
 
 -- reconcile_core: the signed debug-extra reconcile drive shared by
 -- spyro1/dragons.lua, spyro2/orbs.lua and spyro3/eggs_hud.lua. It keeps a
@@ -147,9 +147,6 @@ local function new(cfg)
         end
     end
 
-    --- Make one reconcile decision and write, returning the extra written or nil.
-    --- @param world table game_state snapshot.
-    --- @return number|nil
     --- Return extra clamped into the save record's domain.
     local function clamp_extra(raw)
         if raw < -cfg.total then return -cfg.total end
@@ -217,7 +214,10 @@ local function new(cfg)
         return nil
     end
 
-    --- Write the computed extra when it differs (or a re-assert is pending).
+    --- Make one reconcile decision, writing the computed extra when it differs
+    --- (or a re-assert is pending); returns the extra written or nil.
+    --- @param world table game_state snapshot.
+    --- @return number|nil
     function M.drive(world)
         if not rec.armed or not rec.sync then
             return skip("disarmed", true)

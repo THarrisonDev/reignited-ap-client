@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-27
--- Updated: 2026-10-11
+-- Updated: 2026-10-31
 
 -- egg_gates (Spyro 3): lower each S3 homeworld egg portal's EggRequirement as
 -- Dragon Egg items are received (spyro3_egg_shuffle), forcing the gate open
@@ -143,29 +143,29 @@ local function new()
         end
     end
 
---- Return the region -> vanilla requirement map from slot data's egg_gates.
-local function read_gates(sg)
-    local raw = type(sg.egg_gates) == "table" and sg.egg_gates or {}
-    local gates, count = {}, 0
-    for region, req in pairs(raw) do
-        if type(region) == "string" and type(req) == "number" and req > 0 then
-            gates[region] = math.tointeger(math.floor(req))
-            count = count + 1
+    --- Return the region -> vanilla requirement map from slot data's egg_gates.
+    local function read_gates(sg)
+        local raw = type(sg.egg_gates) == "table" and sg.egg_gates or {}
+        local gates, count = {}, 0
+        for region, req in pairs(raw) do
+            if type(region) == "string" and type(req) == "number" and req > 0 then
+                gates[region] = math.tointeger(math.floor(req))
+                count = count + 1
+            end
         end
+        return gates, count
     end
-    return gates, count
-end
 
---- Load per-region vanilla requirements and enable the module when
---- egg_shuffle is on.
-function M.configure(sd)
-    local opts = O.game_options(sd, "spyro3")
-    vanilla, nvanilla = read_gates(O.game_data(sd, "spyro3"))
-    enabled = can_write and O.flag(opts.egg_shuffle, "egg_shuffle", log) and nvanilla > 0
-    received = 0
-    log.info(string.format("configured: enabled=%s gates=%d (egg_shuffle=%s)",
-        tostring(enabled), nvanilla, tostring(opts.egg_shuffle)))
-end
+    --- Load per-region vanilla requirements and enable the module when
+    --- egg_shuffle is on.
+    function M.configure(sd)
+        local opts = O.game_options(sd, "spyro3")
+        vanilla, nvanilla = read_gates(O.game_data(sd, "spyro3"))
+        enabled = can_write and O.flag(opts.egg_shuffle, "egg_shuffle", log) and nvanilla > 0
+        received = 0
+        log.info(string.format("configured: enabled=%s gates=%d (egg_shuffle=%s)",
+            tostring(enabled), nvanilla, tostring(opts.egg_shuffle)))
+    end
 
     --- Count a received Dragon Egg item.
     function M.note_item(name)
@@ -175,8 +175,6 @@ end
         end
     end
 
-    --- Poll the world snapshot: in a stable homeworld, submit one tune job for
-    --- a matching egg-gate controller.
     --- Return the actor key and region of a controller that gates a realm here.
     local function controller_region(c)
         if not U.valid(c) then return nil end
@@ -199,6 +197,8 @@ end
         end
     end
 
+    --- Poll the world snapshot: in a stable homeworld, submit one tune job for
+    --- a matching egg-gate controller.
     --- @param world table game_state snapshot.
     function M.tick(world)
         if not world.ok then return end

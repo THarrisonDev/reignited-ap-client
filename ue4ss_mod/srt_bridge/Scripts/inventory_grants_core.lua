@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-26
--- Updated: 2026-10-11
+-- Updated: 2026-10-31
 
 -- inventory_grants_core: factory behind the per-game global-inventory item
 -- modules (spyro2/abilities.lua, spyro3/sparx_powers.lua). It forces each
@@ -127,10 +127,6 @@ local function new(cfg)
         log.debug(string.format("%s received (index %s)", name, tostring(index)))
     end
 
-    --- Poll the world snapshot: once the level is known and stable, decide
-    --- which items drift from their target and submit a reconcile job (with a
-    --- one-shot early WARN per item).
-    --- @param world table game_state snapshot.
     --- Read one item's count and decide whether it needs a write.
     --- @return boolean, string|nil mismatch, name of the first early grant
     local function poll_item(name, eit, gs)
@@ -162,6 +158,10 @@ local function new(cfg)
         return mismatch, early
     end
 
+    --- Poll the world snapshot: once the level is known and stable, decide
+    --- which items drift from their target and submit a reconcile job (with a
+    --- one-shot early WARN per item).
+    --- @param world table game_state snapshot.
     function M.tick(world)
         if not can_write or not enabled or not world.ok then return end
         if not world.playable then return end
