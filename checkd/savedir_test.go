@@ -15,7 +15,7 @@ import (
 // Windows install looks under the player's own profile, not the Proton
 // prefix's steamuser home.
 func TestDefaultSaveDirUsesLocalAppData(t *testing.T) {
-	local := `C:\Users\Flurry\AppData\Local`
+	local := `C:\Users\Player\AppData\Local`
 	t.Setenv("LOCALAPPDATA", local)
 	want := filepath.Join(local, "Falcon", "Saved", "SaveGames")
 	if got := defaultSaveDir(); got != want {
