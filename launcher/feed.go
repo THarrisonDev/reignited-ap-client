@@ -182,7 +182,10 @@ func (s *apSession) serve(ctx context.Context, cfg feedConn, conf func() feedCon
 			if err := s.handle(b); err != nil {
 				return err
 			}
-		case <-readErr:
+		case err := <-readErr:
+			if err != nil {
+				return fmt.Errorf("lost the connection to %s: %w", cfg.Host, err)
+			}
 			return fmt.Errorf("lost the connection to %s", cfg.Host)
 		case <-tick.C:
 			if conf() != cfg {
