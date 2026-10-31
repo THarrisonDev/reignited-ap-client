@@ -1,11 +1,11 @@
 -- Author: Tim Harrison
 -- Created: 2026-10-21
--- Updated: 2026-10-21
+-- Updated: 2026-10-31
 
--- The fake fanfare widget's UE4SS property plumbing, shared by test_hud_banner
--- and test_banner_probe: "message text" is the lever, "State" is a live engine
--- field a write pins, and the widget counts as showing while it is paused or
--- inside the window the game set.
+-- The fake fanfare widget's UE4SS property plumbing, used by the hud_banner
+-- specs: "message text" is the lever, "State" is a live engine field a write
+-- pins, and the widget counts as showing while it is paused or inside the
+-- window the game set.
 
 local F = {}
 
