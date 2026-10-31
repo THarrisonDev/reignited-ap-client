@@ -72,7 +72,7 @@
   .buttons { margin: 1.5rem 0; display: flex; gap: .6rem; flex-wrap: wrap; }
   button { padding: .6rem 1.1rem; font-size: 1rem; cursor: pointer; border-radius: 6px;
            border: 1px solid #8886; }
-  button.linkish { padding: 0; border: 0; background: none; color: LinkText;
+  button.linkish { padding: 0; border: 0; background: none; color: inherit;
                    text-decoration: underline; font-size: inherit; }
   button.primary { background: #2d7d46; color: #fff; border-color: #2d7d46; }
   .flash { background: #2d7d4622; border: 1px solid #2d7d46; padding: .6rem .8rem;
@@ -133,7 +133,7 @@
          hx-include="#cfg" hx-target="#panel" hx-swap="innerHTML">
       <button type="button" hx-post="/apply" hx-vals='{"action":"save"}'>Save config</button>
       <button type="button" hx-post="/apply" hx-vals='{"action":"launch"}' class="primary">Save &amp; launch game</button>
-      <button type="button" hx-post="/apply" hx-vals='{"action":"install"}'>Install / update setup</button>
+      <button type="button" hx-post="/apply" hx-vals='{"action":"install"}' hx-disabled-elt="this">Install / update setup</button>
       <button type="button" hx-post="/apply" hx-vals='{"action":"recheck"}'>Re-check setup</button>
     </div>
   </form>

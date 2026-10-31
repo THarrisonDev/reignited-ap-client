@@ -1,6 +1,6 @@
 // Author: Tim Harrison
 // Created: 2026-09-26
-// Updated: 2026-10-11
+// Updated: 2026-10-31
 
 package main
 
@@ -35,11 +35,12 @@ var indexHTML string
 var htmxJS []byte
 
 type server struct {
-	mu    sync.Mutex
-	paths Paths
-	tmpl  *template.Template
-	feed  *Feed
-	token string // per-run CSRF token; see checkCSRF
+	mu         sync.Mutex
+	paths      Paths
+	tmpl       *template.Template
+	feed       *Feed
+	token      string // per-run CSRF token; see checkCSRF
+	installing bool   // an install run is in flight; see handleApply
 }
 
 type view struct {
@@ -187,17 +188,7 @@ func (s *server) handleApply(w http.ResponseWriter, r *http.Request) {
 	}
 	action := r.FormValue("action")
 
-	// path overrides are the launcher's own state; persist so they survive.
-	s.mu.Lock()
-	if v := strings.TrimSpace(r.FormValue("config_dir")); v != "" {
-		s.paths.ConfigDir = v
-	}
-	if v := strings.TrimSpace(r.FormValue("game_win64")); v != "" {
-		s.paths.GameWin64 = v
-	}
-	saveErr := savePaths(s.paths)
-	paths := s.paths
-	s.mu.Unlock()
+	paths, saveErr := s.applyPathOverrides(r)
 
 	var flash string
 	var install []installResult
@@ -207,7 +198,12 @@ func (s *server) handleApply(w http.ResponseWriter, r *http.Request) {
 	case "install":
 		// Install runs WITHOUT the lock: the UE4SS download takes minutes and
 		// the feed goroutine must keep answering the page while it does.
+		if !s.tryStartInstall() {
+			flash = "An install is already running — wait for it to finish."
+			break
+		}
 		install = Install(paths, sourceDir(), installOptions{})
+		s.finishInstall()
 		flash = summarizeInstall(install)
 	case "save", "launch":
 		flash = s.applyConnection(r, action == "launch")
@@ -224,6 +220,40 @@ func (s *server) handleApply(w http.ResponseWriter, r *http.Request) {
 	if err := s.tmpl.ExecuteTemplate(w, "panel", panel); err != nil {
 		log.Printf("panel execute: %v", err)
 	}
+}
+
+// applyPathOverrides merges the posted folder overrides into the launcher's own
+// state, persists them so they survive a restart, and returns the paths the
+// action should use.
+func (s *server) applyPathOverrides(r *http.Request) (Paths, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if v := strings.TrimSpace(r.FormValue("config_dir")); v != "" {
+		s.paths.ConfigDir = v
+	}
+	if v := strings.TrimSpace(r.FormValue("game_win64")); v != "" {
+		s.paths.GameWin64 = v
+	}
+	return s.paths, savePaths(s.paths)
+}
+
+// tryStartInstall claims the single install slot, reporting false when an
+// install is already running.
+func (s *server) tryStartInstall() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.installing {
+		return false
+	}
+	s.installing = true
+	return true
+}
+
+// finishInstall releases the install slot.
+func (s *server) finishInstall() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.installing = false
 }
 
 // summarizeInstall is the one-line flash shown above the refreshed setup
@@ -250,7 +280,11 @@ func (s *server) applyConnection(r *http.Request, launch bool) string {
 	if err != nil {
 		return "Could not read config.txt, so it was left unchanged: " + err.Error()
 	}
-	cfg.Set("host", normalizeHost(r.FormValue("host")))
+	host := normalizeHost(r.FormValue("host"))
+	if host == "" {
+		host = defaultHost
+	}
+	cfg.Set("host", host)
 	cfg.Set("slot", strings.TrimSpace(r.FormValue("slot")))
 	cfg.Set("password", r.FormValue("password"))
 	// keep the keys the launcher doesn't manage sensible if fresh
@@ -323,6 +357,7 @@ func localOnly(next http.Handler, enabled bool) http.Handler {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Frame-Options", "DENY")
 		if !isLoopbackHost(r.Host) {
 			http.Error(w, "forbidden host", http.StatusForbidden)
 			return
@@ -476,5 +511,7 @@ func main() {
 			fmt.Printf("(couldn't open a browser automatically: %v — open the URL above manually)\n", err)
 		}
 	}
-	log.Fatal(srv.Serve(ln))
+	if err := srv.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
+		log.Fatal(err)
+	}
 }

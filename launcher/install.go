@@ -1,6 +1,6 @@
 // Author: Tim Harrison
 // Created: 2026-10-11
-// Updated: 2026-10-11
+// Updated: 2026-10-31
 
 package main
 
@@ -67,11 +67,22 @@ func sourceDir() string {
 // Install copies the client artifacts into the resolved paths and enables the
 // mod. Steps are best-effort: a failing step is reported and the rest still
 // run, so a player always gets as far as possible. Callers re-run Verify for
-// the authoritative checklist afterwards.
+// the authoritative checklist afterwards. A Game folder that does not exist is
+// refused before any step touches it, so a typo'd override cannot grow a fake
+// install tree that Verify would then report green.
 func Install(p Paths, src string, opts installOptions) []installResult {
+	if p.ConfigDir == "" || p.GameWin64 == "" {
+		return []installResult{{"Folder locations", false,
+			"both folders are required — set the Bridge folder and Game folder override in the launcher"}}
+	}
 	out := []installResult{resultOf("Bridge folder", p.ConfigDir, os.MkdirAll(p.ConfigDir, 0755))}
 	if src != "" {
 		out = append(out, installScanner(src, p.ConfigDir))
+	}
+	if !dirExists(p.GameWin64) {
+		out = append(out, installResult{"Game folder", false,
+			"not found: " + p.GameWin64 + " — set the Game folder override to your Spyro Reignited Trilogy install's Falcon\\Binaries\\Win64"})
+		return out
 	}
 	out = append(out, installUE4SSStep(p.GameWin64, opts))
 	if src != "" {
@@ -121,11 +132,11 @@ func installUE4SSStep(win64 string, opts installOptions) installResult {
 // srt_bridge.zip and falling back to an unpacked srt_bridge/ directory.
 func installMod(src, win64 string) error {
 	if zipPath := filepath.Join(src, "srt_bridge.zip"); fileExists(zipPath) {
-		return extractZip(zipPath, win64, keepModConfig)
+		return extractZip(zipPath, win64)
 	}
 	tree := filepath.Join(src, "srt_bridge")
 	if dirExists(tree) {
-		return copyTree(tree, win64, keepModConfig)
+		return copyTree(tree, win64)
 	}
 	return fmt.Errorf("srt_bridge.zip not found beside the launcher")
 }
@@ -159,7 +170,7 @@ func installUE4SS(win64 string, opts installOptions) error {
 		return err
 	}
 	defer func() { _ = os.Remove(tmpPath) }()
-	return extractZip(tmpPath, win64, nil)
+	return extractZip(tmpPath, win64)
 }
 
 // downloadSettings fills in the pinned defaults for the archive download.
@@ -299,32 +310,24 @@ func enabledLines(text, line string) (lines []string, changed bool) {
 	return lines, changed
 }
 
-// keepModConfig protects the player's debug toggle from being reset by a mod
-// re-install. It only preserves files that already exist.
-func keepModConfig(rel string, exists bool) bool {
-	return exists && filepath.ToSlash(rel) == "Mods/srt_bridge/Scripts/config.txt"
-}
-
-// extractZip unpacks zipPath into dest. Entries that would escape dest are
-// rejected (zip-slip). When keep returns true for an entry already present at
-// the destination, that file is left untouched.
-func extractZip(zipPath, dest string, keep func(rel string, exists bool) bool) error {
+// extractZip unpacks zipPath into dest, overwriting anything already there.
+// Entries that would escape dest are rejected (zip-slip).
+func extractZip(zipPath, dest string) error {
 	r, err := zip.OpenReader(zipPath)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = r.Close() }()
 	for _, f := range r.File {
-		if err := extractEntry(f, dest, keep); err != nil {
+		if err := extractEntry(f, dest); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// extractEntry unpacks one archive member into dest, leaving a file the caller
-// asks to keep untouched.
-func extractEntry(f *zip.File, dest string, keep func(rel string, exists bool) bool) error {
+// extractEntry unpacks one archive member into dest.
+func extractEntry(f *zip.File, dest string) error {
 	rel, err := memberPath(f.Name)
 	if err != nil {
 		return err
@@ -335,9 +338,6 @@ func extractEntry(f *zip.File, dest string, keep func(rel string, exists bool) b
 	}
 	if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
 		return err
-	}
-	if _, statErr := os.Stat(target); statErr == nil && keep != nil && keep(rel, true) {
-		return nil
 	}
 	return writeZipEntry(f, target)
 }
@@ -396,10 +396,10 @@ func refuseSymlinkTarget(path string) error {
 	return nil
 }
 
-// copyTree mirrors src into dest. keep lets callers preserve existing files.
-// Symlinks in the source tree are skipped, never followed: following one could
-// copy a file from outside the tree, or overwrite a symlink target in dest.
-func copyTree(src, dest string, keep func(rel string, exists bool) bool) error {
+// copyTree mirrors src into dest, overwriting existing files. Symlinks in the
+// source tree are skipped, never followed: following one could copy a file from
+// outside the tree, or overwrite a symlink target in dest.
+func copyTree(src, dest string) error {
 	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -414,9 +414,6 @@ func copyTree(src, dest string, keep func(rel string, exists bool) bool) error {
 		target := filepath.Join(dest, rel)
 		if d.IsDir() {
 			return os.MkdirAll(target, 0755)
-		}
-		if _, err := os.Stat(target); err == nil && keep != nil && keep(filepath.ToSlash(rel), true) {
-			return nil
 		}
 		return copyFile(path, target)
 	})

@@ -1,6 +1,6 @@
 // Author: Tim Harrison
 // Created: 2026-09-26
-// Updated: 2026-10-11
+// Updated: 2026-10-31
 
 package main
 
@@ -183,6 +183,23 @@ func TestApplySavesConfigAndPreservesExtras(t *testing.T) {
 	want := "host=ws://h:1\nslot=Me\npassword=\nspawn_checkd=1\nexperimental_flag=42\n"
 	if string(raw) != want {
 		t.Fatalf("config.txt:\n%s\nwant:\n%s", raw, want)
+	}
+}
+
+func TestApplyEmptyHostKeepsDefault(t *testing.T) {
+	useStateFile(t, filepath.Join(t.TempDir(), "paths.json"))
+	s, _, cfgPath := applyServer(t)
+
+	rec := s.postForm(s.handleApply, "/apply", url.Values{"action": {"save"}, "host": {""}, "slot": {"Me"}})
+	if !strings.Contains(rec.Body.String(), "Config saved to") {
+		t.Fatalf("expected save flash:\n%s", rec.Body.String())
+	}
+	cfg, err := ReadConfig(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Get("host", ""); got != defaultHost {
+		t.Fatalf("host = %q, want the default %q", got, defaultHost)
 	}
 }
 

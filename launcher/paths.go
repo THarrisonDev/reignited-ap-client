@@ -1,6 +1,6 @@
 // Author: Tim Harrison
 // Created: 2026-09-26
-// Updated: 2026-10-11
+// Updated: 2026-10-31
 
 package main
 
@@ -53,7 +53,10 @@ func steamRoot() string {
 	if root := os.Getenv("STEAM_ROOT"); root != "" {
 		return root
 	}
-	home, _ := os.UserHomeDir()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
 	return filepath.Join(home, ".local", "share", "Steam")
 }
 
@@ -63,7 +66,10 @@ func flatpakSteamRoot() string {
 	if runtime.GOOS == "windows" {
 		return ""
 	}
-	home, _ := os.UserHomeDir()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
 	return filepath.Join(home, ".var", "app", "com.valvesoftware.Steam",
 		".local", "share", "Steam")
 }
@@ -194,6 +200,12 @@ func findGameWin64(libs []string) (win64, lib string, ok bool) {
 // defaultPaths resolves the best-guess locations for the host OS, searching
 // every Steam library for the game before falling back to the default root.
 func defaultPaths() Paths {
+	// No home directory means no non-relative guess: leave both folders empty
+	// so the launcher asks for an override instead of creating a tree in the
+	// process working directory.
+	if steamRoot() == "" {
+		return Paths{}
+	}
 	libs := steamLibraries()
 	game, lib, found := findGameWin64(libs)
 	if !found {

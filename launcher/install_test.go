@@ -1,6 +1,6 @@
 // Author: Tim Harrison
 // Created: 2026-10-11
-// Updated: 2026-10-11
+// Updated: 2026-10-31
 
 package main
 
@@ -117,7 +117,7 @@ func TestExtractZipRejectsTraversal(t *testing.T) {
 	if err := os.MkdirAll(dest, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := extractZip(zipPath, dest, nil); err == nil {
+	if err := extractZip(zipPath, dest); err == nil {
 		t.Fatal("expected traversal entry to be rejected")
 	}
 	if _, err := os.Stat(filepath.Join(filepath.Dir(dest), "evil.txt")); err == nil {
@@ -125,28 +125,24 @@ func TestExtractZipRejectsTraversal(t *testing.T) {
 	}
 }
 
-func TestExtractZipKeepExisting(t *testing.T) {
+func TestExtractZipOverwritesExisting(t *testing.T) {
 	zipPath := filepath.Join(t.TempDir(), "m.zip")
 	writeZip(t, zipPath, map[string]string{
-		"Mods/srt_bridge/Scripts/config.txt": "debug=1\n",
-		"Mods/srt_bridge/Scripts/main.lua":   "new\n",
+		"Mods/srt_bridge/Scripts/main.lua": "new\n",
 	})
 	dest := t.TempDir()
-	cfg := filepath.Join(dest, "Mods", "srt_bridge", "Scripts", "config.txt")
-	if err := os.MkdirAll(filepath.Dir(cfg), 0755); err != nil {
+	main := filepath.Join(dest, "Mods", "srt_bridge", "Scripts", "main.lua")
+	if err := os.MkdirAll(filepath.Dir(main), 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(cfg, []byte("debug=0\n"), 0644); err != nil {
+	if err := os.WriteFile(main, []byte("old\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := extractZip(zipPath, dest, keepModConfig); err != nil {
+	if err := extractZip(zipPath, dest); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := os.ReadFile(cfg); string(got) != "debug=0\n" {
-		t.Fatalf("existing config clobbered: %q", got)
-	}
-	if got, _ := os.ReadFile(filepath.Join(dest, "Mods", "srt_bridge", "Scripts", "main.lua")); string(got) != "new\n" {
-		t.Fatalf("main.lua = %q", got)
+	if got, _ := os.ReadFile(main); string(got) != "new\n" {
+		t.Fatalf("re-extraction must overwrite: %q", got)
 	}
 }
 
@@ -303,6 +299,9 @@ func installFrom(t *testing.T, srv *httptest.Server, opts installOptions) (strin
 	t.Helper()
 	root := t.TempDir()
 	win64 := filepath.Join(root, "win64")
+	if err := os.MkdirAll(win64, 0755); err != nil {
+		t.Fatal(err)
+	}
 	opts.UE4SSURL, opts.HTTPClient = srv.URL, srv.Client()
 	return win64, Install(Paths{ConfigDir: filepath.Join(root, "bridge"), GameWin64: win64}, "", opts)
 }
@@ -315,6 +314,33 @@ func stepOf(res []installResult, name string) *installResult {
 		}
 	}
 	return nil
+}
+
+// TestInstallEmptyPathsRefused: unresolved folders must be refused before any
+// path is created (otherwise a relative default would land in the cwd).
+func TestInstallEmptyPathsRefused(t *testing.T) {
+	res := Install(Paths{}, "", installOptions{NoDownload: true})
+	if len(res) != 1 || res[0].OK {
+		t.Fatalf("empty paths must be a single failed step: %+v", res)
+	}
+}
+
+// TestInstallMissingGameFolder: a Game folder that does not exist must fail
+// loudly and stay uncreated, so a typo'd override cannot look like a clean
+// install.
+func TestInstallMissingGameFolder(t *testing.T) {
+	root := t.TempDir()
+	win64 := filepath.Join(root, "no-such-win64")
+
+	res := Install(Paths{ConfigDir: filepath.Join(root, "bridge"), GameWin64: win64},
+		"", installOptions{NoDownload: true})
+	step := stepOf(res, "Game folder")
+	if step == nil || step.OK {
+		t.Fatalf("missing game folder must be a failed step: %+v", res)
+	}
+	if dirExists(win64) {
+		t.Fatal("install must not create the missing game folder")
+	}
 }
 
 func TestInstallMissingSourcesReported(t *testing.T) {

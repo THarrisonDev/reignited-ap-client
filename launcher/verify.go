@@ -1,6 +1,6 @@
 // Author: Tim Harrison
 // Created: 2026-09-26
-// Updated: 2026-10-11
+// Updated: 2026-10-31
 
 package main
 
@@ -48,6 +48,15 @@ func modEnabled(modsTxt string) (enabled bool, found bool) {
 func Verify(p Paths) []Check {
 	var checks []Check
 
+	if p.ConfigDir == "" || p.GameWin64 == "" {
+		return append(checks, Check{
+			Name:   "Folder locations",
+			OK:     false,
+			Detail: "both folders are required",
+			Fix:    "Set the Bridge folder and Game folder override under Folder locations, then save.",
+		})
+	}
+
 	checks = append(checks, Check{
 		Name:   "Bridge folder",
 		OK:     dirExists(p.ConfigDir),
@@ -60,7 +69,7 @@ func Verify(p Paths) []Check {
 		Name:   "Check daemon (srtap_checkd.exe)",
 		OK:     fileExists(checkd),
 		Detail: checkd,
-		Fix:    "Copy srtap_checkd.exe from dist/ into the bridge folder (build it with `make build-windows` in the client repo).",
+		Fix:    "Click Install / update setup above, or copy srtap_checkd.exe from the release folder into the bridge folder.",
 	})
 
 	checks = append(checks, Check{
@@ -84,7 +93,7 @@ func Verify(p Paths) []Check {
 		Name:   "srt_bridge mod present",
 		OK:     fileExists(modMain),
 		Detail: modMain,
-		Fix:    "Copy client/ue4ss_mod/srt_bridge into the game's Mods folder.",
+		Fix:    "Click Install / update setup above, or extract srt_bridge.zip into the game's ...\\Win64\\Mods\\ folder.",
 	})
 
 	apDLL := filepath.Join(p.GameWin64, "Mods", "srt_bridge", "Scripts", "lua-apclientpp.dll")
