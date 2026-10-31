@@ -10,7 +10,10 @@ DIST    := dist
 
 WINDOWS_TARGETS := GOOS=windows GOARCH=amd64
 
-.PHONY: all vet lint luacheck deadcode test build build-windows build-linux package-mod check-player-docs package-client deploy deploy-mod deploy-checkd dist regen audit lua-tests clean
+# $(DIST)/srt_bridge.zip is phony: its prerequisites come from `$(shell find)`,
+# which adds a new mod file as a prerequisite but cannot notice a deleted one,
+# so a timestamp-only target keeps shipping the old archive after a delete.
+.PHONY: all vet lint luacheck deadcode test build build-windows build-linux package-mod check-player-docs package-client deploy deploy-mod deploy-checkd dist regen audit lua-tests clean $(DIST)/srt_bridge.zip
 
 # Paths the deploy target writes into, defaulted for a standard Steam install
 # on this Linux/Proton box. `make deploy` needs no arguments; override a path
@@ -110,7 +113,7 @@ $(DIST)/srt_bridge.zip: $(shell find ue4ss_mod/srt_bridge -type f)
 		exit 1; \
 	fi
 	@if ! command -v zip >/dev/null 2>&1; then echo "ERROR: zip not found (install it to package the mod)" >&2; exit 1; fi
-	rm -rf $(DIST)/srt_bridge
+	rm -rf $(DIST)/srt_bridge $(DIST)/srt_bridge.zip
 	mkdir -p $(DIST)/srt_bridge/Mods
 	cp -R ue4ss_mod/srt_bridge $(DIST)/srt_bridge/Mods/
 	cp -f ue4ss_mod/lua-apclientpp.dll $(DIST)/srt_bridge/Mods/srt_bridge/Scripts/
