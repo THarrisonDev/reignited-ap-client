@@ -135,6 +135,7 @@
       <button type="button" hx-post="/apply" hx-vals='{"action":"launch"}' class="primary">Save &amp; launch game</button>
       <button type="button" hx-post="/apply" hx-vals='{"action":"install"}' hx-disabled-elt="this">Install / update setup</button>
       <button type="button" hx-post="/apply" hx-vals='{"action":"recheck"}'>Re-check setup</button>
+      <button type="button" onclick="location.href='/logs.zip'">Download logs for support</button>
     </div>
   </form>
   <form id="reset" method="post" action="/reset">

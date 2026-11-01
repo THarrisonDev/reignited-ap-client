@@ -13,7 +13,7 @@ WINDOWS_TARGETS := GOOS=windows GOARCH=amd64
 # $(DIST)/srt_bridge.zip is phony: its prerequisites come from `$(shell find)`,
 # which adds a new mod file as a prerequisite but cannot notice a deleted one,
 # so a timestamp-only target keeps shipping the old archive after a delete.
-.PHONY: all vet lint luacheck deadcode test build build-windows build-linux package-mod check-player-docs package-client deploy deploy-mod deploy-checkd dist regen audit lua-tests clean $(DIST)/srt_bridge.zip
+.PHONY: all vet lint luacheck deadcode test collect-tests build build-windows build-linux package-mod check-player-docs package-client deploy deploy-mod deploy-checkd dist regen audit lua-tests clean $(DIST)/srt_bridge.zip
 
 # Paths the deploy target writes into, defaulted for a standard Steam install
 # on this Linux/Proton box. `make deploy` needs no arguments; override a path
@@ -58,10 +58,14 @@ vet:
 	$(MAKE) --no-print-directory -C checkd vet GOFLAGS="$(GOFLAGS)"
 	$(MAKE) --no-print-directory -C launcher vet GOFLAGS="$(GOFLAGS)"
 
-test:
+test: collect-tests
 	$(MAKE) --no-print-directory -C checkd test GOFLAGS="$(GOFLAGS)"
 	$(MAKE) --no-print-directory -C launcher test GOFLAGS="$(GOFLAGS)"
 	$(MAKE) --no-print-directory lua-tests
+
+# Smoke test for the support-log collector (fake Proton library, no Steam data).
+collect-tests:
+	sh tests/collect/test_collect_logs.sh
 
 # Stub-based specs for the UE4SS mod's Lua modules (needs lua + luac 5.4).
 lua-tests: $(LUA_TESTS) $(wildcard ue4ss_mod/srt_bridge/Scripts/*.lua) $(wildcard ue4ss_mod/srt_bridge/Scripts/spyro*/*.lua)
@@ -145,9 +149,10 @@ package-client: check-player-docs build-windows build-linux package-mod
 	cp -f launcher/srtap_launcher     $(DIST)/client/srtap_launcher
 	cp -f $(DIST)/srt_bridge.zip      $(DIST)/client/
 	cp -f install/install.bat install/install.sh $(DIST)/client/
+	cp -f install/collect-logs.sh install/collect-logs.bat install/collect-logs.ps1 $(DIST)/client/
 	cp -f ../INSTALL.md               $(DIST)/client/
 	cp -f ../THIRD-PARTY-NOTICES.md   $(DIST)/client/
-	chmod +x $(DIST)/client/install.sh $(DIST)/client/srtap_launcher
+	chmod +x $(DIST)/client/install.sh $(DIST)/client/collect-logs.sh $(DIST)/client/srtap_launcher
 	cd $(DIST) && rm -f reignited-ap-client.zip && zip -q -r reignited-ap-client.zip client
 	@echo "packaged $(DIST)/reignited-ap-client.zip"
 
