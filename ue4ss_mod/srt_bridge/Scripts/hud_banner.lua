@@ -8,9 +8,14 @@
 -- Fire the game's fanfare, freeze the Intro so the window stays up, then swap
 -- the message text line by line; release with the Outro once the queue drains.
 -- The measured recipe, freeze points and failure modes are in the "burst mode"
--- notes. The `message text` property is the lever (Base is bound to it) and the
--- only trustworthy readback — Base:GetText() reads back empty while a window is
--- held.
+-- notes (docs/fanfare_text.md). The `message text` property is the lever (Base
+-- is bound to it) and the only trustworthy readback — Base:GetText() reads back
+-- empty while a window is held.
+--
+-- Release ownership: the game never unpauses the Intro itself, so every path
+-- that ends a burst must release the widget this burst froze (`close_window`,
+-- `abandon`, `reset`, `note_disconnected`), and nothing else may unpause it.
+-- A watchdog reclaims a fanfare still reporting open with no burst to own it.
 --
 -- Received items are aggregated: the queue is drained into one line per distinct
 -- item, so a batch of 32 Dragon Eggs is "Received 32x Dragon Egg" once instead of
@@ -22,6 +27,7 @@
 -- note_item(name)    queue a received item
 -- note_sent(text)    queue an outgoing-send line
 -- note_system(text)  queue a checkd notice; preempts the other queues
+-- note_disconnected() release a held burst when the socket drops
 -- tick()             drive the burst (host poll loop, ~250ms)
 -- status()           counters for the heartbeat log
 
@@ -52,6 +58,8 @@ local BURST_MAX_TICKS = 60 -- longest one window is held (~15s); the rest of the
 -- queue continues in the next burst, so a long replay is slower, never lossy
 local GAP_TICKS = 2 -- quiet ticks between bursts
 local OPENING_TICKS = 8 -- abandon a burst whose timers never landed (~2s)
+local MISS_LIMIT = 3 -- consecutive widget-lookup misses before the burst drops
+local STUCK_TICKS = 32 -- polls (~8s) a fanfare may read State == 1 with no burst
 
 local STATE_IDLE, STATE_OPENING, STATE_OPEN = "idle", "opening", "open"
 local state = STATE_IDLE
@@ -64,6 +72,10 @@ local dwell = 0 -- ticks the current line has been up
 local opening = 0 -- ticks spent waiting for the freeze timer
 local wait_ticks = 0 -- ticks left before the next burst may open
 local gen = 0 -- bumped per burst and per reset; stale timers drop out
+local held = nil -- the widget this burst froze; the only one a release may unpause
+local misses = 0 -- consecutive get_widget() misses while open
+local stuck = 0 -- consecutive polls State == 1 with no burst open
+local shown_text = nil -- last line a write confirmed; the watchdog's ownership mark
 
 local kt_lib, hud -- cached handles, re-fetched when they go invalid
 
@@ -172,12 +184,53 @@ local function return_lines(from)
   end
 end
 
---- Drop the burst; the next one may open after the gap.
-local function abandon(reason)
-  log.warn(reason)
+--- Release a frozen fanfare: let the Intro go, play the game's Outro and park
+--- the widget where the game expects it. Runs on the game thread.
+--- @param w table The widget this burst froze.
+local function release(w)
+  U.safe(function()
+    w:StopAnimation(w.Intro)
+  end, nil)
+  U.safe(function()
+    w:PlayAnimation(w.Outro, 0, 1, 0, 1.0)
+  end, nil)
+  U.safe(function()
+    w.State = 0
+  end, nil)
+end
+
+--- Submit release(w) to the one-job runner.
+--- @param w table The frozen fanfare widget.
+--- @param desc string Job name for logs and the abandon WARN.
+local function submit_release(w, desc)
+  jobs.submit(function()
+    release(w)
+  end, { desc = desc, fail = desc .. " failed" })
+end
+
+--- Drop the burst with no game-thread work; the next one may open after the
+--- gap. Safe from inside a game-thread job, where submitting would wedge it.
+--- @param reason string|nil WARN line, when the drop is abnormal.
+local function drop(reason)
+  if reason then
+    log.warn(reason)
+  end
   state, batch, batch_i, current = STATE_IDLE, {}, 0, nil
-  written, burst_ticks, dwell, opening = 0, 0, 0, 0
+  written, burst_ticks, dwell, opening, misses = 0, 0, 0, 0, 0
+  held = nil
   wait_ticks = GAP_TICKS
+  gen = gen + 1 -- any timer still armed for this burst drops out at its gen check
+end
+
+--- Release the burst's frozen widget, then drop the burst. Async thread only:
+--- the release runs as a job.
+--- @param reason string WARN line naming the failure.
+local function abandon(reason)
+  local target = U.valid(held) and held or nil
+  if target then
+    submit_release(target, "banner abandon release")
+  end
+  drop(reason)
 end
 
 --- Write one line into the banner: the property (the lever) and Base (the frame
@@ -211,6 +264,7 @@ local function write_line(w, line, is_new)
     end, nil)
   end
   if U.fstr(w, "message text") == line.text then
+    shown_text = line.text
     counters.shown = counters.shown + 1
     if line.kind == "sent" then
       counters.sent_shown = counters.sent_shown + 1
@@ -223,25 +277,17 @@ local function write_line(w, line, is_new)
   return false
 end
 
---- Release the window: let the Intro go and play the game's Outro, which parks
---- the widget where the game expects it. Timers still armed for this burst drop
---- out on the generation check.
-local function close_window(w)
-  jobs.submit(function()
-    U.safe(function()
-      w:StopAnimation(w.Intro)
-    end, nil)
-    U.safe(function()
-      w:PlayAnimation(w.Outro, 0, 1, 0, 1.0)
-    end, nil)
-    U.safe(function()
-      w.State = 0
-    end, nil)
-  end, { desc = "banner close", fail = "banner close failed" })
-  log.debug("burst closed after " .. written .. " line(s)")
-  state, batch, batch_i, current = STATE_IDLE, {}, 0, nil
-  written, burst_ticks, dwell, opening = 0, 0, 0, 0
-  wait_ticks = GAP_TICKS
+--- Close the burst: release the widget this burst froze, never a freshly-found
+--- instance, and park it. Called from the async tick, so the release is a job.
+local function close_window()
+  local target = U.valid(held) and held or nil
+  if target then
+    submit_release(target, "banner close")
+    log.debug("burst closed after " .. written .. " line(s)")
+  else
+    log.warn("burst closed with the frozen fanfare gone — nothing to release")
+  end
+  drop()
 end
 
 --- Fire the fanfare, write the first line, then freeze the Intro to hold the
@@ -286,7 +332,7 @@ local function open_window(h, w)
         return
       end
       if not U.valid(w) then
-        abandon("fanfare widget went away before the first line")
+        drop("fanfare widget went away before the first line")
         return
       end
       write_line(w, current)
@@ -299,12 +345,13 @@ local function open_window(h, w)
         return
       end
       if not U.valid(w) then
-        abandon("fanfare widget went away before the freeze")
+        drop("fanfare widget went away before the freeze")
         return
       end
       U.safe(function()
         w:PauseAnimation(w.Intro)
       end, nil)
+      held = w
       state, opening = STATE_OPEN, 0
     end)
   end)
@@ -315,31 +362,37 @@ end
 local function step()
   local w = get_widget()
   if not w then
-    abandon("fanfare widget went away — burst dropped")
+    misses = misses + 1
+    if misses < MISS_LIMIT then
+      return
+    end
+    abandon("fanfare widget went missing " .. MISS_LIMIT .. " polls running — burst dropped")
     return
   end
+  misses = 0
   if not jobs.ready() then
     return
   end
   dwell = dwell + 1
   burst_ticks = burst_ticks + 1
+  if burst_ticks >= BURST_MAX_TICKS then
+    -- Out of budget, not out of items: close here and let the next burst carry
+    -- on, so a long replay takes longer but loses nothing. Checked before the
+    -- re-assert so a property the game repaints cannot hold past the budget.
+    local left = #batch - batch_i
+    if left > 0 then
+      log.info("burst closed at the budget, " .. left .. " line(s) left")
+      return_lines(batch_i + 1)
+    end
+    close_window()
+    return
+  end
   -- The game can repaint its canned text over ours mid-window; rewrite only
   -- when the property actually changed, never on a timer.
   if current and U.fstr(w, "message text") ~= current.text then
     jobs.submit(function()
       write_line(w, current, false)
     end, { desc = "banner re-assert", fail = "banner re-assert failed" })
-    return
-  end
-  if burst_ticks >= BURST_MAX_TICKS then
-    -- Out of budget, not out of items: close here and let the next burst carry
-    -- on, so a long replay takes longer but loses nothing.
-    local left = #batch - batch_i
-    if left > 0 then
-      log.info("burst closed at the budget, " .. left .. " line(s) left")
-      return_lines(batch_i + 1)
-    end
-    close_window(w)
     return
   end
   if dwell < LINE_TICKS then
@@ -355,7 +408,32 @@ local function step()
     end, { desc = "banner line", fail = "banner line failed" })
     return
   end
-  close_window(w)
+  close_window()
+end
+
+--- Reclaim a fanfare still reporting open with no burst to own it: the game's
+--- own window is ~2.8s, so only a leaked freeze exceeds the stuck budget. Only
+--- a widget still reading back our own line is ours to release; the game's own
+--- messages rewrite the property.
+--- @return boolean whether a release was submitted this tick.
+local function watchdog()
+  local w = get_widget()
+  if not w or U.prop(w, "State") ~= 1 then
+    stuck = 0
+    return false
+  end
+  if U.fstr(w, "message text") ~= shown_text then
+    stuck = 0
+    return false
+  end
+  stuck = stuck + 1
+  if stuck < STUCK_TICKS or not jobs.ready() then
+    return false
+  end
+  stuck = 0
+  log.warn("fanfare held ~" .. tostring(STUCK_TICKS * TICK_S) .. "s with no burst — releasing it")
+  submit_release(w, "banner watchdog release")
+  return true
 end
 
 --- Open the burst on the game thread, if the widget is there and idle. The
@@ -393,23 +471,36 @@ function M.init(opts)
   log = logger.leveled(TAG, opts and opts.log)
 end
 
---- Clear the per-session queues and counters; a burst in flight stops at its
---- next step.
+--- Clear the per-session queues and counters; a burst in flight releases its
+--- frozen widget before it stops.
 function M.reset()
+  if state ~= STATE_IDLE or U.valid(held) then
+    local target = U.valid(held) and held or nil
+    if target then
+      submit_release(target, "banner reset release")
+    end
+  end
   Q = { system = {}, item = {}, sent = {} }
   counters = { queued = 0, shown = 0, failed = 0, sent_queued = 0, sent_shown = 0 }
   state, batch, batch_i, current = STATE_IDLE, {}, 0, nil
   written, burst_ticks, dwell, opening, wait_ticks = 0, 0, 0, 0, 0
+  misses, stuck, held = 0, 0, nil
   gen = gen + 1
 end
 
 --- Drive the burst, called by the host poll loop.
 function M.tick()
   if state == STATE_IDLE then
+    if watchdog() then
+      return -- let the release land before a new burst opens
+    end
     start()
   elseif state == STATE_OPENING then
     opening = opening + 1
     if opening > OPENING_TICKS then
+      if batch_i >= 1 then
+        return_lines(math.min(batch_i + 1, written + 1))
+      end
       abandon("burst never opened (freeze timer lost)")
     end
   elseif state == STATE_OPEN then
@@ -449,11 +540,23 @@ function M.note_system(text)
   start()
 end
 
+--- Release a held burst when the AP socket drops. The host stops ticking while
+--- disconnected, so without this the freeze would last the whole outage.
+function M.note_disconnected()
+  if state == STATE_IDLE then
+    return
+  end
+  if batch_i < #batch then
+    return_lines(math.min(batch_i + 1, written + 1))
+  end
+  abandon("AP disconnected — banner released")
+end
+
 --- Return counters for the heartbeat log.
 --- @return string
 function M.status()
   return string.format(
-    "state=%s queued=%d shown=%d failed=%d waiting=%d left=%d sent=%d sent_queued=%d sent_waiting=%d",
+    "state=%s queued=%d shown=%d failed=%d waiting=%d left=%d sent=%d sent_queued=%d sent_waiting=%d held=%s stuck=%d misses=%d",
     state,
     counters.queued,
     counters.shown,
@@ -462,7 +565,10 @@ function M.status()
     math.max(0, #batch - batch_i),
     counters.sent_shown,
     counters.sent_queued,
-    #Q.sent
+    #Q.sent,
+    U.valid(held) and "y" or "n",
+    stuck,
+    misses
   )
 end
 M.tag = TAG
