@@ -6,6 +6,7 @@
 -- observed live:
 --   setPortalEnabled(en): EnableTransport = PreloadEnabled = en; glyphs hidden = not en
 --   REMAKE text: display text = text; old glyphs destroyed, new ones spawn hidden
+--   refuse_enable: the game accepts the call but leaves the portal disabled
 -- Every write asserts the harness game-thread flag: a write from the async
 -- tick is the 2026-09-13 hardlock.
 
@@ -72,6 +73,7 @@ function P.new(H, code, name)
         if k == "setPortalEnabled" then return function(_, en)
             assert(H.thread, "setPortalEnabled called off the game thread")
             if portal.explode then error("portal boom") end
+            if en and portal.refuse_enable then return end
             portal.props.EnableTransport, portal.props.PreloadEnabled = en, en
             for _, g in ipairs(portal.glyphs) do g.hidden = not en end
         end end

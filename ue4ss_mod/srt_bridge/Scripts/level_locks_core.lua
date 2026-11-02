@@ -6,6 +6,11 @@
 -- modules. It locks homeworld portals whose level key item is still missing,
 -- re-asserting the lock when the game re-enables a portal, and unlocks when
 -- the key arrives. Levers and ordering are live-proven.
+--
+-- Invariant: the lock record is durable per region. It survives a poll whose
+-- level-path read failed (reported as a transition) and dies only when the
+-- game rebuilds the portal actor, which is a real level load. Every write is
+-- read back on the game thread, so a refused write is retried, never dropped.
 
 local U = require("util")
 local logger = require("logger")
@@ -38,7 +43,7 @@ local function new(cfg)
     local held = {}             -- received item name -> true
     local items_seen = false
     local connected_at = nil
-    local portals = {}          -- actor address -> {region, name, locked, reasserts}
+    local locks = {}            -- region -> {region, name, actor, locked, reasserts, here}
     local jobs = U.job_runner{log = function() return log end, timeout = JOB_TIMEOUT}
 
     --- Return p's portal name component when it is valid, else nil.
@@ -81,20 +86,30 @@ local function new(cfg)
         if not ok then log.warn("relabel to '" .. text .. "' failed: " .. tostring(err)) end
     end
 
-    --- Unlock a portal and restore its name label.
+    --- Unlock a portal and restore its name label. Returns false while the game
+    --- still has the portal disabled, so the job runner retries after the backoff.
     local function unlock(p, st, comp, labelled)
         if labelled then remake(comp, st.name) end
         p:setPortalEnabled(true)
+        if U.prop(p, "EnableTransport") ~= true then
+            log.warn("unlock " .. st.region .. " refused by the game (still disabled)")
+            return false
+        end
         st.locked = false
         log.info("unlocked " .. st.region)
     end
 
-    --- Lock or re-assert a portal the game has left enabled.
+    --- Lock or re-assert a portal the game has left enabled. Returns false when
+    --- the game refused the write, so the job runner retries after the backoff.
     local function lock(p, st, comp, labelled, kind)
         -- the blueprint disables the portal itself during its enter transition;
         -- only act on a portal that is still enabled right now
         if U.prop(p, "EnableTransport") ~= true then return end
         p:setPortalEnabled(false)
+        if U.prop(p, "EnableTransport") ~= false then
+            log.warn(kind .. " " .. st.region .. " refused by the game (still enabled)")
+            return false
+        end
         if kind == "lock" then
             if labelled then remake(comp, LABEL) end
             st.locked = true
@@ -117,12 +132,12 @@ local function new(cfg)
         if kind == "unlock" then
             return unlock(p, st, comp, labelled)
         end
-        lock(p, st, comp, labelled, kind)
+        return lock(p, st, comp, labelled, kind)
     end
 
     --- Submit the portal write job for kind to the game-thread runner.
     local function submit(p, st, kind)
-        jobs.submit(function() run_job(p, st, kind) end,
+        jobs.submit(function() return run_job(p, st, kind) end,
             {desc = kind .. " job for " .. st.region, fail = kind .. " " .. st.region})
     end
 
@@ -139,16 +154,33 @@ local function new(cfg)
         return items_seen or (connected_at ~= nil and os.time() - connected_at >= GRACE_SECONDS)
     end
 
-    --- Submit a job for this portal if it needs one; return true if it did.
-    local function plan_portal(p, key, region)
-        local st = portals[key]
+    --- Return the durable lock record for region, creating it on first sight and
+    --- adopting a rebuilt actor: a new address means a real level load, which
+    --- leaves the portal vanilla, while a read blip leaves the actor in place and
+    --- the lock survives. The name is kept from the first sighting, before this
+    --- module relabels the portal.
+    --- @param p userdata The portal actor.
+    --- @param region string Lockable region the portal targets.
+    --- @return table
+    local function lock_state(p, region)
+        local st = locks[region]
         if not st then
             local comp = name_comp(p)
             st = {region = region, name = comp and U.fstr(comp, "display text") or nil,
-                  locked = false, reasserts = 0}
-            portals[key] = st
+                  actor = nil, locked = false, reasserts = 0, here = false}
+            locks[region] = st
         end
-        if should_lock(region) then
+        st.here = true
+        local addr = U.actor_key(p)
+        if addr ~= st.actor then
+            st.actor, st.locked, st.reasserts = addr, false, 0
+        end
+        return st
+    end
+
+    --- Submit this portal's write if one is due; return true if it did.
+    local function plan_portal(p, st)
+        if should_lock(st.region) then
             if U.prop(p, "EnableTransport") == true then
                 submit(p, st, st.locked and "reassert" or "lock")
                 return true
@@ -188,11 +220,14 @@ local function new(cfg)
     end
 
     --- Read this game's level keys and option from slot data and reset
-    --- per-session state.
+    --- per-session state. The lock records stay: actor identity is the real
+    --- guard, and a lock left over from a previous save is then unlocked instead
+    --- of stranded disabled.
     function M.configure(sd)
         local opts = O.game_options(sd, cfg.game)
         level_keys, lockable = read_level_keys(O.game_data(sd, cfg.game))
         enabled = can_write and O.flag(opts.level_locks, "level_locks", log) and lockable > 0
+        for _, st in pairs(locks) do st.here = false end
         held, items_seen, connected_at = {}, false, os.time()
         log.info(string.format("configured%s: enabled=%s lockable=%d (level_locks=%s)",
             cfg.label, tostring(enabled), lockable, tostring(opts.level_locks)))
@@ -218,24 +253,29 @@ local function new(cfg)
         return code and code_to_region[code]
     end
 
-    --- Return the portal's actor key and region, nil when it must not be locked.
+    --- Return the region p targets when it may be locked, nil otherwise.
     --- Portals are scanned only inside this game's homeworlds; return portals
     --- standing in realms are never touched. A portal whose target region is a
     --- homeworld is never locked — homeworld-to-homeworld transitions stay open
     --- (locking a homeworld's own return portal could trap the player).
-    local function portal_key(p)
+    --- @return string|nil
+    local function lockable_region(p)
         local region = portal_region(p)
         if region == nil then return nil end
         if cfg.target_homes and cfg.target_homes[region] then return nil end
-        return U.actor_key(p), region
+        return region
     end
 
-    --- Plan at most one portal write for the actors in the current homeworld.
+    --- Plan at most one portal write for the actors in the current homeworld,
+    --- recording every one of them first.
     local function poll_portals()
         local actors = U.safe(function() return FindAllOf(cfg.portal_class) end, nil) or {}
+        local planned = false
         for _, p in ipairs(actors) do
-            local key, region = portal_key(p)
-            if key and plan_portal(p, key, region) then return end
+            local region = lockable_region(p)
+            if region then
+                planned = planned or plan_portal(p, lock_state(p, region))
+            end
         end
     end
 
@@ -243,9 +283,8 @@ local function new(cfg)
     --- per tick.
     --- @param world table game_state snapshot.
     function M.tick(world)
+        for _, st in pairs(locks) do st.here = false end
         if not world.ok then return end
-        -- a world transition remakes every portal actor
-        if world.changed then portals = {} end
         -- level locks always run in a homeworld; they hold no option flag
         if not U.gate_ready(world, true, cfg.homeworlds, STABLE_TICKS, jobs) then return end
         poll_portals()
@@ -258,8 +297,8 @@ local function new(cfg)
             if held[key] then keys = keys + 1 end
         end
         local locked_here = 0
-        for _, st in pairs(portals) do
-            if st.locked then locked_here = locked_here + 1 end
+        for _, st in pairs(locks) do
+            if st.locked and st.here then locked_here = locked_here + 1 end
         end
         return string.format("%senabled=%s keys=%d/%d locked_here=%d",
             cfg.prefix, tostring(enabled), keys, lockable, locked_here)
