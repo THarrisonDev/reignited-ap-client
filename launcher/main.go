@@ -35,12 +35,13 @@ var indexHTML string
 var htmxJS []byte
 
 type server struct {
-	mu         sync.Mutex
-	paths      Paths
-	tmpl       *template.Template
-	feed       *Feed
-	token      string // per-run CSRF token; see checkCSRF
-	installing bool   // an install run is in flight; see handleApply
+	mu           sync.Mutex
+	paths        Paths
+	tmpl         *template.Template
+	feed         *Feed
+	token        string // per-run CSRF token; see checkCSRF
+	installing   bool   // an install run is in flight; see handleApply
+	collectorDir string // where collect-logs.{sh,bat} lives; see handleLogs
 }
 
 type view struct {
@@ -479,7 +480,10 @@ func main() {
 		log.Fatalf("parse template: %v", err)
 	}
 
-	s := &server{paths: loadPaths(), tmpl: tmpl, feed: NewFeed(), token: newToken()}
+	s := &server{paths: loadPaths(), tmpl: tmpl, feed: NewFeed(), token: newToken(), collectorDir: "."}
+	if exe, err := os.Executable(); err == nil {
+		s.collectorDir = filepath.Dir(exe)
+	}
 	go s.feed.Run(context.Background(), s.currentConn)
 
 	ln, err := net.Listen("tcp", *addr)
@@ -494,6 +498,7 @@ func main() {
 	mux.HandleFunc("/reset", s.handleReset)
 	mux.HandleFunc("/htmx.min.js", s.handleHTMX)
 	mux.HandleFunc("/feed", s.handleFeed)
+	mux.HandleFunc("/logs.zip", s.handleLogs)
 
 	srv := &http.Server{
 		Handler:           localOnly(mux, isLoopbackAddr(*addr)),

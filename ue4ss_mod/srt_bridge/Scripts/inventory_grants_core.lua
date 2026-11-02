@@ -1,11 +1,13 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-26
--- Updated: 2026-10-31
+-- Updated: 2026-11-01
 
 -- inventory_grants_core: factory behind the per-game global-inventory item
 -- modules (spyro2/abilities.lua, spyro3/sparx_powers.lua). It forces each
--- item's owned flag to match the received set via the gamestate inventory
--- UFunctions, reconciling vanilla grants back off until the AP item arrives.
+-- item's owned flag to match the received set via the gamestate's
+-- `set player inventory item count(item, count, true)`, whose updateSettings
+-- flag re-derives the pawn's gameplay effects (add/remove would only move the
+-- save value), reconciling vanilla grants back off until the AP item arrives.
 
 local U = require("util")
 local logger = require("logger")
@@ -34,7 +36,7 @@ local function new(cfg)
     local received = {}         -- AP item index -> true (this module's items, this session)
     local has_received = {}     -- item name -> true (ever received this session)
     local warned = {}           -- item name -> early-grant WARN already logged
-    local revoke_failed = {}    -- item name -> remove-from-inventory failed: no revoke retry this session
+    local revoke_failed = {}    -- item name -> set-to-0 failed: no revoke retry this session
     local jobs = U.job_runner{log = function() return log end, timeout = JOB_TIMEOUT}
 
     local num = U.prop
@@ -67,12 +69,11 @@ local function new(cfg)
         if cur ~= 0 and cur ~= 1 then return nil end
         local target = drive(name, cur)
         if target == nil then return nil end
-        local okW
-        if target == 1 then
-            okW = pcall(function() gs["add item to player inventory"](eit, 1) end)
-        else
-            okW = pcall(function() gs["remove from player inventory"](eit, 1) end)
-        end
+        local okW = pcall(function()
+            -- the third argument is the game's updateSettings flag: it re-derives
+            -- the pawn's gameplay effects, which add/remove do not
+            gs["set player inventory item count"](eit, target, true)
+        end)
         if not okW then
             if target == 0 then
                 revoke_failed[name] = true

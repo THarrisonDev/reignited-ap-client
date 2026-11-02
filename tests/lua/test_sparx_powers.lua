@@ -1,10 +1,10 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-26
--- Updated: 2026-10-23
+-- Updated: 2026-11-01
 
 -- Stub-based spec for client/ue4ss_mod/srt_bridge/Scripts/spyro3/sparx_powers.lua
 -- (and, through it, inventory_grants_core.lua). Fakes the gamestate's
--- inventory UFunctions (add/remove/get player inventory item count for EIT
+-- inventory UFunctions (set/get player inventory item count for EIT
 -- types 45-48). ExecuteInGameThread only QUEUES work; H.pump() runs it with the
 -- game-thread flag set, and every write asserts that flag (level_locks
 -- hardlock lesson). EIT_SparxPower_GemFinder (46) must never be touched.
@@ -27,16 +27,12 @@ end
 local level = "/LS301_SunriseSpring_Home/Maps/"
 local gs = setmetatable({}, { __index = function(_, k)
     if k == "current level" then return fstring(level) end
-    if k == "add item to player inventory" then return function(eit, n)
-        assert(H.thread, "power granted off the game thread")
-        record("add", eit, n)
-        world.powers[eit] = 1
-    end end
-    if k == "remove from player inventory" then return function(eit, n)
-        assert(H.thread, "power revoked off the game thread")
-        record("remove", eit, n)
-        if world.remove_fails then error("remove boom") end
-        world.powers[eit] = 0
+    if k == "set player inventory item count" then return function(eit, n, update)
+        assert(H.thread, "power write off the game thread")
+        record("set", eit, n, update)
+        assert(update == true, "updateSettings flag not passed as true")
+        if world.set_fails and n == 0 then error("set boom") end
+        world.powers[eit] = n
     end end
     if k == "get player inventory item count" then return function(eit, cur, out)
         record("get", eit, cur)
@@ -71,7 +67,7 @@ local function fresh()
     package.loaded["inventory_grants_core"] = nil
     H.clear_queue()
     world.powers, world.calls, world.nil_types = {}, {}, {}
-    world.remove_fails = false
+    world.set_fails = false
     local S = require("spyro3.sparx_powers")
     H.clear_log()
     S.init({ log = H.collect, regions = REGIONS })
@@ -81,6 +77,13 @@ end
 local function ticks(S, n) for _ = 1, n do H.tick(S, gs); H.pump() end end
 local function settle(S) ticks(S, 12) end
 local function calls_of(fn) return H.calls_of(world.calls, fn) end
+local function revoke_calls()
+    local out = {}
+    for _, c in ipairs(calls_of("set")) do
+        if c.args[2] == 0 then out[#out + 1] = c end
+    end
+    return out
+end
 local function touched_finder()
     for _, c in ipairs(world.calls) do
         if c.args[1] == EIT_FINDER then return true end
@@ -126,15 +129,15 @@ test("received power lands on the game thread once the level settles", function(
     S.configure(ON_SD)
     S.note_item(RANGE, 0)
     ticks(S, 5)
-    assert(#calls_of("add") == 0, "granted before the stable-level gate")
+    assert(#calls_of("set") == 0, "granted before the stable-level gate")
     settle(S)
     assert(world.powers[EIT_RANGE] == 1, "gem collect range not set")
-    local adds = calls_of("add")
-    assert(#adds == 1 and adds[1].args[1] == EIT_RANGE and adds[1].args[2] == 1,
-        "expected one add(45, 1)")
+    local sets = calls_of("set")
+    assert(#sets == 1 and sets[1].args[1] == EIT_RANGE and sets[1].args[2] == 1
+        and sets[1].args[3] == true, "expected one set(45, 1, true)")
     assert(count_lines("[SPARX]", RANGE, "0 -> 1 (received)") == 1, "grant not logged")
     settle(S)
-    assert(#calls_of("add") == 1, "granted twice (write storm)")
+    assert(#calls_of("set") == 1, "granted twice (write storm)")
 end)
 
 test("vanilla realm reward without the item is revoked; WARN logs once", function()
@@ -143,14 +146,15 @@ test("vanilla realm reward without the item is revoked; WARN logs once", functio
     world.powers[EIT_CHESTS] = 1
     settle(S)
     assert(world.powers[EIT_CHESTS] == 0, "realm reward not revoked")
-    local removes = calls_of("remove")
-    assert(#removes == 1 and removes[1].args[1] == EIT_CHESTS, "expected one remove(48, 1)")
+    local revokes = revoke_calls()
+    assert(#revokes == 1 and revokes[1].args[1] == EIT_CHESTS and revokes[1].args[3] == true,
+        "expected one set(48, 0, true)")
     assert(count_lines("[SPARX] WARN", CHESTS, "Sparx realm") == 1, "expected exactly 1 WARN")
     assert(count_lines("[SPARX]", CHESTS, "1 -> 0 (not received; vanilla realm reward neutralized)") == 1,
         "revoke not logged")
     world.powers[EIT_CHESTS] = 1
     settle(S)
-    assert(#calls_of("remove") == 2, "re-granted reward not revoked again")
+    assert(#revoke_calls() == 2, "re-granted reward not revoked again")
     assert(count_lines("[SPARX] WARN", CHESTS) == 1, "WARN logged again")
 end)
 
@@ -158,24 +162,24 @@ test("a failed revoke is not retried this session; configure re-arms it", functi
     local S = fresh()
     S.configure(ON_SD)
     world.powers[EIT_CHESTS] = 1
-    world.remove_fails = true
+    world.set_fails = true
     settle(S)
-    assert(#calls_of("remove") == 1, "expected one revoke attempt, got " .. #calls_of("remove"))
+    assert(#revoke_calls() == 1, "expected one revoke attempt, got " .. #revoke_calls())
     assert(count_lines("[SPARX] ERROR revoke failed for", CHESTS, "won't retry this session") == 1,
         "revoke failure not logged")
     for _ = 1, 3 do H.advance(10); settle(S) end
     level = "/LS302_SunnyVilla/Maps/"
     settle(S)
-    assert(#calls_of("remove") == 1, "failed revoke resubmitted: " .. #calls_of("remove") .. " removes")
+    assert(#revoke_calls() == 1, "failed revoke resubmitted: " .. #revoke_calls() .. " revokes")
     assert(count_lines("[SPARX] ERROR") == 1, "ERROR repeated after the failed revoke")
     S.note_item(HP, 0)
     H.advance(10)
     settle(S)
     assert(world.powers[EIT_HP] == 1, "other items' grants must still land")
-    world.remove_fails = false
+    world.set_fails = false
     S.configure(ON_SD)
     settle(S)
-    assert(world.powers[EIT_CHESTS] == 0 and #calls_of("remove") >= 2, "configure did not re-arm the revoke")
+    assert(world.powers[EIT_CHESTS] == 0 and #revoke_calls() >= 2, "configure did not re-arm the revoke")
 end)
 
 test("EIT_SparxPower_GemFinder (46) is never touched", function()
@@ -191,7 +195,7 @@ test("EIT_SparxPower_GemFinder (46) is never touched", function()
     settle(S)
     assert(not touched_finder(), "GemFinder (46) was read or written")
     assert(world.powers[EIT_FINDER] == 1, "GemFinder flag changed")
-    assert(#calls_of("add") == 2 and #calls_of("remove") == 1)
+    assert(#calls_of("set") == 3 and #revoke_calls() == 1)
 end)
 
 test("duplicate item indexes count once; foreign items ignored", function()
@@ -203,8 +207,8 @@ test("duplicate item indexes count once; foreign items ignored", function()
     S.note_item("Spyro 3: Sparx Gem Finder", 6)
     assert(count_lines("received (index") == 1, "expected one receive log")
     settle(S)
-    local adds = calls_of("add")
-    assert(#adds == 1 and adds[1].args[1] == EIT_HP, "expected one add(47, 1)")
+    local sets = calls_of("set")
+    assert(#sets == 1 and sets[1].args[1] == EIT_HP, "expected one set(47, 1, true)")
 end)
 
 test("garbage readback writes nothing", function()
@@ -213,11 +217,11 @@ test("garbage readback writes nothing", function()
     S.note_item(HP, 0)
     world.powers[EIT_HP] = 5
     settle(S)
-    assert(#calls_of("add") == 0, "wrote on a garbage readback")
+    assert(#calls_of("set") == 0, "wrote on a garbage readback")
     world.powers[EIT_HP] = nil
     world.nil_types[EIT_HP] = true
     settle(S)
-    assert(#calls_of("add") == 0, "wrote on a nil readback")
+    assert(#calls_of("set") == 0, "wrote on a nil readback")
 end)
 
 test("writes wait for a stable known level", function()
@@ -226,10 +230,10 @@ test("writes wait for a stable known level", function()
     S.note_item(HP, 0)
     level = "/Game/Maps/LoadScreen"
     settle(S)
-    assert(#calls_of("add") == 0, "wrote on a load screen")
+    assert(#calls_of("set") == 0, "wrote on a load screen")
     level = "/LS301_SunriseSpring_Home/Maps/"
     ticks(S, 5)
-    assert(#calls_of("add") == 0, "wrote before 8 stable ticks")
+    assert(#calls_of("set") == 0, "wrote before 8 stable ticks")
     ticks(S, 7)
     assert(world.powers[EIT_HP] == 1, "no grant after stabilizing")
 end)
@@ -244,7 +248,7 @@ test("level change re-asserts the drive", function()
     world.powers[EIT_HP] = 0
     settle(S)
     assert(world.powers[EIT_HP] == 1, "level change did not re-assert the grant")
-    assert(#calls_of("add") == 2, "re-assert wrote nothing")
+    assert(#calls_of("set") == 2, "re-assert wrote nothing")
 end)
 
 test("configure resets received state", function()
