@@ -40,6 +40,16 @@ function S.run(cfg)
     end
     local SD = sd({ level_locks = 1 }, KEYS)
 
+    --- Build the cfg's fake portal set into world.portals.
+    --- @return table world.portals
+    local function build()
+        world.portals = {}
+        for _, p in ipairs(cfg.portals) do
+            world.portals[#world.portals + 1] = portals.new(H, p[1], p[2])
+        end
+        return world.portals
+    end
+
     --- Load a fresh module instance, fixture and portal set.
     --- @return table, table  The module and the portals it will see.
     local function fresh()
@@ -50,11 +60,7 @@ function S.run(cfg)
         H.clear_log()
         L.init({ log = H.collect, regions = cfg.regions })
         level = cfg.home
-        world.portals = {}
-        for _, p in ipairs(cfg.portals) do
-            world.portals[#world.portals + 1] = portals.new(H, p[1], p[2])
-        end
-        return L, world.portals
+        return L, build()
     end
 
     -- one async poll, then the game thread runs whatever was queued
@@ -214,6 +220,81 @@ function S.run(cfg)
         end
         ticks(L, 5)
         assert(P[1].remakes == 2, "no further rebuilds once unlocked")
+    end)
+
+    scenario("a one-poll level blip does not forget a lock, and the key still unlocks", function()
+        local L, P = fresh()
+        L.configure(SD)
+        L.note_item(cfg.held_item)
+        settle(L)
+        local before = L.status()
+        level = nil -- the gamestate read failed for one poll
+        H.tick(L, gs)
+        H.pump()
+        level = cfg.home
+        settle(L)
+        assert(L.status() == before, "a blip dropped the lock: " .. L.status() .. ", was " .. before)
+        L.note_item(cfg.unlock_item)
+        ticks(L, 2)
+        assert(P[1].props.EnableTransport == true, "the key did not unlock the portal")
+        assert(P[1].text() == cfg.portals[1][2] and H.logged("unlocked " .. cfg.portals[1][2]),
+            "got text=" .. P[1].text())
+    end)
+
+    scenario("a rebuilt homeworld is locked afresh, not re-asserted", function()
+        local L = fresh()
+        L.configure(SD)
+        L.note_item(cfg.held_item)
+        settle(L)
+        local P = build() -- the level load rebuilt every portal actor, vanilla state
+        level = nil
+        H.tick(L, gs)
+        H.pump()
+        level = cfg.home
+        settle(L)
+        assert(P[1].props.EnableTransport == false and P[1].text() == "LOCKED" and P[1].remakes == 1,
+            "a rebuilt portal with an unheld key is locked afresh, got text=" .. P[1].text()
+                .. " remakes=" .. P[1].remakes)
+        assert(P[cfg.held_portal].remakes == 0, "the held portal is left alone")
+        L.note_item(cfg.unlock_item)
+        settle(L)
+        assert(P[1].props.EnableTransport == true and P[1].text() == cfg.portals[1][2]
+            and P[1].remakes == 2, "got text=" .. P[1].text() .. " remakes=" .. P[1].remakes)
+    end)
+
+    scenario("a rebuilt homeworld with the key already held is left alone", function()
+        local L = fresh()
+        L.configure(SD)
+        L.note_item(cfg.held_item)
+        settle(L)
+        L.note_item(cfg.unlock_item) -- held before the reload below
+        local P = build()
+        level = nil
+        H.tick(L, gs)
+        H.pump()
+        level = cfg.home
+        settle(L)
+        assert(P[1].props.EnableTransport == true and P[1].remakes == 0,
+            "a rebuilt portal must not be written, got remakes=" .. P[1].remakes)
+        assert(not H.logged("unlocked " .. cfg.portals[1][2]), "nothing was unlocked")
+    end)
+
+    scenario("an unlock the game refuses is retried, not forgotten", function()
+        local L, P = fresh()
+        L.configure(SD)
+        L.note_item(cfg.held_item)
+        settle(L)
+        L.note_item(cfg.unlock_item)
+        P[1].refuse_enable = true
+        ticks(L, 2)
+        assert(P[1].props.EnableTransport == false, "the game refused the enable")
+        assert(not H.logged("unlocked " .. cfg.portals[1][2]), "an unlock that did not land was logged")
+        assert(H.logged("refused by the game"), "the refusal must be logged")
+        H.advance(5) -- past the failed-job backoff
+        P[1].refuse_enable = false
+        ticks(L, 1)
+        assert(P[1].props.EnableTransport == true and P[1].text() == cfg.portals[1][2],
+            "the retry did not unlock, got text=" .. P[1].text())
     end)
 
     scenario("a job that never runs is abandoned after the timeout", function()
