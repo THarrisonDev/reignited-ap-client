@@ -124,6 +124,19 @@ function H.ticks(mod, gs, n)
     for _ = 1, n do H.fx:tick(mod, gs) end
 end
 
+--- Return ticks, settle and call-lookup helpers bound to one test file's fakes.
+--- @param get_level fun():table|nil Returns the fake gamestate the file mutates.
+--- @param get_calls fun():table Returns that file's call record.
+--- @return function, function, function
+function H.module_helpers(get_level, get_calls)
+    local function ticks(mod, n)
+        for _ = 1, n do H.tick(mod, get_level()); H.pump() end
+    end
+    local function settle(mod) ticks(mod, 12) end
+    local function calls_of(fn) return H.calls_of(get_calls(), fn) end
+    return ticks, settle, calls_of
+end
+
 --- Forget the fixture's level view, mirroring a session reset.
 function H.reset_world()
     H.fx:reset()
@@ -174,6 +187,18 @@ function H.calls_of(calls, fn)
     local out = {}
     for _, c in ipairs(calls) do
         if c.fn == fn then out[#out + 1] = c end
+    end
+    return out
+end
+
+--- Return the calls to fn that wrote a zero, i.e. a revoke.
+--- @param calls table The fake's call record.
+--- @param fn string
+--- @return table
+function H.revoke_calls(calls, fn)
+    local out = {}
+    for _, c in ipairs(H.calls_of(calls, fn)) do
+        if c.args[2] == 0 then out[#out + 1] = c end
     end
     return out
 end
