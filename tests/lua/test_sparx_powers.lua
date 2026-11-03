@@ -74,16 +74,9 @@ local function fresh()
     level = "/LS301_SunriseSpring_Home/Maps/"
     return S
 end
-local function ticks(S, n) for _ = 1, n do H.tick(S, gs); H.pump() end end
-local function settle(S) ticks(S, 12) end
-local function calls_of(fn) return H.calls_of(world.calls, fn) end
-local function revoke_calls()
-    local out = {}
-    for _, c in ipairs(calls_of("set")) do
-        if c.args[2] == 0 then out[#out + 1] = c end
-    end
-    return out
-end
+local ticks, settle, calls_of = H.module_helpers(function() return gs end,
+    function() return world.calls end)
+local function revoke_calls() return H.revoke_calls(world.calls, "set") end
 local function touched_finder()
     for _, c in ipairs(world.calls) do
         if c.args[1] == EIT_FINDER then return true end
