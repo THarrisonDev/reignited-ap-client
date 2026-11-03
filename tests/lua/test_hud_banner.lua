@@ -149,10 +149,27 @@ local function fresh()
     install()
     logs = {}
     banner.reset()
+    pump() -- land any release the reset submitted for a stray held widget
     banner.init({
         log = function(line) logs[#logs + 1] = line end,
     })
     return widget
+end
+
+--- Make the fanfare lookup miss the next n polls, then hand back the restore.
+--- @param n number Polls to miss.
+--- @return function Restores the real lookup.
+local function miss_lookups(n)
+    local real = FindFirstOf
+    local left = n
+    FindFirstOf = function(class)
+        if class == "UI_FanFareMessage_C" and left > 0 then
+            left = left - 1
+            return nil
+        end
+        return real(class)
+    end
+    return function() FindFirstOf = real end
 end
 
 --- Return every captured log line joined.
@@ -166,6 +183,8 @@ local function has(st, kv)
 end
 
 local TICK = 250 -- the host poll interval the module paces itself against
+local STUCK_TICKS = 32 -- mirrors the module's watchdog budget (~8s at TICK)
+local OPENING_TICKS = 8 -- mirrors the module's timer-loss budget (~2s at TICK)
 
 --- Advance n host ticks, moving the poll clock and pumping work after each.
 local function advance(n)
@@ -418,6 +437,220 @@ do
     pump()
     check("s11 still works after reset", w._prop == "Received After reset", w._prop)
     drain()
+end
+
+-- scenario 12: reset while open releases the frozen widget, not leaving it stuck
+do
+    local w = fresh()
+    banner.note_item("Held")
+    advance(1)
+    pump()
+    check("s12 burst open", has(banner.status(), "state=open"), banner.status())
+    banner.reset()
+    pump()
+    check("s12 reset unpauses the frozen Intro", w._paused == false, tostring(w._paused))
+    check("s12 widget parked", w._state_written == 0, tostring(w._state_written))
+    check("s12 one Outro", w.outros == 1, tostring(w.outros))
+    check("s12 idle after reset", has(banner.status(), "state=idle"), banner.status())
+    banner.note_item("After reset")
+    advance(1)
+    pump()
+    check("s12 a later item opens a new fanfare", fanfares == 2, tostring(fanfares))
+    check("s12 its line lands", writes[#writes] == "Received After reset", table.concat(writes, ","))
+    drain()
+end
+
+-- scenario 13: a single missed lookup is not destruction; three in a row is
+do
+    local w = fresh()
+    banner.note_item("Debounce")
+    advance(1)
+    pump()
+    check("s13 burst open", has(banner.status(), "state=open"), banner.status())
+    local restore = miss_lookups(1)
+    advance(1)
+    restore()
+    check("s13 one miss keeps the burst", has(banner.status(), "state=open"), banner.status())
+    check("s13 the Intro stays frozen", w._paused == true, tostring(w._paused))
+    check("s13 one miss is quiet", log_text():find("WARN", 1, true) == nil, log_text())
+    drain()
+    check("s13 the burst finishes normally", w.outros == 1, tostring(w.outros))
+end
+do
+    local w = fresh()
+    banner.note_item("Vanishing")
+    advance(3) -- the gap left by the previous close
+    pump()
+    check("s13 second burst open", has(banner.status(), "state=open"), banner.status())
+    local restore = miss_lookups(3)
+    advance(3)
+    restore()
+    check("s13 three misses drop the burst", has(banner.status(), "state=idle"), banner.status())
+    check("s13 the drop is logged",
+        log_text():find("went missing 3 polls running", 1, true) ~= nil, log_text())
+    check("s13 the abandoned burst still releases", w._paused == false, tostring(w._paused))
+    check("s13 one Outro for the abandoned burst", w.outros == 1, tostring(w.outros))
+end
+
+-- scenario 14: close releases the widget this burst froze, never a fresh instance
+do
+    local w = fresh()
+    banner.note_item("Old")
+    advance(1)
+    pump()
+    check("s14 burst open", has(banner.status(), "state=open"), banner.status())
+    local old = w
+    w = new_widget() -- a level transition replaced the widget under the burst
+    widget = w
+    w._prop = old._prop -- no re-assert churn: drive straight to the dwell close
+    drain()
+    check("s14 the held widget is released", old._paused == false, tostring(old._paused))
+    check("s14 one Outro on the held widget", old.outros == 1, tostring(old.outros))
+    check("s14 the fresh instance is untouched", w.outros == 0, tostring(w.outros))
+end
+
+-- scenario 15: a repaint loop cannot hold the window past the budget
+do
+    local w = fresh()
+    banner.note_item("Repaint")
+    advance(1)
+    pump()
+    check("s15 burst open", has(banner.status(), "state=open"), banner.status())
+    for _ = 1, 50 do
+        w._prop = "Rescued "
+        advance(1)
+    end
+    check("s15 still holding before the budget", has(banner.status(), "state=open"), banner.status())
+    for _ = 1, 12 do
+        w._prop = "Rescued "
+        advance(1)
+    end
+    check("s15 the budget closes it", has(banner.status(), "state=idle"), banner.status())
+    check("s15 released", w.outros == 1, tostring(w.outros))
+end
+
+-- scenario 16: a fanfare left reporting open on our own line is reclaimed
+do
+    local w = fresh()
+    banner.note_item("Leak")
+    advance(1)
+    pump()
+    drain() -- a normal burst; the property keeps our last line after it closes
+    local outros = w.outros
+    w._state_written = nil -- the release never reached the widget: State reads open
+    w._paused = true -- a leaked freeze: State == 1 with the module idle
+    advance(STUCK_TICKS + 2)
+    check("s16 the watchdog releases it", w._paused == false, tostring(w._paused))
+    check("s16 one more Outro", w.outros == outros + 1, tostring(w.outros))
+    check("s16 the reclaim is logged", log_text():find("with no burst", 1, true) ~= nil, log_text())
+    banner.note_item("After watchdog")
+    advance(1)
+    pump()
+    check("s16 a new fanfare then opens", fanfares == 2, tostring(fanfares))
+    check("s16 its line lands", writes[#writes] == "Received After watchdog", tostring(writes[#writes]))
+    drain()
+end
+
+-- scenario 17: a socket drop releases the burst and saves its unwritten lines
+do
+    local w = fresh()
+    for _, name in ipairs({ "A", "B", "C" }) do banner.note_item(name) end
+    advance(1)
+    pump()
+    check("s17 first line up", w._prop == "Received A", w._prop)
+    banner.note_disconnected()
+    pump()
+    check("s17 disconnect releases the Intro", w._paused == false, tostring(w._paused))
+    check("s17 one Outro", w.outros == 1, tostring(w.outros))
+    check("s17 idle after the drop", has(banner.status(), "state=idle"), banner.status())
+    check("s17 the unwritten lines came back", has(banner.status(), "waiting=2"), banner.status())
+    advance(4)
+    pump()
+    drain()
+    check("s17 the next burst shows them", table.concat(writes, ",") == "Received A,Received B,Received C",
+        table.concat(writes, ","))
+end
+
+-- scenario 18: a burst dropped in the opening frame never resurrects
+do
+    local w = fresh()
+    banner.note_item("Opening")
+    fake_now = fake_now + TICK / 1000
+    banner.tick() -- submit the open job
+    run_jobs() -- fire the fanfare and arm the timers
+    check("s18 the burst is opening", has(banner.status(), "state=opening"), banner.status())
+    for _ = 1, OPENING_TICKS + 1 do
+        fake_now = fake_now + TICK / 1000
+        banner.tick() -- timers stay undelivered: the opening ticks out
+    end
+    check("s18 the opening timeout drops the burst", has(banner.status(), "state=idle"), banner.status())
+    check("s18 nothing was frozen", w._paused == false, tostring(w._paused))
+    run_timers() -- the armed write and freeze land after the drop
+    run_jobs()
+    check("s18 the stale freeze never lands", w._paused == false, tostring(w._paused))
+    check("s18 still idle", has(banner.status(), "state=idle"), banner.status())
+    check("s18 no Outro for a freeze never owned", w.outros == 0, tostring(w.outros))
+end
+
+-- scenario 19: a disconnect during the lead-in keeps every line
+do
+    local w = fresh()
+    banner.note_item("A")
+    banner.note_item("B")
+    fake_now = fake_now + TICK / 1000
+    banner.tick() -- submit the open job
+    run_jobs() -- fire the fanfare and arm the timers
+    local ts = timers
+    timers = {}
+    -- deliver the freeze only: the first line's write has not landed yet
+    fake_now = fake_now + (ts[2].ms or 0) / 1000
+    ts[2].fn()
+    run_jobs()
+    check("s19 the burst is open", has(banner.status(), "state=open"), banner.status())
+    check("s19 the lead-in line is unwritten", w._prop == "Rescued ", w._prop)
+    banner.note_disconnected()
+    pump()
+    check("s19 the frozen Intro is released", w._paused == false, tostring(w._paused))
+    check("s19 one Outro", w.outros == 1, tostring(w.outros))
+    check("s19 both lines are waiting", has(banner.status(), "waiting=2"), banner.status())
+    advance(3)
+    pump()
+    drain()
+    check("s19 the next burst shows both", table.concat(writes, ",") == "Received A,Received B",
+        table.concat(writes, ","))
+end
+
+-- scenario 20: the watchdog leaves the game's own fanfare chain alone
+do
+    local w = fresh()
+    w._paused = true -- State == 1, but the property is the game's canned text
+    check("s20 the property is not a line we wrote", w._prop == "Rescued ", w._prop)
+    advance(STUCK_TICKS + 4)
+    check("s20 no release", w.outros == 0, tostring(w.outros))
+    check("s20 the game still holds it", w._paused == true, tostring(w._paused))
+    check("s20 no reclaim WARN", log_text():find("with no burst", 1, true) == nil, log_text())
+end
+
+-- scenario 21: an opening timeout puts its lines back for the next burst
+do
+    fresh()
+    banner.note_item("Lost")
+    banner.note_item("Found")
+    fake_now = fake_now + TICK / 1000
+    banner.tick() -- submit the open job
+    run_jobs() -- fire the fanfare and arm the timers
+    check("s21 the burst is opening", has(banner.status(), "state=opening"), banner.status())
+    for _ = 1, OPENING_TICKS + 1 do
+        fake_now = fake_now + TICK / 1000
+        banner.tick() -- the timers never land: the opening ticks out
+    end
+    check("s21 the burst is dropped", has(banner.status(), "state=idle"), banner.status())
+    check("s21 both lines came back", has(banner.status(), "waiting=2"), banner.status())
+    advance(3)
+    pump()
+    drain()
+    check("s21 the next burst shows both", table.concat(writes, ",") == "Received Lost,Received Found",
+        table.concat(writes, ","))
 end
 
 -- invariant: the module never schedules game-thread work from the game thread

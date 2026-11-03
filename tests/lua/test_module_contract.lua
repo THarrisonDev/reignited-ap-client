@@ -70,7 +70,7 @@ local SHAPES = {
         "is_item", "received", "last_extra", "arm_backlog",
         "reset_received", "note_disconnected", "reset",
     },
-    display = { "init", "note_item", "note_sent", "note_system", "tick", "status", "reset" },
+    display = { "init", "note_item", "note_sent", "note_system", "note_disconnected", "tick", "status", "reset" },
     sender = { "init", "configure", "status" },
 }
 
