@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-10-16
--- Updated: 2026-10-23
+-- Updated: 2026-11-02
 
 -- ap_client: the bridge's single AP connection — the client, its handlers, the
 -- verbs modules use to reach the server, and the send/receive log lines. It
@@ -66,6 +66,41 @@ end
 -- Assigned with the log lines below; drop_checks logs a line per sent id.
 local render_sent
 
+-- The server's checked_locations list as of the last sync, and the seed it
+-- belongs to. The list only grows within a room, so its length is the freshness
+-- mark: a poll with no new checks costs one # and no iteration.
+local checked_len = -1
+local last_seed = nil
+
+--- Merge the server's already-checked locations into the shared sent-check set.
+--- That list is the source of truth for "already sent on this seed": a connect
+--- replays it, so nothing local can go stale, and the checks spyro1/dragons.lua
+--- sends through M.checks directly are covered because the server records them
+--- the same way. A new seed starts empty; a mid-session reconnect keeps the
+--- in-session ids and unions the list.
+--- @param sd table|nil Slot data; nil from the poll, which must not re-check the seed.
+function M.sync_checked(sd)
+  if sd ~= nil and sd.seed ~= last_seed then
+    for k in pairs(state.sent_checks) do
+      state.sent_checks[k] = nil
+    end
+    checked_len, last_seed = -1, sd.seed
+  end
+  local list = state.ap and state.ap.checked_locations
+  if type(list) ~= "table" then
+    return
+  end
+  local n = #list
+  if n == checked_len then
+    return
+  end
+  checked_len = n
+  for _, id in ipairs(list) do
+    state.sent_checks[id] = true
+  end
+  log_debug("server acknowledged " .. n .. " check(s)")
+end
+
 --- Return whether the AP socket is up.
 function M.connected()
   return state.connected
@@ -80,7 +115,7 @@ end
 --- @return boolean
 function M.checks(ids)
   return send("LocationChecks", function()
-    state.ap:LocationChecks(ids)
+    return state.ap:LocationChecks(ids)
   end)
 end
 
@@ -194,7 +229,9 @@ local function received_line(info, iname)
   return line .. " from " .. sender(info) .. at
 end
 
---- Build the log/banner line for a sent location check.
+--- Build the log/banner line for a sent location check. Only an item that leaves
+--- the slot earns a banner line, and it says what was sent and to whom; a check
+--- whose item stays here only logs (the game already showed the pickup).
 --- @return string
 render_sent = function(id)
   local line = "Sent: " .. (state.id_to_name[id] or ("location " .. id))
@@ -234,10 +271,10 @@ end
 --- @param sd table Slot data.
 local function on_slot_connected(sd)
   log_info("Connected to " .. CFG.host .. " as " .. CFG.slot)
-  -- A reconnect to a different seed makes the session check state stale.
-  for k in pairs(state.sent_checks) do
-    state.sent_checks[k] = nil
-  end
+  -- The server's checked_locations is the source of truth for "already sent on
+  -- this seed": this clears the session set only when the seed changed, keeps it
+  -- on a mid-session reconnect, and then unions what the server acknowledges.
+  M.sync_checked(sd)
   -- A new seed re-uses item indexes for different items, so the per-index
   -- once-guard must reset with the check state.
   state.processed_indices = {}
@@ -437,11 +474,17 @@ function M.connect()
   log_debug("handlers wired; library auto-connects on ctor")
 end
 
---- Poll the connection, returning pcall's ok plus its error.
+--- Poll the connection, returning pcall's ok plus its error. A successful poll
+--- then syncs the server's checked-location list, so a check another session
+--- already acknowledged (or this one sent moments ago) is never queued again.
 function M.poll()
-  return pcall(function()
+  local ok, err = pcall(function()
     state.ap:poll()
   end)
+  if ok then
+    M.sync_checked(nil)
+  end
+  return ok, err
 end
 
 --- Tear the connection down (menu return, session change).

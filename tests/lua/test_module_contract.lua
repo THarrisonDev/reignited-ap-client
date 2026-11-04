@@ -52,6 +52,7 @@ local ACCOUNTED = {
     ["option.lua"] = true,
     ["session_gate.lua"] = true,
     ["game_state.lua"] = true,
+    ["srtap_state.lua"] = true,
     -- L4 cores
     ["level_locks_core.lua"] = true,
     ["reconcile_core.lua"] = true,

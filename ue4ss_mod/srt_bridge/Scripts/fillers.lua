@@ -1,13 +1,15 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-26
--- Updated: 2026-10-23
+-- Updated: 2026-11-03
 
 -- fillers: apply received filler items — Extra Life, cheat-code looks (colors,
--- Big Head, Flat Spyro) and Damage Trap.
+-- Big Head, Flat Spyro) and Damage Trap. Its one persisted value (the granted
+-- life count) lives in the shared srtap_state file for this seed+slot.
 
 local U = require("util")
 local logger = require("logger")
 local C = require("constants")
+local S = require("srtap_state")
 
 local M = {}
 
@@ -48,11 +50,10 @@ local TAG = "[FILLERS]"
 local log = logger.tagged(TAG)
 local dir = "C:/srtap_bridge/"
 local can_write = false     -- ExecuteInGameThread available
-local state_file = nil
 local life_indices = {}     -- AP item index -> true (Extra Life, this session)
 local trap_indices = {}     -- AP item index -> true (Damage Trap, this session)
 local lives_received = 0
-local lives_granted = 0     -- persisted per seed+slot
+local lives_granted = 0     -- persisted per seed+slot (srtap_state)
 local look = {color = nil, color_expire = nil, modes = {}}  -- color_expire/modes[fn] = expire_at (os.time())
 local traps_received = 0    -- session count; not persisted (a re-hit on reconnect is fine)
 local applied_pawn = nil    -- actor key of the pawn the look was last pushed to;
@@ -83,29 +84,6 @@ local function read_global(gs, key)
     if type(v) ~= "number" then v = out.value end
     if type(v) == "table" then v = v.value end          -- UE4SS out-param quirk
     return tonumber(v)
-end
-
--- ---------------------------------------------------------------------------
--- persistence: lives_granted=N in <dir>fillers_<seed>_<slot>.txt
--- ---------------------------------------------------------------------------
---- Return the persisted lives_granted count, or 0 when absent/unreadable.
-local function load_granted()
-    local f = state_file and io.open(state_file, "r")
-    if not f then return 0 end
-    local n = tonumber((f:read("a") or ""):match("lives_granted=(%d+)"))
-    f:close()
-    return n or 0
-end
-
---- Persist the lives_granted count; warn when the file cannot be written.
-local function save_granted()
-    local f = state_file and io.open(state_file, "w")
-    if not f then
-        log.warn("cannot write " .. tostring(state_file) .. " (lives may re-grant next session)")
-        return
-    end
-    f:write("lives_granted=" .. lives_granted .. "\n")
-    f:close()
 end
 
 -- ---------------------------------------------------------------------------
@@ -200,7 +178,10 @@ local function grant_lives(gs, lives)
     if lives <= 0 then return end
     gs["add item to player inventory"](EIT_LIFE, lives)
     lives_granted = lives_granted + lives
-    save_granted()
+    -- Lives are rare and a lost count re-grants them, so this ledger entry is
+    -- written at once rather than batched with the banner's watermark.
+    S.set("lives_granted", lives_granted)
+    S.flush()
     log.info(string.format("granted %d extra %s (total %d)",
         lives, lives == 1 and "life" or "lives", lives_granted))
 end
@@ -294,14 +275,13 @@ end
 --- Reset per-seed state and load the persisted lives-granted count.
 --- @param sd table|nil Slot data carrying seed and slot.
 function M.configure(sd)
-    local id = tostring(sd and sd.seed or "noseed") .. "_" .. tostring(sd and sd.slot or "noslot")
-    state_file = dir .. "fillers_" .. (id:gsub("[^%w_%-]", "_")) .. ".txt"
+    S.open(sd, dir)
     life_indices, lives_received = {}, 0
-    lives_granted = load_granted()
+    lives_granted = S.get("lives_granted", 0)
     look = {color = nil, color_expire = nil, modes = {}}
     revert_color, applied_pawn = false, nil
     trap_indices, traps_received = {}, 0
-    log.info(string.format("configured: lives_granted=%d (%s)", lives_granted, state_file))
+    log.info(string.format("configured: lives_granted=%d", lives_granted))
 end
 
 --- Record an AP item index in seen, returning whether it was new.

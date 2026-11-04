@@ -134,5 +134,12 @@ return {
       }
     end,
   },
-  { name = "hud_banner", shape = "display", games = ALL, opts = function() return {} end },
+  {
+    name = "hud_banner",
+    shape = "display",
+    games = ALL,
+    opts = function(host)
+      return { dir = host.bridge_dir }
+    end,
+  },
 }
