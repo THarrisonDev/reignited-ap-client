@@ -117,10 +117,11 @@ DIR = DIR .. "-"
 local function fresh(keep_state)
     H.new_fixture(regions)
     package.loaded["fillers"] = nil
+    package.loaded["srtap_state"] = nil -- a fresh process: no cached file contents
     H.clear_queue()
     if not keep_state then
-        os.remove(DIR .. "fillers_S1_P1.txt")
-        os.remove(DIR .. "fillers_S2_P1.txt")
+        os.remove(DIR .. "srtap_S1_P1.txt")
+        os.remove(DIR .. "srtap_S2_P1.txt")
         world.lives = 0
         world.floats = {}
         world.health = nil
@@ -176,6 +177,24 @@ test("reconnect backlog does not re-grant, even after a game restart", function(
     F.note_item("Extra Life", 7)
     ticks(F, 1)
     assert(world.lives == 3, "new life after reconnect: " .. world.lives)
+end)
+
+test("a grant writes the shared state file and keeps the banner's key", function()
+    local F = fresh()
+    local S = require("srtap_state")
+    S.open(SD, DIR)
+    S.set("seen_upto", 40) -- the hud_banner module's key in the same file
+    S.flush()
+    F.configure(SD)
+    F.note_item("Extra Life", 0)
+    settle(F)
+    local text = H.read_file(DIR .. "srtap_S1_P1.txt")
+    assert(text:find("lives_granted=1", 1, true), text)
+    assert(text:find("seen_upto=40", 1, true), text)
+    -- a later process reloads the count from the same file
+    S.open({ seed = "S9", slot = "P9" }, DIR) -- a different slot drops the cache
+    F.configure(SD)
+    assert(F.status():find("lives granted=1", 1, true), F.status())
 end)
 
 test("a duplicate index in one session counts once", function()
@@ -543,6 +562,6 @@ test("status reports lives and look", function()
     assert(s == "lives granted=1 received=1 look=Turn Spyro Yellow+BigHeadMode traps=0", "got " .. s)
 end)
 
-os.remove(DIR .. "fillers_S1_P1.txt")
-os.remove(DIR .. "fillers_S2_P1.txt")
+os.remove(DIR .. "srtap_S1_P1.txt")
+os.remove(DIR .. "srtap_S2_P1.txt")
 H.finish()

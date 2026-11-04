@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-26
--- Updated: 2026-10-23
+-- Updated: 2026-11-02
 
 -- checks_drop: ingest the Go checkd daemon's check drops.
 --
@@ -9,6 +9,9 @@
 -- "names":[...]} shape, drops ids absent from this slot's locationNameToId
 -- (checkd is option-blind, so option-disabled checks resolve here), dedups
 -- against the ids already sent, and passes the rest to the host's send callback.
+--
+-- The dedup table is the shared state.sent_checks, which ap_client fills from
+-- the server's checked_locations: nothing here keeps state of its own.
 
 local logger = require("logger")
 

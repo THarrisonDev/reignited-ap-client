@@ -1,16 +1,19 @@
 -- Author: Tim Harrison
 -- Created: 2026-10-16
--- Updated: 2026-10-23
+-- Updated: 2026-11-02
 
 -- watch: the poll loop (250 ms, async thread). Refreshes the one game_state
 -- snapshot, drives the session gate, the AP poll, the check-drop and notice
 -- ingestion, the per-game watcher ticks, and the heartbeat. Reads state.world,
--- state.mods and state.watch.
+-- state.mods and state.watch. The snapshot also carries `not_in_play` (any game
+-- state but InPlay — menus, cutscenes, loading, respawn), which holds the hud
+-- banner's pacing while the game cannot animate.
 
 local U = require("util")
 local L = require("logger")
 local session = require("session")
 local ap_client = require("ap_client")
+local SESSION = require("session_gate")
 local state = require("state")
 
 local debug_log = L.log_debug
@@ -80,6 +83,7 @@ end
 --- One poll: the world snapshot, the session gate, the connection, the watchers.
 local function poll()
   local world = state.world:update(U.game_state())
+  world.not_in_play = world.gstate == nil or world.gstate ~= SESSION.IN_PLAY
   log_transitions(world)
   poll_connection(world)
   poll_modules(world)

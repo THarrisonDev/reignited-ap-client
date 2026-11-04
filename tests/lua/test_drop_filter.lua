@@ -9,6 +9,25 @@
 package.path = (debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "./") .. "support/?.lua;" .. package.path
 local H = require("harness")
 
+-- The modules log through the global router, whose file path is the real bridge
+-- dir: a silent stand-in keeps the spec off bridge.log (and its console).
+package.preload["logger"] = function()
+    local L = { cfg = {}, bridge_dir = "/nonexistent/" }
+    local function noop() end
+    L.log_info, L.log_warn, L.log_error, L.log_debug = noop, noop, noop, noop
+    L.tagged = function(tag, sink)
+        local function emit(msg)
+            if sink then sink(tag .. " " .. tostring(msg)) end
+        end
+        return { info = emit, warn = emit, error = emit, debug = emit }
+    end
+    L.leveled = function(tag, opt)
+        if type(opt) == "table" then return opt end
+        return L.tagged(tag, type(opt) == "function" and opt or nil)
+    end
+    return L
+end
+
 local DROP = require("checks_drop")
 
 local case, eq = H.test, H.eq
@@ -19,6 +38,11 @@ local tmpdir = os.tmpname()
 os.remove(tmpdir)
 os.execute('mkdir -p "' .. tmpdir .. '"')
 
+--- Build a fresh module over a temp drop file: id_to_name = the slot's location
+--- set; sent_checks = the shared ever-sent table; a stub ap capturing sends.
+--- @param slot_ids table Location id -> name for this slot.
+--- @param sent table|nil The shared sent-checks table.
+--- @param gate_open boolean|nil False closes the connect gate.
 local function fresh(slot_ids, sent, gate_open)
     local sent_checks = sent or {}
     local state = {sends = {}, logs = {}}
@@ -178,6 +202,108 @@ case("reset clears the stale-seq guard", function()
     DROP.tick()
     eq(#state.sends, 2, "same seq sent again after reset")
 end)
+
+-- Acknowledged checks: the server's checked_locations list is the authority for
+-- "already sent on this seed", so the rig wires the module exactly as main.lua
+-- does (the host's drop_checks sink and the shared sent_checks table) against a
+-- fake library that carries that list.
+local SD = { seed = "S1", slot = "P1" }
+local SD2 = { seed = "S2", slot = "P1" }
+
+local ap_state = require("state")
+local AP = require("ap_client")
+local send_calls = {}
+
+--- Point the shared AP seam at a fake library carrying checked_locations.
+--- @param checked table|nil The server's already-checked location ids.
+local function fake_library(checked)
+    send_calls = {}
+    ap_state.ap = {
+        checked_locations = checked or {},
+        poll = function() end,
+        LocationChecks = function(_, ids)
+            send_calls[#send_calls + 1] = ids
+            return true
+        end,
+    }
+end
+
+--- Build the module over the shared sent_checks table and the host's own sink.
+local function fresh_host(slot_ids)
+    ap_state.sent_checks = {}
+    DROP.init({
+        connect_gate = function() return true end,
+        log = function() end,
+        on_send = AP.handle.drop_checks,
+        id_to_name = slot_ids,
+        sent_checks = ap_state.sent_checks,
+        check_path = tmpdir .. "/checks.json",
+    })
+    return ap_state.sent_checks
+end
+
+--- Add ids to the server's acknowledged list, as a LocationChecks reply would.
+local function acknowledge(ids)
+    for _, id in ipairs(ids) do
+        ap_state.ap.checked_locations[#ap_state.ap.checked_locations + 1] = id
+    end
+end
+
+case("a check the server already acknowledged is not sent", function()
+    local slot = {[1001] = "x", [1002] = "y"}
+    fake_library({1001})
+    local sent = fresh_host(slot)
+    AP.sync_checked(SD)
+    eq(sent[1001], true, "loaded from the server's checked list")
+    drop_file('{"seq":11,"checks":[1001,1002],"names":[]}')
+    DROP.tick()
+    eq(#send_calls, 1, "only the unacknowledged check is sent")
+    eq(send_calls[1][1], 1002, "the new id")
+    eq(file_exists(tmpdir .. "/checks.json"), false, "the drop is consumed")
+end)
+
+case("an acknowledgement from the server stops a drop repeating across boots", function()
+    local slot = {[1001] = "x"}
+    fake_library({})
+    fresh_host(slot)
+    AP.sync_checked(SD)
+    drop_file('{"seq":12,"checks":[1001],"names":[]}')
+    DROP.tick()
+    eq(#send_calls, 1, "the first send")
+    acknowledge({1001})
+    -- a rebooted session holds nothing: the server's list is what stops it
+    local sent = fresh_host(slot)
+    AP.poll() -- the poll syncs the acknowledged list
+    eq(sent[1001], true, "the acknowledgement reached the new session")
+    drop_file('{"seq":13,"checks":[1001],"names":[]}')
+    DROP.tick()
+    eq(#send_calls, 1, "the acknowledged check is not sent again")
+end)
+
+case("a seed change starts from the new server list", function()
+    local slot = {[1001] = "x"}
+    -- the sync caches the list length, so a fresh list of a different length is
+    -- what a reconnect looks like from inside ap_client
+    fake_library({1001, 9999})
+    local sent = fresh_host(slot)
+    AP.sync_checked(SD)
+    eq(sent[1001], true, "the first seed's acknowledgements")
+    fake_library({}) -- the new room has acknowledged nothing yet
+    AP.sync_checked(SD2)
+    eq(sent[1001], nil, "the new seed's set starts empty")
+    eq(next(sent), nil, "nothing carried over")
+    drop_file('{"seq":14,"checks":[1001],"names":[]}')
+    DROP.tick()
+    eq(#send_calls, 1, "sent on the new seed")
+    acknowledge({1001})
+    AP.poll()
+    eq(sent[1001], true, "and the new seed's own acknowledgement is honoured")
+    drop_file('{"seq":15,"checks":[1001],"names":[]}')
+    DROP.tick()
+    eq(#send_calls, 1, "not sent twice on the new seed")
+end)
+
+ap_state.ap = nil
 
 os.execute('rm -rf "' .. tmpdir .. '"')
 H.finish()
