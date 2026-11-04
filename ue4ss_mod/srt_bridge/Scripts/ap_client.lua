@@ -24,7 +24,7 @@ local M = {}
 M.available = OK
 M.load_error = OK and nil or tostring(AP)
 
-local client_version = { 0, 6, 7 }
+local client_version = { 0, 6, 8 }
 local items_handling = 7
 
 -- ---------------------------------------------------------------------------

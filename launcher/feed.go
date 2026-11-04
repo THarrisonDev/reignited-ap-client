@@ -310,7 +310,7 @@ func (s *apSession) onRoomInfo(raw json.RawMessage) error {
 	return s.send(getPkg, map[string]any{
 		"cmd": "Connect", "game": "", "name": s.cfg.Slot, "password": s.cfg.Password,
 		"uuid": feedUUID, "items_handling": 0, "tags": []string{"TextOnly"}, "slot_data": false,
-		"version": map[string]any{"major": 0, "minor": 6, "build": 7, "class": "Version"},
+		"version": map[string]any{"major": 0, "minor": 6, "build": 8, "class": "Version"},
 	})
 }
 
