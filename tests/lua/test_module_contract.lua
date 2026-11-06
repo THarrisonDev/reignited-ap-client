@@ -57,6 +57,7 @@ local ACCOUNTED = {
     ["level_locks_core.lua"] = true,
     ["reconcile_core.lua"] = true,
     ["inventory_grants_core.lua"] = true,
+    ["guidebook_core.lua"] = true,
 }
 for _, entry in ipairs(INVENTORY) do
     ACCOUNTED[entry.name:gsub("%.", "/") .. ".lua"] = true
