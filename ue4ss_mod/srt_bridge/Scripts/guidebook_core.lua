@@ -4,7 +4,10 @@
 
 -- guidebook_core: factory behind the per-game spyroN/guidebook.lua modules. It
 -- marks a received level key's level as visited in the game, so the level is
--- listed in the in-game Guide Book before the player has ever entered it.
+-- listed in the in-game Guide Book before the player has ever entered it. With
+-- the slot's Open World option on it also marks every homeworld visited, so the
+-- Guide Book's own travel lists the hubs; the book's jump is the game's feature
+-- (do level jump -> begin level load), not something this mod drives.
 --
 -- The write is the gamestate's own `set level visited`, the call `complete
 -- level load` makes (it is not `save progression`, which stays banned). Every
@@ -28,6 +31,7 @@ local function new(cfg)
     local TAG = cfg.tag or "[GUIDE]"
     local log = logger.tagged(TAG)
     local region_to_path = {}   -- "Stone Hill" -> "/LS102_StoneHill/Maps/"
+    local homeworlds = cfg.homeworlds or {} -- region -> true (constants.lua)
     local key_to_region = {}    -- key item name -> region, this seed
     local key_count = 0
     local can_write = false     -- ExecuteInGameThread available
@@ -119,6 +123,14 @@ local function new(cfg)
         end
     end
 
+    --- Queue one visit per homeworld the region table knows (Open World: the
+    --- Guide Book's travel list then carries the hubs).
+    local function queue_homeworlds()
+        for region in pairs(homeworlds) do
+            if region_to_path[region] ~= nil then pending[region] = true end
+        end
+    end
+
     --- Read this game's level keys from slot data and reset per-session state.
     function M.configure(sd)
         key_to_region, key_count = {}, 0
@@ -129,9 +141,12 @@ local function new(cfg)
                 key_count = key_count + 1
             end
         end
-        enabled = can_write and key_count > 0
+        local open_world = O.flag(O.game_options(sd, cfg.game).open_world, "open_world", log)
         held, pending, listed, retries, warned = {}, {}, {}, {}, {}
-        log.info(string.format("configured%s: enabled=%s keys=%d", cfg.label, tostring(enabled), key_count))
+        if open_world then queue_homeworlds() end
+        enabled = can_write and (key_count > 0 or open_world)
+        log.info(string.format("configured%s: enabled=%s keys=%d open_world=%s",
+            cfg.label, tostring(enabled), key_count, tostring(open_world)))
     end
 
     --- Mark a received level key item as held and queue its level's visit.

@@ -11,9 +11,11 @@
 -- tick(world), status().
 
 local core = require("guidebook_core")
+local C = require("constants")
 
 return core.new({
     game = "spyro2",
+    homeworlds = C.homeworlds.spyro2,
     tag = "[GUIDE2]",
     label = " (spyro2)",
     prefix = "spyro2 ",

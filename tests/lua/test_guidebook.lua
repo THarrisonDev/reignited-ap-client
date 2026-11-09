@@ -18,8 +18,10 @@ H.install_game_thread()
 
 local STONE_PATH, HOLLOW_PATH, GLIMMER_PATH =
     "/LS102_StoneHill/Maps/", "/LS103_DarkHollow/Maps/", "/LS202_Glimmer/Maps/"
+local ARTISANS_PATH = "/LS101_ArtisansHome/Maps/"
 
 local REGIONS = {
+    [ARTISANS_PATH] = "Artisans",
     [STONE_PATH] = "Stone Hill",
     [HOLLOW_PATH] = "Dark Hollow",
     [GLIMMER_PATH] = "Glimmer",
@@ -102,7 +104,19 @@ test("a received key lists its level once the level settles", function()
     assert(s:find("listed=1", 1, true) and s:find("pending=0", 1, true), "status: " .. s)
 end)
 
-test("no key: nothing is queued", function()
+test("open world queues every homeworld the region table knows", function()
+    local G = fresh()
+    G.configure({ games = { spyro1 = { options = { open_world = 1 }, level_keys = {} } } })
+    settle(G)
+    assert(world.visited[ARTISANS_PATH] == true, "homeworld not marked visited")
+    assert(#calls_of("set") == 1, "expected one homeworld write, got " .. #calls_of("set"))
+    local s = G.status()
+    assert(s:find("enabled=true", 1, true) and s:find("listed=1", 1, true), "status: " .. s)
+    settle(G)
+    assert(#calls_of("set") == 1, "rewrote a listed homeworld")
+end)
+
+test("no key, no open world: nothing is queued", function()
     local G = fresh()
     G.configure(SD)
     settle(G)
