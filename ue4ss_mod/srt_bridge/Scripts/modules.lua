@@ -86,15 +86,18 @@ return {
     end,
   },
   { name = "spyro1.level_locks", shape = "watcher", games = { SESSION.SPYRO1 }, opts = regions_only },
+  { name = "spyro1.guidebook", shape = "watcher", games = { SESSION.SPYRO1 }, opts = regions_only },
   { name = "spyro1.balloonists", shape = "watcher", games = { SESSION.SPYRO1 }, opts = regions_only },
 
   -- Spyro 2
   { name = "spyro2.level_locks", shape = "watcher", games = { SESSION.SPYRO2 }, opts = regions_only },
+  { name = "spyro2.guidebook", shape = "watcher", games = { SESSION.SPYRO2 }, opts = regions_only },
   { name = "spyro2.abilities", shape = "watcher", games = { SESSION.SPYRO2 }, opts = function() return {} end },
   { name = "spyro2.orbs", shape = "reconcile", games = { SESSION.SPYRO2 }, opts = function() return {} end },
 
   -- Spyro 3
   { name = "spyro3.level_locks", shape = "watcher", games = { SESSION.SPYRO3 }, opts = regions_only },
+  { name = "spyro3.guidebook", shape = "watcher", games = { SESSION.SPYRO3 }, opts = regions_only },
   { name = "spyro3.egg_gates", shape = "watcher", games = { SESSION.SPYRO3 }, opts = regions_only },
   { name = "spyro3.eggs_hud", shape = "reconcile", games = { SESSION.SPYRO3 }, opts = function() return {} end },
   { name = "spyro3.sparx_powers", shape = "watcher", games = { SESSION.SPYRO3 }, opts = function() return {} end },
