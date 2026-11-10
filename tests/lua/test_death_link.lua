@@ -1,12 +1,13 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-26
--- Updated: 2026-10-23
+-- Updated: 2026-11-09
 
 -- Stub-based spec for client/ue4ss_mod/srt_bridge/Scripts/death_link.lua.
--- Fakes the Spyro pawn with a GAS health attribute set behind an Outer chain
--- (IsDead reads hp <= 0, so a HealthCurrent=0 write really kills it) and
--- injects send/now/me. ExecuteInGameThread only QUEUES work; H.pump() runs it
--- with the game-thread flag set, and every write asserts that flag.
+-- Fakes the Spyro pawn: DieOnUpdate is the game's death request and IsDead is
+-- the Character.Dead tag the game applies when its own tick runs that request.
+-- ExecuteInGameThread only QUEUES work; H.pump() runs it with the game-thread
+-- flag set, and every write asserts that flag. game_tick() models the pawn's
+-- own ReceiveTick -> ConditionallyDieOnUpdate.
 -- Run from the client repo root: lua tests/lua/test_death_link.lua
 
 package.path = (debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "./") .. "support/?.lua;" .. package.path
@@ -18,28 +19,30 @@ H.install_game_thread()
 -- ---------------------------------------------------------------------------
 -- fake world + pawn
 -- ---------------------------------------------------------------------------
-local world = { pawn = nil, enemy_sets = nil }
+local world = { pawn = nil }
 A.install(world)
 
 local next_addr = 100
-local function new_pawn(opts)
+local function new_pawn()
     next_addr = next_addr + 1
-    local P = { addr = next_addr, hp = 3, reject_write = false }
-    P.actor = setmetatable({}, { __index = function(_, k)
-        if k == "IsValid" then return function() return true end end
-        if k == "GetAddress" then return function() return P.addr end end
-        if k == "GetOuter" then return function()
-            assert(H.thread, "GetOuter off the game thread")
-            return P.health_outer or P.actor
-        end end
-        if k == "IsDead" then return function() return P.hp <= 0 end end
-        return nil
-    end })
-    P.health = nil
-    if not (opts and opts.no_health) then P.health = A.health_set(H, P) end
+    local P = { addr = next_addr, dead = false, die_on_update = false, reject_write = false }
+    P.actor = setmetatable({}, {
+        __index = function(_, k)
+            if k == "IsValid" then return function() return true end end
+            if k == "GetAddress" then return function() return P.addr end end
+            if k == "IsDead" then return function() return P.dead end end
+            if k == "DieOnUpdate" then return P.die_on_update end
+            return nil
+        end,
+        __newindex = function(_, k, v)
+            if k ~= "DieOnUpdate" then return end
+            assert(H.thread, "DieOnUpdate written off the game thread")
+            if P.reject_write then return end
+            P.die_on_update = v
+        end,
+    })
     return P
 end
-local enemy_set = A.enemy_set
 
 -- ---------------------------------------------------------------------------
 -- harness
@@ -92,16 +95,31 @@ end
 
 local test = H.test
 
-local function ticks(D, n) for _ = 1, n or 1 do H.tick(D, {}); H.pump() end end
+--- Model the pawn's own tick: a queued death becomes the Character.Dead tag.
+local function game_tick()
+    local p = world.pawn
+    if p and p.die_on_update and not p.dead then
+        p.die_on_update = false
+        p.dead = true
+    end
+end
+
+local function ticks(D, n)
+    for _ = 1, n or 1 do
+        H.tick(D, {})
+        H.pump()
+        game_tick()
+    end
+end
 
 --- Configure an enabled session, die once (the bounce fills sent[1]), then revive.
 --- @param D table The module under test.
 local function die_and_revive(D)
     D.configure(SD_ON)
-    world.pawn.hp = 0
+    world.pawn.dead = true
     ticks(D, 1)
     assert(#sent == 1)
-    world.pawn.hp = 3
+    world.pawn.dead = false
     ticks(D, 1)
 end
 
@@ -109,10 +127,10 @@ test("disabled option: death edge sends nothing, foreign bounce does not kill", 
     local D = fresh()
     D.configure(SD_OFF)
     D.on_bounced(bounce("Other", server_now + 10))
-    world.pawn.hp = 0
+    world.pawn.dead = true
     ticks(D, 3)
     assert(#sent == 0, "sent " .. #sent)
-    assert(world.pawn.hp == 0, "kill applied while disabled")
+    assert(world.pawn.die_on_update == false, "kill queued while disabled")
     assert(died_of("kill pending") == false)
 end)
 
@@ -120,7 +138,7 @@ test("enabled: death edge bounces once; still dead does not resend", function()
     local D = fresh()
     D.configure(SD_ON)
     ticks(D, 1)
-    world.pawn.hp = 0
+    world.pawn.dead = true
     ticks(D, 1)
     assert(#sent == 1, "sent " .. #sent)
     assert(sent[1].source == "P1" and sent[1].cause == "death", "payload wrong")
@@ -132,7 +150,7 @@ end)
 test("revive then die again sends a second bounce", function()
     local D = fresh()
     die_and_revive(D)
-    world.pawn.hp = 0
+    world.pawn.dead = true
     ticks(D, 1)
     assert(#sent == 2, "sent " .. #sent)
 end)
@@ -143,7 +161,7 @@ test("own bounce echo is ignored", function()
     D.on_bounced(bounce("P1", server_now + 100))
     assert(died_of("echo"), "echo not logged")
     ticks(D, 1)
-    assert(world.pawn.hp == 3, "own echo killed us")
+    assert(world.pawn.dead == false, "own echo killed us")
 end)
 
 test("stale bounce (time <= our last bounce) is ignored", function()
@@ -152,10 +170,10 @@ test("stale bounce (time <= our last bounce) is ignored", function()
     D.on_bounced(bounce("Other", sent[1].time))
     D.on_bounced(bounce("Other", sent[1].time - 1))
     ticks(D, 1)
-    assert(world.pawn.hp == 3, "stale bounce killed us")
+    assert(world.pawn.dead == false, "stale bounce killed us")
 end)
 
-test("foreign bounce kills on the game thread; induced death does not bounce", function()
+test("foreign bounce queues the game death on its thread; induced death does not bounce", function()
     local D = fresh()
     D.configure(SD_ON)
     ticks(D, 1)
@@ -163,13 +181,15 @@ test("foreign bounce kills on the game thread; induced death does not bounce", f
     assert(died_of("kill pending"), "no pending-kill log")
     H.tick(D, {})
     assert(H.queued() == 1, "kill not queued")
-    assert(world.pawn.hp == 3, "written before the game thread ran")
+    assert(world.pawn.die_on_update == false, "written before the game thread ran")
     H.pump()
-    assert(world.pawn.hp == 0, "hp is " .. tostring(world.pawn.hp))
+    assert(world.pawn.die_on_update == true, "DieOnUpdate not set")
+    game_tick()
+    assert(world.pawn.dead == true, "the game never applied the death")
     ticks(D, 2)
     assert(#sent == 0, "induced death bounced out")
     assert(died_of("suppressed"), "no suppression log")
-    assert(died_of("kill applied"), "no kill-applied log")
+    assert(died_of("kill queued"), "no kill-queued log")
 end)
 
 test("after the induced death, a natural death bounces again", function()
@@ -177,66 +197,29 @@ test("after the induced death, a natural death bounces again", function()
     D.configure(SD_ON)
     D.on_bounced(bounce("Other", server_now + 100))
     ticks(D, 2)
-    assert(world.pawn.hp == 0)
-    world.pawn.hp = 3
+    assert(world.pawn.dead)
+    world.pawn.dead = false
     ticks(D, 1)
-    world.pawn.hp = 0
+    world.pawn.dead = true
     ticks(D, 1)
     assert(#sent == 1, "sent " .. #sent)
     assert(sent[1].source == "P1")
 end)
 
-test("kill write does not stick: WARN, no retry, no bounce", function()
+test("DieOnUpdate write does not stick: WARN, no retry, no bounce", function()
     local D = fresh()
     D.configure(SD_ON)
     world.pawn.reject_write = true
     D.on_bounced(bounce("Other", server_now + 100))
     H.tick(D, {})
     H.pump()
-    assert(died_of("write did not stick"), "no WARN")
+    assert(died_of("DieOnUpdate write did not stick"), "no WARN")
     ticks(D, 5)
     assert(H.queued() == 0, "kill retried")
     assert(#sent == 0, "bounced anyway")
     world.pawn.reject_write = false
-    assert(world.pawn.hp == 2, "fake should have rejected the write")
-end)
-
-test("no health set: WARN, kill dropped", function()
-    local D = fresh()
-    D.configure(SD_ON)
-    world.pawn = new_pawn({ no_health = true })
-    D.on_bounced(bounce("Other", server_now + 100))
-    ticks(D, 3)
-    assert(died_of("health attribute set not found"), "no WARN")
-    assert(H.queued() == 0, "retried with no health set")
-end)
-
-test("kill hits Spyro's set when an enemy's set comes first", function()
-    local D = fresh()
-    D.configure(SD_ON)
-    local e = enemy_set(999)
-    world.enemy_sets = { e }
-    D.on_bounced(bounce("Other", server_now + 100))
-    H.tick(D, {})
-    H.pump()
-    world.enemy_sets = nil
-    assert(world.pawn.hp == 0, "spyro hp " .. tostring(world.pawn.hp))
-    assert(e.hp == 5, "enemy set was killed")
-    assert(died_of("kill applied"), "no kill-applied log")
-end)
-
-test("no set belongs to the pawn: WARN, kill dropped, enemies untouched", function()
-    local D = fresh()
-    D.configure(SD_ON)
-    world.pawn = new_pawn({ no_health = true })
-    local e1, e2 = enemy_set(997), enemy_set(998)
-    world.enemy_sets = { e1, e2 }
-    D.on_bounced(bounce("Other", server_now + 100))
-    ticks(D, 3)
-    world.enemy_sets = nil
-    assert(died_of("health attribute set not found"), "no WARN")
-    assert(H.queued() == 0, "retried with no health set")
-    assert(e1.hp == 5 and e2.hp == 5, "an enemy set was killed")
+    assert(world.pawn.die_on_update == false, "fake should have rejected the write")
+    assert(world.pawn.dead == false, "fake should not have died")
 end)
 
 test("no pawn: tick no-ops and the pending kill is held", function()
@@ -249,21 +232,21 @@ test("no pawn: tick no-ops and the pending kill is held", function()
     assert(D.status():find("pending=true", 1, true), "status: " .. D.status())
     world.pawn = new_pawn()
     ticks(D, 2)
-    assert(world.pawn.hp == 0, "held kill never applied")
+    assert(world.pawn.dead == true, "held kill never applied")
 end)
 
 test("send failure: no retry on the same death edge", function()
     local D = fresh()
     D.configure(SD_ON)
     fail_send = true
-    world.pawn.hp = 0
+    world.pawn.dead = true
     ticks(D, 3)
     assert(#sent == 0)
     assert(died_of("bounce send failed"), "no failure log")
     fail_send = false
-    world.pawn.hp = 3
+    world.pawn.dead = false
     ticks(D, 1)
-    world.pawn.hp = 0
+    world.pawn.dead = true
     ticks(D, 1)
     assert(#sent == 1, "next death should send")
 end)

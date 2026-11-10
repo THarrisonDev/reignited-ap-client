@@ -1,10 +1,10 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-26
--- Updated: 2026-10-23
+-- Updated: 2026-11-09
 
 -- death_link: AP DeathLink — Spyro's own deaths bounce to the other DeathLink
--- players, and an incoming bounce kills Spyro here with the full-strength
--- damage-trap lever (pawn health set HealthCurrent -> 0). Echo protection runs
+-- players, and an incoming bounce queues the game's own death path
+-- (pawn DieOnUpdate -> OnDeath/HandleDeath -> respawn). Echo protection runs
 -- both ways.
 --
 -- Pure logic: send/now/me are injected (main wires ap:Bounce,
@@ -40,23 +40,19 @@ local num = U.prop
 -- ---------------------------------------------------------------------------
 -- game-thread work (only ever called from inside a job)
 -- ---------------------------------------------------------------------------
---- Write pawn's health to 0, marking the induced death as suppressed; a
---- readback that does not stick drops the kill and clears the suppression.
+--- Queue the pawn's own death path (DieOnUpdate), marking the induced death as
+--- suppressed; a readback that does not stick drops the kill and clears the
+--- suppression.
 local function run_kill(pawn)
     if not valid(pawn) then return end
-    local set = U.find_health_set(pawn)
-    if not set then
-        log.warn("kill: health attribute set not found (incoming death dropped)")
-        return
-    end
     suppress = true
-    set["HealthCurrent"] = 0
-    local back = num(set, "HealthCurrent")
-    if back == 0 then
-        log.info("kill applied (HealthCurrent -> 0)")
+    pawn["DieOnUpdate"] = true
+    local back = num(pawn, "DieOnUpdate")
+    if back == true then
+        log.info("kill queued (DieOnUpdate)")
     else
         suppress = false
-        log.warn("kill: write did not stick (readback " ..
+        log.warn("kill: DieOnUpdate write did not stick (readback " ..
             tostring(back) .. ") — incoming death dropped")
     end
 end
