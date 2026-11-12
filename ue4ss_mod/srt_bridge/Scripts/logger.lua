@@ -1,19 +1,55 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-26
--- Updated: 2026-10-23
+-- Updated: 2026-11-09
 
 -- logger: leveled logging and config for the bridge (split out of main.lua).
 -- Every line lands in bridge.log; info/warn/error also reach the UE4SS
--- console, debug only when config debug=1. BRIDGE_DIR is defined here — the
+-- console, debug only when config debug=1. BRIDGE_DIR is resolved here — the
 -- single bridge path prefix in the Scripts/ tree; main.lua derives every
--- bridge file path from it.
+-- bridge file path from it. The folder is %LOCALAPPDATA%\srtap_bridge, with
+-- the legacy C:/srtap_bridge/ as fallback (docs/client_paths.md).
 --
--- Config: C:/srtap_bridge/config.txt (key=value lines), loaded at require
--- time. See the defaults on M.cfg below.
+-- Config: <bridge>/config.txt (key=value lines), loaded at require time. See
+-- the defaults on M.cfg below.
 
 local M = {}
 
-local BRIDGE_DIR = "C:/srtap_bridge/"
+local LEGACY_DIR = "C:/srtap_bridge/"
+
+--- Return dir with backslashes as forward slashes and no trailing slash.
+--- @param dir string
+--- @return string
+local function normalize(dir)
+    return (dir:gsub("\\", "/"):gsub("/+$", ""))
+end
+
+--- Return whether dir holds the config file or checkd's executable.
+--- @param dir string Bridge folder, with its trailing slash.
+--- @return boolean
+local function has_bridge_file(dir)
+    for _, name in ipairs({"config.txt", "srtap_checkd.exe"}) do
+        local f = io.open(dir .. name, "r")
+        if f then f:close() return true end
+    end
+    return false
+end
+
+--- Return the bridge folder (trailing slash): the first of base's
+--- srtap_bridge and legacy that exists, then base's when base is set, else
+--- legacy.
+--- @param base string|nil LOCALAPPDATA as the game sees it.
+--- @param legacy string Legacy bridge folder.
+--- @param exists fun(dir: string):boolean Bridge-folder probe.
+--- @return string
+function M.resolve_bridge(base, legacy, exists)
+    local new
+    if base and base ~= "" then new = normalize(base) .. "/srtap_bridge/" end
+    if new and exists(new) then return new end
+    if exists(legacy) then return legacy end
+    return new or legacy
+end
+
+local BRIDGE_DIR = M.resolve_bridge(os.getenv("LOCALAPPDATA"), LEGACY_DIR, has_bridge_file)
 local LOG = BRIDGE_DIR .. "bridge.log"
 local DEBUG = false
 

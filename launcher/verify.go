@@ -7,6 +7,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -44,25 +45,19 @@ func modEnabled(modsTxt string) (enabled bool, found bool) {
 }
 
 // Verify runs the setup checks against the resolved paths and returns them in
-// display order. It never mutates anything on disk.
+// display order. It never leaves a change on disk (the writability probe
+// creates and removes one temp file).
 func Verify(p Paths) []Check {
-	var checks []Check
-
 	if p.ConfigDir == "" || p.GameWin64 == "" {
-		return append(checks, Check{
+		return []Check{{
 			Name:   "Folder locations",
 			OK:     false,
 			Detail: "both folders are required",
 			Fix:    "Set the Bridge folder and Game folder override under Folder locations, then save.",
-		})
+		}}
 	}
 
-	checks = append(checks, Check{
-		Name:   "Bridge folder",
-		OK:     dirExists(p.ConfigDir),
-		Detail: p.ConfigDir,
-		Fix:    "The launcher creates this when you save the config. If it stays missing, check the path override points at the game's Proton prefix (Linux) or C:\\srtap_bridge (Windows).",
-	})
+	checks := bridgeChecks(p)
 
 	checkd := filepath.Join(p.ConfigDir, "srtap_checkd.exe")
 	checks = append(checks, Check{
@@ -78,6 +73,9 @@ func Verify(p Paths) []Check {
 		Detail: p.GameWin64,
 		Fix:    "Point the Game folder override at your Spyro Reignited Trilogy install's Falcon\\Binaries\\Win64 (it may be on a different Steam library drive).",
 	})
+	if check, ok := writableCheck(p); ok {
+		checks = append(checks, check)
+	}
 
 	dwmapi := filepath.Join(p.GameWin64, "dwmapi.dll")
 	ue4ss := filepath.Join(p.GameWin64, "UE4SS.dll")
@@ -119,6 +117,79 @@ func Verify(p Paths) []Check {
 	})
 
 	return checks
+}
+
+// bridgeChecks returns the bridge-folder checks: the folder itself plus, on
+// Linux, whether another prefix holds newer bridge activity than it.
+func bridgeChecks(p Paths) []Check {
+	fix := "The launcher creates this when you save the config. If it stays missing, check the path override points at the game's Proton prefix (Linux) or C:\\srtap_bridge (Windows)."
+	if runtime.GOOS != "windows" && !p.PrefixReady {
+		fix = "Launch the game once through Steam so it creates the Proton prefix, then click Install / update setup."
+	}
+	checks := []Check{{
+		Name:   "Bridge folder",
+		OK:     dirExists(p.ConfigDir),
+		Detail: p.ConfigDir,
+		Fix:    fix,
+	}}
+	if match, ok := bridgeMatchesGame(p); ok {
+		checks = append(checks, match)
+	}
+	return checks
+}
+
+// writableCheck returns the game-folder permission check and whether it applies
+// (only when the folder exists).
+func writableCheck(p Paths) (Check, bool) {
+	if !dirExists(p.GameWin64) {
+		return Check{}, false
+	}
+	return Check{
+		Name:   "Game folder writable",
+		OK:     probeWritable(p.GameWin64) == nil,
+		Detail: p.GameWin64,
+		Fix:    "Run install.bat as administrator (Steam is under Program Files), or move the Steam library to a user-writable drive.",
+	}, true
+}
+
+// bridgeMatchesGame reports whether another Proton prefix has newer bridge
+// activity than the selected folder. It runs only for a Linux layout backed by
+// a real prefix that actually sits inside a prefix, so a temp or test layout
+// never consults the developer's Steam install. ok is false when the check does
+// not apply; with no bridge log anywhere it passes, so a fresh install is not a
+// false red.
+func bridgeMatchesGame(p Paths) (Check, bool) {
+	if runtime.GOOS == "windows" || !p.PrefixReady || !insidePrefix(p.ConfigDir) {
+		return Check{}, false
+	}
+	best := bestEvidencePrefix(discover().Prefixes)
+	check := Check{Name: "Bridge folder matches the game", OK: true, Detail: p.ConfigDir}
+	if best == nil || best.LogTime == 0 {
+		return check, true
+	}
+	if best.LogTime <= fileModTime(filepath.Join(p.ConfigDir, "bridge.log")) {
+		return check, true
+	}
+	check.OK = false
+	check.Detail = "newer bridge activity in " + best.Bridge
+	check.Fix = "Set the Bridge folder to " + best.Bridge + " and save (or click Reset to auto-detected)."
+	return check, true
+}
+
+// insidePrefix reports whether dir sits inside a Proton prefix: one of its
+// ancestors holds a drive_c directory.
+func insidePrefix(dir string) bool {
+	d := filepath.Clean(dir)
+	for {
+		if dirExists(filepath.Join(d, "drive_c")) {
+			return true
+		}
+		parent := filepath.Dir(d)
+		if parent == d {
+			return false
+		}
+		d = parent
+	}
 }
 
 // AllOK reports whether every check passed.

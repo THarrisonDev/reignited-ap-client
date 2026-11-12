@@ -13,8 +13,10 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -224,8 +226,9 @@ func TestInstallEndToEnd(t *testing.T) {
 	mkfile(t, filepath.Join(win64, "UE4SS.dll"))
 	mkfile(t, filepath.Join(win64, "Mods", "mods.txt"))
 
-	p := Paths{ConfigDir: cfgDir, GameWin64: win64}
-	for _, r := range Install(p, src, installOptions{NoDownload: true}) {
+	p := Paths{ConfigDir: cfgDir, GameWin64: win64, PrefixReady: true}
+	results, _ := Install(p, src, installOptions{NoDownload: true})
+	for _, r := range results {
 		if !r.OK {
 			t.Errorf("step %q failed: %s", r.Step, r.Detail)
 		}
@@ -303,7 +306,8 @@ func installFrom(t *testing.T, srv *httptest.Server, opts installOptions) (strin
 		t.Fatal(err)
 	}
 	opts.UE4SSURL, opts.HTTPClient = srv.URL, srv.Client()
-	return win64, Install(Paths{ConfigDir: filepath.Join(root, "bridge"), GameWin64: win64}, "", opts)
+	res, _ := Install(Paths{ConfigDir: filepath.Join(root, "bridge"), GameWin64: win64}, "", opts)
+	return win64, res
 }
 
 // stepOf returns the named install step, or nil.
@@ -319,7 +323,7 @@ func stepOf(res []installResult, name string) *installResult {
 // TestInstallEmptyPathsRefused: unresolved folders must be refused before any
 // path is created (otherwise a relative default would land in the cwd).
 func TestInstallEmptyPathsRefused(t *testing.T) {
-	res := Install(Paths{}, "", installOptions{NoDownload: true})
+	res, _ := Install(Paths{}, "", installOptions{NoDownload: true})
 	if len(res) != 1 || res[0].OK {
 		t.Fatalf("empty paths must be a single failed step: %+v", res)
 	}
@@ -332,7 +336,7 @@ func TestInstallMissingGameFolder(t *testing.T) {
 	root := t.TempDir()
 	win64 := filepath.Join(root, "no-such-win64")
 
-	res := Install(Paths{ConfigDir: filepath.Join(root, "bridge"), GameWin64: win64},
+	res, _ := Install(Paths{ConfigDir: filepath.Join(root, "bridge"), GameWin64: win64},
 		"", installOptions{NoDownload: true})
 	step := stepOf(res, "Game folder")
 	if step == nil || step.OK {
@@ -349,7 +353,7 @@ func TestInstallMissingSourcesReported(t *testing.T) {
 	mkfile(t, filepath.Join(win64, "dwmapi.dll"))
 	mkfile(t, filepath.Join(win64, "UE4SS.dll"))
 
-	res := Install(Paths{ConfigDir: filepath.Join(root, "bridge"), GameWin64: win64},
+	res, _ := Install(Paths{ConfigDir: filepath.Join(root, "bridge"), GameWin64: win64},
 		filepath.Join(root, "empty-src"), installOptions{NoDownload: true})
 	byStep := map[string]installResult{}
 	for _, r := range res {
@@ -360,5 +364,135 @@ func TestInstallMissingSourcesReported(t *testing.T) {
 	}
 	if byStep["srt_bridge mod"].OK {
 		t.Error("mod step should fail with no source artifact")
+	}
+}
+
+// installedGame creates a Win64 folder with UE4SS and mods.txt already in place,
+// so no download is attempted.
+func installedGame(t *testing.T, root string) string {
+	t.Helper()
+	win64 := filepath.Join(root, "win64")
+	mkfile(t, filepath.Join(win64, "dwmapi.dll"))
+	mkfile(t, filepath.Join(win64, "UE4SS.dll"))
+	mkfile(t, filepath.Join(win64, "Mods", "mods.txt"))
+	return win64
+}
+
+// TestInstallMigratesLegacyBridge pins the contract's migration: a legacy
+// bridge folder is copied into the new location, the legacy tree is kept, and
+// the returned paths follow the new folder.
+func TestInstallMigratesLegacyBridge(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Proton prefix layout")
+	}
+	root := t.TempDir()
+	driveC := filepath.Join(root, "pfx", "drive_c")
+	legacy := legacyBridgeForDriveC(driveC)
+	newDir := newBridgeForDriveC(driveC)
+	mkfile(t, filepath.Join(legacy, "config.txt"))
+	mkfile(t, filepath.Join(legacy, "keep", "old.txt"))
+	mkfile(t, filepath.Join(legacy, "checkd.hb"))
+	src := filepath.Join(root, "src")
+	mkfile(t, filepath.Join(src, "srtap_checkd.exe"))
+
+	res, effective := Install(Paths{ConfigDir: legacy, GameWin64: installedGame(t, root),
+		PrefixReady: true}, src, installOptions{NoDownload: true})
+
+	step := stepOf(res, "Bridge folder")
+	if step == nil || !step.OK || !strings.Contains(step.Detail, "migrated") {
+		t.Fatalf("expected a migration step: %+v", res)
+	}
+	if effective.ConfigDir != newDir {
+		t.Fatalf("effective ConfigDir = %s, want %s", effective.ConfigDir, newDir)
+	}
+	assertMigratedBridge(t, newDir, legacy)
+}
+
+// assertMigratedBridge checks a migrated bridge: the copied files are present,
+// the session-scoped heartbeat is not, and the legacy tree is untouched.
+func assertMigratedBridge(t *testing.T, newDir, legacy string) {
+	t.Helper()
+	for _, rel := range []string{"config.txt", "keep/old.txt", "srtap_checkd.exe"} {
+		if !fileExists(filepath.Join(newDir, filepath.FromSlash(rel))) {
+			t.Errorf("%s missing from the new bridge folder", rel)
+		}
+	}
+	if fileExists(filepath.Join(newDir, "checkd.hb")) {
+		t.Error("a copied heartbeat would make a fresh checkd exit")
+	}
+	if !fileExists(filepath.Join(legacy, "config.txt")) || !fileExists(filepath.Join(legacy, "checkd.hb")) {
+		t.Error("the legacy bridge tree must be kept")
+	}
+}
+
+// TestInstallNoPrefixDefersBridge: with no Proton prefix the game steps still
+// run, the bridge step reports the deferred-install message and nothing is
+// created anywhere in the prefix tree.
+func TestInstallNoPrefixDefersBridge(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Proton prefix layout")
+	}
+	_, root := steamTree(t)
+	win64 := installedGame(t, t.TempDir())
+	p := Paths{ConfigDir: newBridgeForDriveC(compatdataDriveC(root)), GameWin64: win64}
+
+	res, effective := Install(p, "", installOptions{NoDownload: true})
+
+	step := stepOf(res, "Bridge folder")
+	if step == nil || step.OK || !strings.Contains(step.Detail, "no Proton prefix found") {
+		t.Fatalf("expected a deferred bridge step: %+v", res)
+	}
+	if stepOf(res, "UE4SS") == nil {
+		t.Fatalf("game-folder steps must still run without a prefix: %+v", res)
+	}
+	if effective.ConfigDir != p.ConfigDir {
+		t.Fatalf("deferred install must not move the bridge: %s", effective.ConfigDir)
+	}
+	if dirExists(filepath.Join(root, "steamapps", "compatdata")) {
+		t.Fatal("a deferred install must not create compatdata")
+	}
+	if dirExists(effective.ConfigDir) {
+		t.Fatal("a deferred install must not create the bridge folder")
+	}
+}
+
+// TestInstallGameFolderNotWritable: the writability preflight reports a
+// targeted permissions step and never attempts the UE4SS download.
+func TestInstallGameFolderNotWritable(t *testing.T) {
+	root := t.TempDir()
+	win64 := filepath.Join(root, "win64")
+	if err := os.MkdirAll(win64, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(win64, 0555); err != nil {
+		t.Skipf("cannot make the folder read-only: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(win64, 0755) })
+	if probeWritable(win64) == nil {
+		t.Skip("the folder is still writable (running as root)")
+	}
+
+	var downloads atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		downloads.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+
+	res, _ := Install(Paths{ConfigDir: filepath.Join(t.TempDir(), "bridge"), GameWin64: win64},
+		"", installOptions{UE4SSURL: srv.URL, HTTPClient: srv.Client()})
+
+	step := stepOf(res, "Folder permissions")
+	if step == nil || step.OK {
+		t.Fatalf("expected a failed permissions step: %+v", res)
+	}
+	if !strings.Contains(step.Detail, "not writable") || !strings.Contains(step.Detail, "administrator") {
+		t.Fatalf("permissions detail should name the cause: %s", step.Detail)
+	}
+	if stepOf(res, "UE4SS") != nil {
+		t.Fatal("the UE4SS step must not run on an unwritable game folder")
+	}
+	if got := downloads.Load(); got != 0 {
+		t.Fatalf("UE4SS was downloaded %d time(s)", got)
 	}
 }

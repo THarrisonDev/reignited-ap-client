@@ -12,7 +12,7 @@
 
 local logger = require("logger")
 
-local DEFAULT_NOTICE = "C:/srtap_bridge/checkd.status.json"
+local DEFAULT_NOTICE = logger.bridge_dir .. "checkd.status.json"
 
 local shown_text = nil -- last notice text handed to the host
 

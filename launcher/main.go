@@ -1,6 +1,6 @@
 // Author: Tim Harrison
 // Created: 2026-09-26
-// Updated: 2026-10-31
+// Updated: 2026-11-11
 
 package main
 
@@ -37,6 +37,8 @@ var htmxJS []byte
 type server struct {
 	mu           sync.Mutex
 	paths        Paths
+	autoConfig   bool // ConfigDir is auto-detected; see loadPaths
+	autoGame     bool // GameWin64 is auto-detected; see loadPaths
 	tmpl         *template.Template
 	feed         *Feed
 	token        string // per-run CSRF token; see checkCSRF
@@ -45,16 +47,50 @@ type server struct {
 }
 
 type view struct {
-	Paths    Paths
-	Token    string
-	Host     string
-	Slot     string
-	Password string
-	Checks   []Check
-	AllOK    bool
-	Flash    string
-	Feed     feedView
-	Install  []installResult
+	Paths      Paths
+	Token      string
+	Host       string
+	Slot       string
+	Password   string
+	Checks     []Check
+	AllOK      bool
+	Flash      string
+	Feed       feedView
+	Hints      hintView
+	Install    []installResult
+	ConfigAuto bool     // show "(auto-detected)" by the Bridge folder
+	GameAuto   bool     // show "(auto-detected)" by the Game folder
+	Discovery  []string // what detection found, one short line per item
+	Linux      bool     // show the Proton launch-option note
+	NextTab    string   // tab the page should switch to; empty to stay put
+}
+
+// hintView is the hint panel: the slot's point balance, the price of one hint,
+// the hints it already holds, and the names the hint form offers.
+type hintView struct {
+	Connected   bool
+	PointsKnown bool // the room has reported a balance
+	Points      int
+	Cost        int
+	Free        bool // a hint costs nothing, so asking needs no confirmation
+	Hints       []feedHint
+	Missing     []string
+	Items       []string
+	Notice      string
+}
+
+// hintResults is the hint form's suggestion fragment for one field: the names
+// one search offers, capped, or the one-line state saying why it offers none.
+type hintResults struct {
+	Field  string // "location" or "item"
+	Param  string // the input name the query arrived in: loc_name or item_name
+	Query  string
+	Shown  []string
+	Total  int
+	Capped bool
+	Cost   int
+	Free   bool
+	Prompt string
 }
 
 // newToken returns a random per-run CSRF token. The launcher is a local web UI
@@ -99,8 +135,9 @@ func (s *server) readConn() (feedConn, error) {
 
 // buildView reads current config + verify results into the template model.
 // config.txt is the source of truth for host/slot/password; the launcher's own
-// path overrides are held in s.paths. install carries the step log of a just-
-// run install (nil for a plain page load).
+// folders and their auto flags are held in s.paths/s.autoConfig/s.autoGame.
+// install carries the step log of a just-run install (nil for a plain page
+// load).
 func (s *server) buildView(flash string, install []installResult) view {
 	conn, err := s.readConn()
 	if err != nil {
@@ -113,17 +150,55 @@ func (s *server) buildView(flash string, install []installResult) view {
 	}
 	checks := Verify(s.paths)
 	return view{
-		Paths:    s.paths,
-		Token:    s.token,
-		Host:     conn.Host,
-		Slot:     slot,
-		Password: conn.Password,
-		Checks:   checks,
-		AllOK:    AllOK(checks),
-		Flash:    strings.TrimSpace(flash),
-		Feed:     s.feed.View(),
-		Install:  install,
+		Paths:      s.paths,
+		Token:      s.token,
+		Host:       conn.Host,
+		Slot:       slot,
+		Password:   conn.Password,
+		Checks:     checks,
+		AllOK:      AllOK(checks),
+		Flash:      strings.TrimSpace(flash),
+		Feed:       s.feed.View(),
+		Hints:      s.feed.HintView(),
+		Install:    install,
+		ConfigAuto: s.autoConfig,
+		GameAuto:   s.autoGame,
+		Discovery:  discoveryLines(),
+		Linux:      runtime.GOOS != "windows",
 	}
+}
+
+// discoveryLines summarizes what detection found for the page: the Steam roots,
+// libraries, game, prefix and chosen bridge, one short line each so the player
+// can copy them into a support report.
+func discoveryLines() []string {
+	d := discover()
+	lines := []string{
+		joinList("Steam roots", d.Roots),
+		joinList("Libraries", d.Libraries),
+		joinList("Game", []string{d.GameWin64}),
+	}
+	if d.Prefix != "" {
+		lines = append(lines, "Prefix: "+d.Prefix)
+	} else {
+		lines = append(lines, "Prefix: none — "+d.Note)
+	}
+	return append(lines, joinList("Bridge", []string{defaultPaths().ConfigDir}))
+}
+
+// joinList renders "Label: a, b", dropping empty entries; "Label: none" when
+// nothing was found.
+func joinList(label string, vals []string) string {
+	var kept []string
+	for _, v := range vals {
+		if v != "" {
+			kept = append(kept, v)
+		}
+	}
+	if len(kept) == 0 {
+		return label + ": none"
+	}
+	return label + ": " + strings.Join(kept, ", ")
 }
 
 func (s *server) handleRoot(w http.ResponseWriter, r *http.Request) {
@@ -162,16 +237,17 @@ func (s *server) requirePost(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
-// handleReset re-detects folders and forgets any saved overrides. POST only;
-// any posted fields are ignored. It redirects to the full page so the path
-// fields re-render with the defaults.
+// handleReset re-detects folders and forgets any saved overrides, so both
+// fields go back to auto. POST only; any posted fields are ignored. It
+// redirects to the full page so the path fields re-render with the defaults.
 func (s *server) handleReset(w http.ResponseWriter, r *http.Request) {
 	if !s.requirePost(w, r) {
 		return
 	}
 	s.mu.Lock()
+	s.autoConfig, s.autoGame = true, true
 	s.paths = defaultPaths()
-	err := savePaths(s.paths)
+	err := savePaths(s.paths, true, true)
 	s.mu.Unlock()
 	target := "/?flash=reset"
 	if err != nil {
@@ -180,34 +256,27 @@ func (s *server) handleReset(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
-// handleApply is the single HTMX endpoint: it applies path overrides + config
-// edits (and optionally launches), then returns the "panel" fragment (flash +
-// refreshed setup checks) for HTMX to swap into #panel.
+// handleApply applies path overrides + config edits (and optionally launches),
+// answering with the "apply" fragment: refreshed setup checks for #panel, and the
+// flash as an out-of-band swap so it shows on whichever tab the player is on.
 func (s *server) handleApply(w http.ResponseWriter, r *http.Request) {
 	if !s.requirePost(w, r) {
 		return
 	}
 	action := r.FormValue("action")
-
 	paths, saveErr := s.applyPathOverrides(r)
 
-	var flash string
+	var flash, nextTab string
 	var install []installResult
 	switch action {
 	case "recheck":
 		flash = "Setup re-checked."
 	case "install":
-		// Install runs WITHOUT the lock: the UE4SS download takes minutes and
-		// the feed goroutine must keep answering the page while it does.
-		if !s.tryStartInstall() {
-			flash = "An install is already running — wait for it to finish."
-			break
-		}
-		install = Install(paths, sourceDir(), installOptions{})
-		s.finishInstall()
-		flash = summarizeInstall(install)
+		var err error
+		install, flash, err = s.installAction(paths)
+		saveErr = firstError(saveErr, err)
 	case "save", "launch":
-		flash = s.applyConnection(r, action == "launch")
+		flash, nextTab = s.applyConnection(r, action == "launch")
 	default:
 		flash = "Unknown action."
 	}
@@ -218,24 +287,71 @@ func (s *server) handleApply(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	panel := s.buildView(flash, install)
 	s.mu.Unlock()
-	if err := s.tmpl.ExecuteTemplate(w, "panel", panel); err != nil {
-		log.Printf("panel execute: %v", err)
+	panel.NextTab = nextTab
+	if err := s.tmpl.ExecuteTemplate(w, "apply", panel); err != nil {
+		log.Printf("apply execute: %v", err)
 	}
 }
 
-// applyPathOverrides merges the posted folder overrides into the launcher's own
-// state, persists them so they survive a restart, and returns the paths the
-// action should use.
+// installAction runs one install and adopts the folders it used. Install runs
+// WITHOUT the lock: the UE4SS download takes minutes and the feed goroutine must
+// keep answering the page while it does. It returns the step log, the flash text
+// and a state-save error (nil when the run could not start).
+func (s *server) installAction(paths Paths) ([]installResult, string, error) {
+	if !s.tryStartInstall() {
+		return nil, "An install is already running — wait for it to finish.", nil
+	}
+	install, effective := Install(paths, sourceDir(), installOptions{})
+	s.finishInstall()
+	return install, summarizeInstall(install), s.adoptInstallPaths(effective)
+}
+
+// adoptInstallPaths stores the folders an install wrote to and saves them with
+// the current auto flags, so the UI and later config writes follow a bridge
+// folder the install migrated.
+func (s *server) adoptInstallPaths(effective Paths) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.paths = effective
+	return savePaths(s.paths, s.autoConfig, s.autoGame)
+}
+
+// firstError returns a when it is set, else b, so the flash names the first
+// failure without repeating either.
+func firstError(a, b error) error {
+	if a != nil {
+		return a
+	}
+	return b
+}
+
+// applyPathOverrides merges the posted folders into the launcher's own state,
+// persists them so they survive a restart, and returns the paths the action
+// should use. A posted value equal to what the page rendered keeps that field's
+// auto flag; a different value makes it an explicit override. Auto fields are
+// re-detected, with the bridge following the game folder so a fixed Game folder
+// still resolves to the right Proton prefix on Linux.
 func (s *server) applyPathOverrides(r *http.Request) (Paths, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if v := strings.TrimSpace(r.FormValue("config_dir")); v != "" {
-		s.paths.ConfigDir = v
+	if v := strings.TrimSpace(r.FormValue("config_dir")); v != "" && !samePath(v, s.paths.ConfigDir) {
+		s.paths.ConfigDir, s.autoConfig = v, false
 	}
-	if v := strings.TrimSpace(r.FormValue("game_win64")); v != "" {
-		s.paths.GameWin64 = v
+	if v := strings.TrimSpace(r.FormValue("game_win64")); v != "" && !samePath(v, s.paths.GameWin64) {
+		s.paths.GameWin64, s.autoGame = v, false
 	}
-	return s.paths, savePaths(s.paths)
+	base := defaultPaths()
+	if s.autoGame {
+		s.paths.GameWin64 = base.GameWin64
+	}
+	if s.autoConfig {
+		if bridge, ready := bridgeForGameWin64(s.paths.GameWin64); bridge != "" {
+			s.paths.ConfigDir, s.paths.PrefixReady = bridge, ready
+		} else {
+			s.paths.ConfigDir, s.paths.PrefixReady = base.ConfigDir, base.PrefixReady
+		}
+	}
+	return s.paths, savePaths(s.paths, s.autoConfig, s.autoGame)
 }
 
 // tryStartInstall claims the single install slot, reporting false when an
@@ -273,13 +389,46 @@ func summarizeInstall(results []installResult) string {
 }
 
 // applyConnection merges the posted host/slot/password into config.txt and
-// returns the flash text. It never rewrites a config.txt it could not read, so
-// keys the launcher does not manage are preserved. When launch is set it also
-// starts the game through Steam.
-func (s *server) applyConnection(r *http.Request, launch bool) string {
+// returns the flash text plus the tab to show next (empty to stay put). It never
+// rewrites a config.txt it could not read, so keys the launcher does not manage
+// are preserved. When launch is set it also starts the game through Steam.
+func (s *server) applyConnection(r *http.Request, launch bool) (string, string) {
+	if msg, handled := s.deferWithoutPrefix(launch); handled {
+		return msg, ""
+	}
+	msg, written := s.writeConnection(r)
+	if !written || !launch {
+		return msg, ""
+	}
+	return launchAfterSave()
+}
+
+// deferWithoutPrefix reports the flash text and handled=true when the bridge
+// folder is unknown or, on Linux, sits above a Proton prefix the game has not
+// created yet. Saving then would fabricate the prefix, so it only offers the
+// launch-once guidance; launching stays available to create it.
+func (s *server) deferWithoutPrefix(launch bool) (string, bool) {
+	if s.paths.ConfigDir == "" {
+		return "No bridge folder is known yet — set the Bridge folder under Folder locations, then save.", true
+	}
+	if runtime.GOOS == "windows" || s.paths.PrefixReady || dirExists(filepath.Dir(s.paths.ConfigDir)) {
+		return "", false
+	}
+	if !launch {
+		return "Not saved yet: launch the game once through Steam so it creates the Proton prefix, then click Save again.", true
+	}
+	if err := launchGame(); err != nil {
+		return "Launching the game failed: " + err.Error() + " — start it from Steam once, then save your config.", true
+	}
+	return "Launching Spyro… the first run creates the Proton prefix; after you pick a save, click Save & launch again to store your connection.", true
+}
+
+// writeConnection reads config.txt, merges the posted connection fields and
+// writes it back, reporting whether the file was written.
+func (s *server) writeConnection(r *http.Request) (string, bool) {
 	cfg, err := ReadConfig(s.configPath())
 	if err != nil {
-		return "Could not read config.txt, so it was left unchanged: " + err.Error()
+		return "Could not read config.txt, so it was left unchanged: " + err.Error(), false
 	}
 	host := normalizeHost(r.FormValue("host"))
 	if host == "" {
@@ -293,15 +442,19 @@ func (s *server) applyConnection(r *http.Request, launch bool) string {
 		cfg.Set("spawn_checkd", "1")
 	}
 	if err := cfg.Write(s.configPath()); err != nil {
-		return "Could not write config.txt: " + err.Error()
+		return "Could not write config.txt: " + err.Error(), false
 	}
-	if !launch {
-		return "Config saved to " + s.configPath()
-	}
+	return "Config saved to " + s.configPath(), true
+}
+
+// launchAfterSave starts the game once the config is on disk and moves the page
+// to the Play tab, where checks arrive. A launch failure keeps the player on
+// Setup with the error, since that is where it gets fixed.
+func launchAfterSave() (string, string) {
 	if err := launchGame(); err != nil {
-		return "Config saved, but launching the game failed: " + err.Error()
+		return "Config saved, but launching the game failed: " + err.Error(), ""
 	}
-	return "Config saved. Launching Spyro… keep this tab open to follow your checks."
+	return "Config saved. Launching Spyro…", "play"
 }
 
 func (s *server) handleHTMX(w http.ResponseWriter, r *http.Request) {
@@ -316,6 +469,151 @@ func (s *server) handleFeed(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleHints returns the hint panel fragment the page polls.
+func (s *server) handleHints(w http.ResponseWriter, r *http.Request) {
+	s.renderHints(w)
+}
+
+// renderHints writes the hint panel fragment that both hint endpoints answer
+// with.
+func (s *server) renderHints(w http.ResponseWriter) {
+	if err := s.tmpl.ExecuteTemplate(w, "hints", s.feed.HintView()); err != nil {
+		log.Printf("hints execute: %v", err)
+	}
+}
+
+// errNoHintName is the notice for a hint request with no name to look up.
+var errNoHintName = errors.New("pick a name from the list first")
+
+// hintResultCap is how many suggestions one search shows.
+const hintResultCap = 20
+
+// handleHintSearch renders the suggestion list for one hint field, reading the
+// feed per request so an early page load still finds the names.
+func (s *server) handleHintSearch(w http.ResponseWriter, r *http.Request) {
+	field, param := hintField(r.FormValue("field"))
+	res := buildHintResults(field, param, strings.TrimSpace(r.FormValue(param)), s.feed.HintView())
+	if err := s.tmpl.ExecuteTemplate(w, "hintResults", res); err != nil {
+		log.Printf("hint search execute: %v", err)
+	}
+}
+
+// hintField maps a search's field to its hint kind and the input name its query
+// arrives in. Anything but "item" searches the slot's unchecked locations.
+func hintField(field string) (kind, param string) {
+	if field == "item" {
+		return "item", "item_name"
+	}
+	return "location", "loc_name"
+}
+
+// buildHintResults picks the names one search offers: the view's own order,
+// capped, with the state line set when it offers none.
+func buildHintResults(field, param, q string, v hintView) hintResults {
+	res := hintResults{Field: field, Param: param, Query: q, Cost: v.Cost, Free: v.Free}
+	if q == "" {
+		res.Prompt = "Type a few letters to search."
+		return res
+	}
+	if !v.Connected {
+		res.Prompt = "Waiting for the server."
+		return res
+	}
+	names := v.Missing
+	if field == "item" {
+		names = v.Items
+	}
+	matches := containing(names, q)
+	res.Total = len(matches)
+	if res.Total == 0 {
+		res.Prompt = fmt.Sprintf("no match for %q", q)
+		return res
+	}
+	res.Shown = spread(matches)
+	res.Shown = res.Shown[:min(len(res.Shown), hintResultCap)]
+	res.Capped = res.Total > hintResultCap
+	return res
+}
+
+// spread interleaves matches that share a parent (the text before a name's last
+// colon), so a capped list covers every game and level, not one family of them.
+func spread(names []string) []string {
+	var order []string
+	buckets := map[string][]string{}
+	for _, n := range names {
+		key := n
+		if i := strings.LastIndex(n, ":"); i >= 0 {
+			key = n[:i]
+		}
+		if _, seen := buckets[key]; !seen {
+			order = append(order, key)
+		}
+		buckets[key] = append(buckets[key], n)
+	}
+	out := make([]string, 0, len(names))
+	for round := 0; len(out) < len(names); round++ {
+		for _, key := range order {
+			if round < len(buckets[key]) {
+				out = append(out, buckets[key][round])
+			}
+		}
+	}
+	return out
+}
+
+// containing returns the names holding q, ignoring case.
+func containing(names []string, q string) []string {
+	needle := strings.ToLower(q)
+	out := make([]string, 0, len(names))
+	for _, n := range names {
+		if strings.Contains(strings.ToLower(n), needle) {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// handleHint turns a posted name into the server's chat hint command and hands
+// it to the live connection; the server's answer arrives later as a notice.
+func (s *server) handleHint(w http.ResponseWriter, r *http.Request) {
+	if !s.requirePost(w, r) {
+		return
+	}
+	cmd := hintCommand(r.FormValue("kind"), hintName(r, "loc_name"), hintName(r, "item_name"))
+	if cmd == "" {
+		s.feed.SetNotice(errNoHintName.Error())
+	} else if err := s.feed.RequestHint(cmd); err != nil {
+		s.feed.SetNotice(err.Error())
+	}
+	s.renderHints(w)
+}
+
+// hintName reads one hint name, letting a result button's query string win over
+// the partial text the form's input still holds.
+func hintName(r *http.Request, key string) string {
+	if v := r.URL.Query().Get(key); v != "" {
+		return v
+	}
+	return r.FormValue(key)
+}
+
+// hintCommand builds the chat command for one hint request: a location in the
+// player's own world, or an item they can receive in any world. It returns an
+// empty command when no name was typed.
+func hintCommand(kind, loc, item string) string {
+	switch kind {
+	case "location":
+		if name := strings.TrimSpace(loc); name != "" {
+			return "!hint_location " + name
+		}
+	case "item":
+		if name := strings.TrimSpace(item); name != "" {
+			return "!hint " + name
+		}
+	}
+	return ""
+}
+
 // currentConn reads the saved connection under the lock, for the feed goroutine.
 func (s *server) currentConn() feedConn {
 	s.mu.Lock()
@@ -325,8 +623,8 @@ func (s *server) currentConn() feedConn {
 }
 
 // launchGame asks Steam to run the game via the steam:// protocol handler,
-// which works the same on Linux and Windows.
-func launchGame() error {
+// which works the same on Linux and Windows. A variable so tests can stub it.
+var launchGame = func() error {
 	return openURL("steam://rungameid/" + appID)
 }
 
@@ -405,29 +703,71 @@ func defaultStateFile() string {
 	return filepath.Join(dir, "srtap-launcher", "paths.json")
 }
 
-func loadPaths() Paths {
-	p := defaultPaths()
+// savedPaths is the launcher's persisted folder state. A nil auto flag marks an
+// older file written before flags existed; loadPaths then infers the flag from
+// the value.
+type savedPaths struct {
+	ConfigDir  string `json:"config_dir"`
+	GameWin64  string `json:"game_win64"`
+	ConfigAuto *bool  `json:"config_dir_auto,omitempty"`
+	GameAuto   *bool  `json:"game_win64_auto,omitempty"`
+}
+
+// loadPaths returns the folders to use and whether each is auto-detected. Auto
+// folders are re-detected on every start; an older state file without flags is
+// auto when its value matches the current detection (or is empty), and an
+// override otherwise. A missing or unreadable file leaves both auto.
+func loadPaths() (p Paths, autoConfig, autoGame bool) {
+	base := defaultPaths()
+	p = base
 	f := launcherStateFile()
 	if f == "" {
-		return p
+		return p, true, true
 	}
 	b, err := os.ReadFile(f)
 	if err != nil {
-		return p
+		return p, true, true
 	}
-	var saved Paths
-	if json.Unmarshal(b, &saved) == nil {
-		if saved.ConfigDir != "" {
-			p.ConfigDir = saved.ConfigDir
-		}
-		if saved.GameWin64 != "" {
-			p.GameWin64 = saved.GameWin64
-		}
+	var saved savedPaths
+	if json.Unmarshal(b, &saved) != nil {
+		return p, true, true
 	}
-	return p
+	saved = withLegacyFields(b, saved)
+	autoConfig = autoFlag(saved.ConfigAuto, saved.ConfigDir, base.ConfigDir)
+	autoGame = autoFlag(saved.GameAuto, saved.GameWin64, base.GameWin64)
+	if !autoConfig && saved.ConfigDir != "" {
+		p.ConfigDir = saved.ConfigDir
+	}
+	if !autoGame && saved.GameWin64 != "" {
+		p.GameWin64 = saved.GameWin64
+	}
+	return p, autoConfig, autoGame
 }
 
-func savePaths(p Paths) error {
+// withLegacyFields fills an empty savedPaths from the state file the releases
+// before the auto flags wrote, which marshalled Paths under its Go field names.
+func withLegacyFields(b []byte, saved savedPaths) savedPaths {
+	if saved.ConfigDir != "" || saved.GameWin64 != "" {
+		return saved
+	}
+	var legacy Paths
+	if json.Unmarshal(b, &legacy) == nil {
+		saved.ConfigDir, saved.GameWin64 = legacy.ConfigDir, legacy.GameWin64
+	}
+	return saved
+}
+
+// autoFlag resolves one field's auto flag: an explicit flag wins, otherwise a
+// saved value matching the current detection (or empty) counts as auto.
+func autoFlag(saved *bool, value, detected string) bool {
+	if saved != nil {
+		return *saved
+	}
+	return value == "" || samePath(value, detected)
+}
+
+// savePaths persists the folders and their auto flags.
+func savePaths(p Paths, autoConfig, autoGame bool) error {
 	f := launcherStateFile()
 	if f == "" {
 		return errors.New("no user config dir")
@@ -435,7 +775,12 @@ func savePaths(p Paths) error {
 	if err := os.MkdirAll(filepath.Dir(f), 0755); err != nil {
 		return err
 	}
-	b, err := json.MarshalIndent(p, "", "  ")
+	b, err := json.MarshalIndent(savedPaths{
+		ConfigDir:  p.ConfigDir,
+		GameWin64:  p.GameWin64,
+		ConfigAuto: &autoConfig,
+		GameAuto:   &autoGame,
+	}, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -445,8 +790,13 @@ func savePaths(p Paths) error {
 // runInstall performs a headless install using the resolved paths and prints
 // one line per step. It returns a process exit code.
 func runInstall(noDownload bool) int {
-	p := loadPaths()
-	results := Install(p, sourceDir(), installOptions{NoDownload: noDownload})
+	p, autoConfig, autoGame := loadPaths()
+	results, effective := Install(p, sourceDir(), installOptions{NoDownload: noDownload})
+	if !samePath(effective.ConfigDir, p.ConfigDir) {
+		if err := savePaths(effective, autoConfig, autoGame); err != nil {
+			fmt.Printf("(couldn't remember the migrated Bridge folder: %v)\n", err)
+		}
+	}
 	ok := true
 	for _, r := range results {
 		mark := "ok  "
@@ -464,13 +814,52 @@ func runInstall(noDownload bool) int {
 	return 0
 }
 
+// detectReport renders what detection found from the filesystem: the host OS,
+// every Steam root and library, the game, every usable prefix with its bridge
+// and evidence times, the chosen prefix, and the resolved folders with their
+// auto flags. It creates nothing.
+func detectReport() string {
+	d := discover()
+	p, autoConfig, autoGame := loadPaths()
+	var b strings.Builder
+	fmt.Fprintf(&b, "os: %s\n", runtime.GOOS)
+	for _, root := range d.Roots {
+		fmt.Fprintf(&b, "steam root: %s\n", root)
+	}
+	for _, lib := range d.Libraries {
+		fmt.Fprintf(&b, "library: %s\n", lib)
+	}
+	if d.GameWin64 == "" {
+		b.WriteString("game: not found\n")
+	} else {
+		fmt.Fprintf(&b, "game: %s\n", d.GameWin64)
+	}
+	for _, pf := range d.Prefixes {
+		fmt.Fprintf(&b, "prefix: %s bridge=%s log=%d save=%d\n",
+			pf.prefixDir(), pf.Bridge, pf.LogTime, pf.SaveTime)
+	}
+	if d.Prefix == "" {
+		fmt.Fprintf(&b, "chosen prefix: none (%s)\n", d.Note)
+	} else {
+		fmt.Fprintf(&b, "chosen prefix: %s\n", d.Prefix)
+	}
+	fmt.Fprintf(&b, "config dir: %s (auto=%v)\n", p.ConfigDir, autoConfig)
+	fmt.Fprintf(&b, "game win64: %s (auto=%v)\n", p.GameWin64, autoGame)
+	return b.String()
+}
+
 func main() {
 	addr := flag.String("addr", "127.0.0.1:0", "listen address (default: random localhost port)")
 	noBrowser := flag.Bool("no-browser", false, "do not open a browser automatically")
 	install := flag.Bool("install", false, "copy the client files into place, then exit")
 	noDownload := flag.Bool("no-download", false, "with -install, do not fetch UE4SS; report it missing")
+	detect := flag.Bool("detect", false, "print the detected Steam, game, prefix and bridge paths, then exit")
 	flag.Parse()
 
+	if *detect {
+		fmt.Print(detectReport())
+		os.Exit(0)
+	}
 	if *install {
 		os.Exit(runInstall(*noDownload))
 	}
@@ -480,7 +869,9 @@ func main() {
 		log.Fatalf("parse template: %v", err)
 	}
 
-	s := &server{paths: loadPaths(), tmpl: tmpl, feed: NewFeed(), token: newToken(), collectorDir: "."}
+	paths, autoConfig, autoGame := loadPaths()
+	s := &server{paths: paths, autoConfig: autoConfig, autoGame: autoGame,
+		tmpl: tmpl, feed: NewFeed(), token: newToken(), collectorDir: "."}
 	if exe, err := os.Executable(); err == nil {
 		s.collectorDir = filepath.Dir(exe)
 	}
@@ -498,6 +889,9 @@ func main() {
 	mux.HandleFunc("/reset", s.handleReset)
 	mux.HandleFunc("/htmx.min.js", s.handleHTMX)
 	mux.HandleFunc("/feed", s.handleFeed)
+	mux.HandleFunc("/hints", s.handleHints)
+	mux.HandleFunc("/hint", s.handleHint)
+	mux.HandleFunc("/hint/search", s.handleHintSearch)
 	mux.HandleFunc("/logs.zip", s.handleLogs)
 
 	srv := &http.Server{

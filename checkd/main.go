@@ -19,12 +19,16 @@ import (
 const (
 	// protonSaveDir is the Falcon save folder inside the Proton compatdata
 	// prefix on Linux, used when %LOCALAPPDATA% is unset.
-	protonSaveDir  = "C:/users/steamuser/AppData/Local/Falcon/Saved/SaveGames"
-	defaultDropDir = "C:/srtap_bridge"
-	defaultLogPath = "C:/srtap_bridge/checkd.log"
-	hbName         = "checkd.hb"
-	dropName       = "checks.json"
-	hbFreshSecs    = 3
+	protonSaveDir = "C:/users/steamuser/AppData/Local/Falcon/Saved/SaveGames"
+	// wineDrive is the root of the game's Wine drive. Wine resolves it inside
+	// the prefix, so checkd can glob it without knowing the prefix.
+	wineDrive       = "C:/"
+	bridgeDirName   = "srtap_bridge"
+	legacyBridgeDir = "C:/srtap_bridge"
+	logFileName     = "checkd.log"
+	hbName          = "checkd.hb"
+	dropName        = "checks.json"
+	hbFreshSecs     = 3
 	// hbInterval writes the heartbeat twice per freshness window, so it can
 	// never read as stale even when a poll overruns.
 	hbInterval = time.Duration(hbFreshSecs) * time.Second / 2
@@ -32,13 +36,97 @@ const (
 
 // defaultSaveDir returns the Falcon save folder for this machine. On Windows
 // that is %LOCALAPPDATA%\Falcon\Saved\SaveGames; Wine sets %LOCALAPPDATA% to
-// the same prefix path, so a Proton install resolves identically. The hardcoded
-// prefix path is the fallback when the variable is unset.
+// the same prefix path, so a Proton install resolves identically. Without the
+// variable the Wine drive is globbed, then the hardcoded prefix path is used.
 func defaultSaveDir() string {
 	if local := os.Getenv("LOCALAPPDATA"); local != "" {
 		return filepath.Join(local, "Falcon", "Saved", "SaveGames")
 	}
+	return saveDirUnder(wineDrive)
+}
+
+// saveDirUnder returns the Falcon save folder of the user profile under base
+// that holds the newest saves. The proton-fallback path is returned when no
+// profile has a save.
+func saveDirUnder(base string) string {
+	pattern := filepath.Join(base, "users", "*", "AppData", "Local", "Falcon", "Saved", "SaveGames")
+	dirs, _ := filepath.Glob(pattern)
+	var newest string
+	var newestTime time.Time
+	for _, dir := range dirs {
+		mod, ok := newestSaveTime(dir)
+		if !ok || (newest != "" && !mod.After(newestTime)) {
+			continue
+		}
+		newest, newestTime = dir, mod
+	}
+	if newest != "" {
+		return newest
+	}
 	return protonSaveDir
+}
+
+// newestSaveTime returns the modification time of the newest save in dir.
+func newestSaveTime(dir string) (time.Time, bool) {
+	matches, err := filepath.Glob(filepath.Join(dir, "FalconSave.*.sav"))
+	if err != nil {
+		return time.Time{}, false
+	}
+	var newest time.Time
+	for _, match := range matches {
+		st, err := os.Stat(match)
+		if err != nil {
+			continue
+		}
+		if st.ModTime().After(newest) {
+			newest = st.ModTime()
+		}
+	}
+	return newest, !newest.IsZero()
+}
+
+// defaultDropDir returns the bridge folder to drop checks into, chosen by the
+// bridge selection rule.
+func defaultDropDir() string {
+	return selectBridge(bridgeDirUnder(os.Getenv("LOCALAPPDATA")), legacyBridgeDir)
+}
+
+// bridgeDirUnder returns the modern bridge folder for a LOCALAPPDATA value, or
+// "" when the variable is unset.
+func bridgeDirUnder(localAppData string) string {
+	if localAppData == "" {
+		return ""
+	}
+	return filepath.Join(localAppData, bridgeDirName)
+}
+
+// selectBridge applies the bridge selection rule: the first candidate that
+// already holds bridge files wins, and the modern folder wins otherwise. A
+// missing modern candidate falls back to the legacy folder.
+func selectBridge(newDir, legacyDir string) string {
+	if newDir == "" {
+		return legacyDir
+	}
+	if hasBridgeFiles(newDir) || !hasBridgeFiles(legacyDir) {
+		return newDir
+	}
+	return legacyDir
+}
+
+// hasBridgeFiles reports whether dir already holds the bridge's config or
+// binary.
+func hasBridgeFiles(dir string) bool {
+	for _, name := range []string{"config.txt", "srtap_checkd.exe"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// defaultLogPath returns the daemon log beside the selected bridge folder.
+func defaultLogPath() string {
+	return filepath.Join(defaultDropDir(), logFileName)
 }
 
 func (d *daemon) writeHeartbeat() {
@@ -68,10 +156,10 @@ type options struct {
 // parseFlags parses the command line into the daemon's options.
 func parseFlags() options {
 	saveDir := flag.String("save-dir", defaultSaveDir(), "directory holding FalconSave.*.sav")
-	dropDir := flag.String("drop-dir", defaultDropDir, "bridge directory for checks.json drops")
+	dropDir := flag.String("drop-dir", defaultDropDir(), "bridge directory for checks.json drops")
 	poll := flag.Duration("poll", time.Second, "save poll interval")
 	noBackfill := flag.Bool("no-backfill", false, "do not drop already-collected dragons and eggs at baseline")
-	logPath := flag.String("log", defaultLogPath, "log file path (falls back to stderr if unwritable)")
+	logPath := flag.String("log", defaultLogPath(), "log file path (falls back to stderr if unwritable)")
 	flag.Parse()
 	return options{saveDir: *saveDir, dropDir: *dropDir, logPath: *logPath, poll: *poll, backfill: !*noBackfill}
 }

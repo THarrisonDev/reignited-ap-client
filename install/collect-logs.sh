@@ -1,11 +1,12 @@
 #!/bin/sh
 # Author: Tim Harrison
 # Created: 2026-11-01
-# Updated: 2026-11-01
+# Updated: 2026-11-09
 
 # Collect the client's support files into one archive for a bug report.
 # Read-only against the bridge, game and save folders: the only writes are a
 # scratch dir (trap-cleaned) and the archive. Save files are never included.
+# Path discovery follows docs/client_paths.md.
 set -e
 
 dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -61,40 +62,159 @@ cleanup() { rm -rf "$scratch"; }
 trap cleanup EXIT
 trap 'exit 1' INT TERM HUP
 
+seeds="$scratch/seeds.list"
 roots="$scratch/roots.list"
+bridges="$scratch/bridges.list"
+: > "$seeds"
 : > "$roots"
+: > "$bridges"
 
-add_root() {
-	if [ -z "$1" ]; then return 0; fi
-	case "$1" in
-	/*) ;;
-	*) return 0 ;;
-	esac
-	if [ ! -d "$1" ]; then return 0; fi
-	if grep -Fqx -- "$1" "$roots"; then return 0; fi
-	printf '%s\n' "$1" >> "$roots"
+normalize_dir() {
+	_n=$(readlink -f -- "$1" 2>/dev/null) || _n=""
+	if [ -n "$_n" ]; then
+		printf '%s\n' "$_n"
+		return 0
+	fi
+	(cd -- "$1" 2>/dev/null && pwd)
 }
 
-add_root "${STEAM_ROOT:-}"
-add_root "${HOME:-}/.local/share/Steam"
-add_root "${HOME:-}/.var/app/com.valvesoftware.Steam/.local/share/Steam"
+# Append an absolute, existing, symlink-resolved directory to a list file.
+add_path() {
+	case "${2:-}" in /*) ;; *) return 0 ;; esac
+	if [ ! -d "$2" ]; then return 0; fi
+	_p=$(normalize_dir "$2") || return 0
+	case "$_p" in /*) ;; *) return 0 ;; esac
+	if grep -Fqx -- "$_p" "$1"; then return 0; fi
+	printf '%s\n' "$_p" >> "$1"
+}
 
-base=$(awk 'END { print NR }' "$roots")
+add_path "$seeds" "${STEAM_ROOT:-}"
+if [ -n "${XDG_DATA_HOME:-}" ]; then
+	add_path "$seeds" "$XDG_DATA_HOME/Steam"
+else
+	add_path "$seeds" "${HOME:-}/.local/share/Steam"
+fi
+add_path "$seeds" "${HOME:-}/.steam/steam"
+add_path "$seeds" "${HOME:-}/.var/app/com.valvesoftware.Steam/.local/share/Steam"
+add_path "$seeds" "${HOME:-}/snap/steam/common/.local/share/Steam"
+cat "$seeds" >> "$roots"
+
+# Each root's libraryfolders.vdf adds libraries, which may carry their own vdf:
+# walk the list as it grows. Keys are "path" (modern) or "<n>" (legacy).
 i=0
-while [ "$i" -lt "$base" ]; do
+while :; do
 	i=$((i + 1))
 	r=$(sed -n "${i}p" "$roots")
+	if [ -z "$r" ]; then break; fi
 	vdf="$r/steamapps/libraryfolders.vdf"
-	if [ -f "$vdf" ]; then
-		sed -n 's/.*"path"[[:space:]]*"\([^"]*\)".*/\1/p' "$vdf" > "$scratch/paths.list"
-		while IFS= read -r p; do
-			add_root "$p"
-		done < "$scratch/paths.list"
-	fi
+	if [ ! -f "$vdf" ]; then continue; fi
+	sed -E -n 's/^[[:space:]]*"(path|[0-9]+)"[[:space:]]*"([^"]+)".*$/\2/p' "$vdf" > "$scratch/libs.list"
+	while IFS= read -r p; do
+		add_path "$roots" "$p"
+	done < "$scratch/libs.list"
 done
 
-bridges="$scratch/bridges.list"
-: > "$bridges"
+game=""
+game_any=""
+while IFS= read -r r; do
+	c="$r/steamapps/common/Spyro Reignited Trilogy/Falcon/Binaries/Win64"
+	if [ ! -d "$c" ]; then continue; fi
+	if [ -z "$game_any" ]; then game_any=$c; fi
+	if [ -f "$r/steamapps/appmanifest_996580.acf" ]; then
+		game=$c
+		break
+	fi
+done < "$roots"
+if [ -z "$game" ]; then game=$game_any; fi
+
+save_dir="not found"
+save_user=""
+best_save=""
+save_any=""
+save_any_user=""
+save_su=""
+save_su_user=""
+while IFS= read -r r; do
+	users="$r/steamapps/compatdata/996580/pfx/drive_c/users"
+	if [ ! -d "$users" ]; then continue; fi
+	for u in "$users"/*; do
+		if [ ! -d "$u" ]; then continue; fi
+		sd="$u/AppData/Local/Falcon/Saved/SaveGames"
+		if [ ! -d "$sd" ]; then continue; fi
+		name=$(basename "$u")
+		if [ -z "$save_any" ]; then
+			save_any=$sd
+			save_any_user=$name
+		fi
+		if [ "$name" = steamuser ] && [ -z "$save_su" ]; then
+			save_su=$sd
+			save_su_user=$name
+		fi
+		for f in "$sd"/FalconSave.*.sav; do
+			if [ ! -f "$f" ]; then continue; fi
+			if [ -z "$best_save" ] || [ "$f" -nt "$best_save" ]; then
+				best_save=$f
+				save_user=$name
+			fi
+		done
+	done
+done < "$roots"
+if [ -n "$best_save" ]; then
+	save_dir=${best_save%/*}
+elif [ -n "$save_su" ]; then
+	save_dir=$save_su
+	save_user=$save_su_user
+elif [ -n "$save_any" ]; then
+	save_dir=$save_any
+	save_user=$save_any_user
+fi
+
+has_marker() { [ -f "$1/config.txt" ] || [ -f "$1/srtap_checkd.exe" ]; }
+
+# Print the new-location bridge of a prefix: steamuser's (the account Steam runs
+# games as), then any profile with bridge files, then the newest-save profile,
+# then the first in lexical order.
+new_bridge_for() {
+	users="$1/steamapps/compatdata/996580/pfx/drive_c/users"
+	if [ ! -d "$users" ]; then return 0; fi
+	first=""
+	marker=""
+	steamuser_bridge=""
+	for u in "$users"/*; do
+		if [ ! -d "$u" ]; then continue; fi
+		b="$u/AppData/Local/srtap_bridge"
+		if [ ! -d "$b" ]; then continue; fi
+		name=$(basename "$u")
+		if [ -z "$first" ]; then first=$b; fi
+		if [ "$name" = steamuser ] && [ -z "$steamuser_bridge" ]; then steamuser_bridge=$b; fi
+		if has_marker "$b"; then
+			if [ -z "$marker" ]; then marker=$b; fi
+		fi
+	done
+	if [ -n "$steamuser_bridge" ]; then
+		printf '%s\n' "$steamuser_bridge"
+		return 0
+	fi
+	if [ -n "$marker" ]; then
+		printf '%s\n' "$marker"
+		return 0
+	fi
+	if [ -n "$save_user" ]; then
+		b="$users/$save_user/AppData/Local/srtap_bridge"
+		if [ -d "$b" ]; then
+			printf '%s\n' "$b"
+			return 0
+		fi
+	fi
+	if [ -n "$first" ]; then printf '%s\n' "$first"; fi
+	return 0
+}
+
+record_bridge() {
+	if grep -Fqx -- "$1" "$bridges"; then return 0; fi
+	printf '%s\n' "$1" >> "$bridges"
+}
+
 if [ -n "$bridge_override" ]; then
 	if [ ! -d "$bridge_override" ]; then
 		echo "bridge folder not found: $bridge_override" >&2
@@ -103,8 +223,28 @@ if [ -n "$bridge_override" ]; then
 	printf '%s\n' "$(CDPATH= cd -- "$bridge_override" && pwd)" >> "$bridges"
 else
 	while IFS= read -r r; do
-		b="$r/steamapps/compatdata/996580/pfx/drive_c/srtap_bridge"
-		if [ -d "$b" ]; then printf '%s\n' "$b" >> "$bridges"; fi
+		newb=$(new_bridge_for "$r")
+		legacy="$r/steamapps/compatdata/996580/pfx/drive_c/srtap_bridge"
+		legacy_ok=0
+		if [ -d "$legacy" ]; then legacy_ok=1; fi
+		chosen=""
+		if [ -n "$newb" ] && has_marker "$newb"; then
+			chosen=$newb
+		elif [ "$legacy_ok" = 1 ] && has_marker "$legacy"; then
+			chosen=$legacy
+		elif [ -n "$newb" ]; then
+			chosen=$newb
+		elif [ "$legacy_ok" = 1 ]; then
+			chosen=$legacy
+		fi
+		if [ -z "$chosen" ]; then continue; fi
+		record_bridge "$chosen"
+		for b in "$r/steamapps/compatdata/996580/pfx/drive_c/users"/*/AppData/Local/srtap_bridge; do
+			if [ ! -d "$b" ]; then continue; fi
+			if [ "$b" = "$chosen" ]; then continue; fi
+			record_bridge "$b"
+		done
+		if [ "$legacy_ok" = 1 ] && [ "$legacy" != "$chosen" ]; then record_bridge "$legacy"; fi
 	done < "$roots"
 fi
 if [ ! -s "$bridges" ]; then
@@ -118,15 +258,6 @@ other=""
 if [ "$count" -gt 1 ]; then
 	other=$(awk 'NR > 1 { printf "%s%s", sep, $0; sep = "; " }' "$bridges")
 fi
-
-game=""
-save_dir="not found"
-while IFS= read -r r; do
-	c="$r/steamapps/common/Spyro Reignited Trilogy/Falcon/Binaries/Win64"
-	if [ -z "$game" ] && [ -d "$c" ]; then game=$c; fi
-	sd="$r/steamapps/compatdata/996580/pfx/drive_c/users/steamuser/AppData/Local/Falcon/Saved/SaveGames"
-	if [ "$save_dir" = "not found" ] && [ -d "$sd" ]; then save_dir=$sd; fi
-done < "$roots"
 
 stage="$scratch/srtap-logs-$ts"
 mkdir -p "$stage"
@@ -196,11 +327,19 @@ if [ -n "$game" ] && [ -d "$game/Mods/srt_bridge" ]; then
 	) > "$stage/srt_bridge-files.txt"
 fi
 
+join_list() {
+	awk 'NR > 1 { printf "; " } { printf "%s", $0 } END { printf "\n" }' "$1"
+}
+seed_line=$(join_list "$seeds")
+root_line=$(join_list "$roots")
+
 {
 	printf '%s\n' 'Reignited AP support bundle'
 	printf 'created: %s\n' "$created"
 	printf 'os: %s\n' "$(uname -srm)"
 	printf 'mod client_version: %s\n' "$version"
+	printf 'steam roots: %s\n' "${seed_line:-not found}"
+	printf 'libraries: %s\n' "${root_line:-not found}"
 	printf 'bridge dir: %s\n' "$bridge"
 	printf 'game dir: %s\n' "${game:-not found}"
 	printf 'save dir: %s\n' "$save_dir"

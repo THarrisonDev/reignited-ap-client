@@ -80,7 +80,7 @@ local TRAP_NAME = "Damage Trap"
 local TAG = "[FILLERS]"
 
 local log = logger.tagged(TAG)
-local dir = "C:/srtap_bridge/"
+local dir = logger.bridge_dir
 local can_write = false     -- ExecuteInGameThread available
 local life_indices = {}     -- AP item index -> true (Extra Life, this session)
 local trap_indices = {}     -- AP item index -> true (Damage Trap, this session)

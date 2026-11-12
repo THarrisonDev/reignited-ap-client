@@ -1,10 +1,11 @@
 # Author: Tim Harrison
 # Created: 2026-11-01
-# Updated: 2026-11-01
+# Updated: 2026-11-09
 
 # Collect the client's support files into one archive for a bug report.
 # Read-only against the bridge, game and save folders: the only writes are a
 # temp dir and the archive. Save files are never included.
+# Path discovery follows docs/client_paths.md.
 
 param(
     [string]$Out = "",
@@ -25,9 +26,27 @@ function Show-Usage {
 function Add-SteamRoot([string]$Path) {
     if (-not $Path) { return }
     if (-not [IO.Path]::IsPathRooted($Path)) { return }
-    if (-not (Test-Path -LiteralPath $Path -PathType Container)) { return }
-    foreach ($Known in $script:SteamRoots) { if ($Known -eq $Path) { return } }
-    [void]$script:SteamRoots.Add($Path)
+    try { $Full = [IO.Path]::GetFullPath($Path) } catch { return }
+    if ($Full.Length -gt 3) { $Full = $Full.TrimEnd('\') }
+    if (-not (Test-Path -LiteralPath $Full -PathType Container)) { return }
+    foreach ($Known in $script:SteamRoots) {
+        if ([string]::Equals($Known, $Full, [StringComparison]::OrdinalIgnoreCase)) { return }
+    }
+    [void]$script:SteamRoots.Add($Full)
+}
+
+function Add-RegistryRoot([string]$Key, [string]$Name) {
+    try {
+        $Item = Get-ItemProperty -LiteralPath $Key -Name $Name -ErrorAction Stop
+        Add-SteamRoot ([string]$Item.$Name)
+    } catch { }
+}
+
+function Test-BridgeMarker([string]$Path) {
+    if (-not $Path) { return $false }
+    if (Test-Path -LiteralPath (Join-Path $Path "config.txt") -PathType Leaf) { return $true }
+    if (Test-Path -LiteralPath (Join-Path $Path "srtap_checkd.exe") -PathType Leaf) { return $true }
+    return $false
 }
 
 function Read-ConfigValue([string]$Path, [string]$Key) {
@@ -71,17 +90,31 @@ if (-not $Out) { $Out = Join-Path $PSScriptRoot ("srtap-logs-$Ts.zip") }
 if ($Out -notlike "*.zip") { $Out = "$Out.zip" }
 
 $script:SteamRoots = New-Object System.Collections.ArrayList
+Add-SteamRoot $env:STEAM_ROOT
+Add-RegistryRoot "HKCU:\Software\Valve\Steam" "SteamPath"
+Add-RegistryRoot "HKLM:\SOFTWARE\WOW6432Node\Valve\Steam" "InstallPath"
+Add-RegistryRoot "HKLM:\SOFTWARE\Valve\Steam" "InstallPath"
 $Pf86 = ${env:ProgramFiles(x86)}
 if ($Pf86) { Add-SteamRoot (Join-Path $Pf86 "Steam") }
-foreach ($Root in $script:SteamRoots.ToArray()) {
+if ($env:ProgramFiles) { Add-SteamRoot (Join-Path $env:ProgramFiles "Steam") }
+
+# Every root's libraryfolders.vdf adds libraries, which may carry their own vdf.
+# Keys are "path" (modern) or "<n>" (legacy); vdf escapes a backslash as two.
+$Seen = 0
+while ($Seen -lt $script:SteamRoots.Count) {
+    $Root = $script:SteamRoots[$Seen]
+    $Seen++
     $Vdf = Join-Path $Root "steamapps\libraryfolders.vdf"
-    if (Test-Path -LiteralPath $Vdf -PathType Leaf) {
-        $VdfText = [IO.File]::ReadAllText($Vdf)
-        foreach ($M in [regex]::Matches($VdfText, '"path"\s+"([^"]+)"')) {
-            Add-SteamRoot ($M.Groups[1].Value)
-        }
+    if (-not (Test-Path -LiteralPath $Vdf -PathType Leaf)) { continue }
+    $VdfText = [IO.File]::ReadAllText($Vdf)
+    foreach ($M in [regex]::Matches($VdfText, '"(?:path|\d+)"\s+"([^"]+)"')) {
+        Add-SteamRoot ($M.Groups[1].Value -replace '\\\\', '\')
     }
 }
+
+$NewBridge = ""
+if ($env:LOCALAPPDATA) { $NewBridge = Join-Path $env:LOCALAPPDATA "srtap_bridge" }
+$LegacyBridge = "C:\srtap_bridge"
 
 $Bridges = New-Object System.Collections.ArrayList
 if ($BridgeDir) {
@@ -90,11 +123,22 @@ if ($BridgeDir) {
         exit 1
     }
     [void]$Bridges.Add((Resolve-Path -LiteralPath $BridgeDir).Path)
-} elseif (Test-Path -LiteralPath "C:\srtap_bridge" -PathType Container) {
-    [void]$Bridges.Add("C:\srtap_bridge")
+} else {
+    $Candidates = New-Object System.Collections.ArrayList
+    if ($NewBridge -and (Test-Path -LiteralPath $NewBridge -PathType Container)) { [void]$Candidates.Add($NewBridge) }
+    if (Test-Path -LiteralPath $LegacyBridge -PathType Container) { [void]$Candidates.Add($LegacyBridge) }
+    $Selected = ""
+    foreach ($Candidate in $Candidates) {
+        if (Test-BridgeMarker $Candidate) { $Selected = $Candidate; break }
+    }
+    if (-not $Selected -and $Candidates.Count -gt 0) { $Selected = $Candidates[0] }
+    if ($Selected) { [void]$Bridges.Add($Selected) }
+    foreach ($Candidate in $Candidates) {
+        if ($Candidate -ne $Selected) { [void]$Bridges.Add($Candidate) }
+    }
 }
 if ($Bridges.Count -eq 0) {
-    [Console]::Error.WriteLine("Nothing found " + [char]0x2014 + " run with --bridge-dir <path to srtap_bridge>")
+    [Console]::Error.WriteLine("Nothing found " + [char]0x2014 + " run with -BridgeDir <path to srtap_bridge>")
     exit 1
 }
 
@@ -104,11 +148,20 @@ if ($Bridges.Count -gt 1) {
     $Other = ($Bridges[1..($Bridges.Count - 1)] -join "; ")
 }
 
+# A library holding appmanifest_996580.acf is the copy Steam considers
+# installed; fall back to the first folder that merely exists.
 $Game = ""
+$GameAny = ""
 foreach ($Root in $script:SteamRoots) {
     $Candidate = Join-Path $Root "steamapps\common\Spyro Reignited Trilogy\Falcon\Binaries\Win64"
-    if (Test-Path -LiteralPath $Candidate -PathType Container) { $Game = $Candidate; break }
+    if (-not (Test-Path -LiteralPath $Candidate -PathType Container)) { continue }
+    if (-not $GameAny) { $GameAny = $Candidate }
+    if (Test-Path -LiteralPath (Join-Path $Root "steamapps\appmanifest_996580.acf") -PathType Leaf) {
+        $Game = $Candidate
+        break
+    }
 }
+if (-not $Game) { $Game = $GameAny }
 if (-not $Game) { $Game = "not found" }
 
 $SaveDir = "not found"
@@ -175,11 +228,15 @@ try {
         Write-Text (Join-Path $Stage "srt_bridge-files.txt") (($Listing -join "`r`n") + "`r`n")
     }
 
+    $RootsLine = if ($script:SteamRoots.Count -gt 0) { $script:SteamRoots -join "; " } else { "not found" }
+
     $Meta = New-Object System.Collections.ArrayList
     [void]$Meta.Add("Reignited AP support bundle")
     [void]$Meta.Add("created: $Created")
     [void]$Meta.Add("os: $([Environment]::OSVersion.VersionString)")
     [void]$Meta.Add("mod client_version: $Version")
+    [void]$Meta.Add("steam roots: $RootsLine")
+    [void]$Meta.Add("libraries: $RootsLine")
     [void]$Meta.Add("bridge dir: $Bridge")
     [void]$Meta.Add("game dir: $Game")
     [void]$Meta.Add("save dir: $SaveDir")

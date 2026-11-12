@@ -19,7 +19,7 @@ WINDOWS_TARGETS := GOOS=windows GOARCH=amd64
 # on this Linux/Proton box. `make deploy` needs no arguments; override a path
 # only if your install lives elsewhere.
 GAME_WIN64 ?= $(HOME)/.local/share/Steam/steamapps/common/Spyro Reignited Trilogy/Falcon/Binaries/Win64
-BRIDGE_DIR ?= $(HOME)/.local/share/Steam/steamapps/compatdata/996580/pfx/drive_c/srtap_bridge
+BRIDGE_DIR ?= $(HOME)/.local/share/Steam/steamapps/compatdata/996580/pfx/drive_c/users/steamuser/AppData/Local/srtap_bridge
 MOD_DEST   := $(GAME_WIN64)/Mods/srt_bridge
 
 LUA_TESTS := $(wildcard tests/lua/*.lua)
@@ -88,8 +88,10 @@ launcher/srtap_launcher: $(wildcard launcher/*.go) launcher/index.html launcher/
 	$(MAKE) --no-print-directory -C launcher build-linux GOFLAGS="$(GOFLAGS)"
 
 # Player-facing Windows x64 builds:
-#   dist/windows/srtap_checkd.exe  -> copy into the bridge folder (C:\srtap_bridge
-#                                     or the Proton prefix's drive_c\srtap_bridge)
+#   dist/windows/srtap_checkd.exe  -> copy into the bridge folder
+#                                     (%LOCALAPPDATA%\srtap_bridge or the
+#                                     Proton prefix's
+#                                     drive_c\users\steamuser\AppData\Local\srtap_bridge)
 #   dist/windows/srtap_launcher.exe-> run anywhere; opens the setup UI
 build-windows: checkd/srtap_checkd.exe launcher/srtap_launcher.exe
 	mkdir -p $(DIST)/windows

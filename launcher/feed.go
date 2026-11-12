@@ -1,6 +1,6 @@
 // Author: Tim Harrison
 // Created: 2026-09-26
-// Updated: 2026-10-23
+// Updated: 2026-11-11
 
 package main
 
@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,10 +20,10 @@ import (
 )
 
 // Live check feed: the launcher keeps its own text-only connection to the
-// Archipelago room and lists every item the player's slot sends or receives.
-// It reads server messages, not the game, so it stays accurate even when the
-// in-game console garbles lines or the game crashes. It only listens: TextOnly
-// tag, items_handling 0, and it never sends LocationChecks.
+// Archipelago room and lists every item the player's slot sends or receives. It
+// reads server messages rather than the game, so garbled console lines or a crash
+// cost nothing. It sends no LocationChecks; the one command it sends for the
+// player is a chat hint request from the Play tab.
 
 const (
 	feedMaxEvents   = 200
@@ -32,6 +33,7 @@ const (
 
 var (
 	errConfigChanged = errors.New("connection settings changed")
+	errNotConnected  = errors.New("not connected to the server yet")
 	feedUUID         = fmt.Sprintf("srtap-launcher-%x", time.Now().UnixNano())
 )
 
@@ -49,6 +51,17 @@ type feedConn struct {
 	Host, Slot, Password string
 }
 
+// feedHint is one hint the server holds for this slot: the item, where it is,
+// who receives it and whether it has been found yet.
+type feedHint struct {
+	ItemName     string
+	LocationName string
+	ReceiverName string
+	FinderName   string
+	Progression  bool
+	Found        bool
+}
+
 type feedView struct {
 	Connected      bool
 	Status         string
@@ -58,16 +71,24 @@ type feedView struct {
 
 // Feed is the shared state between the AP connection and the web page.
 type Feed struct {
-	mu        sync.Mutex
-	connected bool
-	status    string
-	checked   int
-	total     int
-	events    []FeedEvent
+	mu          sync.Mutex
+	connected   bool
+	status      string
+	checked     int
+	total       int
+	events      []FeedEvent
+	points      int
+	pointsKnown bool     // the room has reported the balance
+	hintCost    *float64 // hint_cost, a percentage; nil until the room says
+	hints       []feedHint
+	notice      string
+	missing     []string // unchecked location names, for autocomplete
+	items       []string // item names of the player's own game
+	hintReq     chan string
 }
 
 func NewFeed() *Feed {
-	return &Feed{status: "Starting…"}
+	return &Feed{status: "Starting…", hintReq: make(chan string, 1)}
 }
 
 func (f *Feed) View() feedView {
@@ -99,6 +120,91 @@ func (f *Feed) add(e FeedEvent) {
 	if len(f.events) > feedMaxEvents {
 		f.events = f.events[len(f.events)-feedMaxEvents:]
 	}
+}
+
+func (f *Feed) setPoints(n int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.points, f.pointsKnown = n, true
+}
+
+// setHintCost records the room's hint price, a percentage of the slot's
+// location count.
+func (f *Feed) setHintCost(percent *float64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.hintCost = percent
+}
+
+func (f *Feed) setHints(hints []feedHint) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.hints = hints
+}
+
+// setLists stores the hint form's autocomplete names, in name order.
+func (f *Feed) setLists(missing, items []string) {
+	sort.Strings(missing)
+	sort.Strings(items)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.missing, f.items = missing, items
+}
+
+// SetNotice shows the server's answer to the last hint request.
+func (f *Feed) SetNotice(text string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.notice = text
+}
+
+// RequestHint hands a chat command to the live connection. With none up the
+// request is dropped rather than queued for a later session.
+func (f *Feed) RequestHint(text string) error {
+	f.mu.Lock()
+	if !f.connected {
+		f.mu.Unlock()
+		return errNotConnected
+	}
+	f.notice = ""
+	f.mu.Unlock()
+	select {
+	case f.hintReq <- text:
+	default:
+	}
+	return nil
+}
+
+// hintCostFor is the server's price for one hint across a slot holding total
+// locations: hint_cost is a percentage, and any nonzero price is at least one
+// point.
+func (f *Feed) hintCostFor(total int) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.hintCost == nil || *f.hintCost == 0 {
+		return 0
+	}
+	return max(1, int(*f.hintCost*0.01*float64(total)))
+}
+
+// HintView returns the hint panel's state for the page and its polled fragment.
+func (f *Feed) HintView() hintView {
+	f.mu.Lock()
+	v := hintView{
+		Connected:   f.connected,
+		Points:      f.points,
+		PointsKnown: f.pointsKnown,
+		Hints:       append([]feedHint(nil), f.hints...),
+		Missing:     append([]string(nil), f.missing...),
+		Items:       append([]string(nil), f.items...),
+		Notice:      f.notice,
+	}
+	total := f.total
+	f.mu.Unlock()
+	// outside the lock: the price formula lives in hintCostFor, which locks
+	v.Cost = f.hintCostFor(total)
+	v.Free = v.Cost == 0
+	return v
 }
 
 // Run keeps the feed connected to the room named by conf, reconnecting after
@@ -183,18 +289,33 @@ func (s *apSession) serve(ctx context.Context, cfg feedConn, conf func() feedCon
 				return err
 			}
 		case err := <-readErr:
-			if err != nil {
-				return fmt.Errorf("lost the connection to %s: %w", cfg.Host, err)
-			}
-			return fmt.Errorf("lost the connection to %s", cfg.Host)
+			return lostConnection(cfg, err)
 		case <-tick.C:
 			if conf() != cfg {
 				return errConfigChanged
+			}
+		case text := <-s.feed.hintReq:
+			if err := s.say(text); err != nil {
+				return err
 			}
 		case <-ctx.Done():
 			return ctx.Err()
 		}
 	}
+}
+
+// lostConnection reports a dropped connection, with the socket's reason when it
+// gave one.
+func lostConnection(cfg feedConn, err error) error {
+	if err != nil {
+		return fmt.Errorf("lost the connection to %s: %w", cfg.Host, err)
+	}
+	return fmt.Errorf("lost the connection to %s", cfg.Host)
+}
+
+// say sends one chat line, which is how a hint request reaches the server.
+func (s *apSession) say(text string) error {
+	return s.send(map[string]any{"cmd": "Say", "text": text})
 }
 
 // dialFeed connects like apclientpp does: an explicit scheme is used as-is,
@@ -229,16 +350,18 @@ func feedURLs(host string) []string {
 
 // apSession decodes one connection's server messages into feed updates.
 type apSession struct {
-	feed    *Feed
-	cfg     feedConn
-	send    func(cmds ...any) error
-	me      int
-	alias   map[int]string
-	game    map[int]string
-	items   map[string]map[int64]string
-	locs    map[string]map[int64]string
-	checked map[int64]bool
-	total   int
+	feed     *Feed
+	cfg      feedConn
+	send     func(cmds ...any) error
+	me       int
+	alias    map[int]string
+	game     map[int]string
+	items    map[string]map[int64]string
+	locs     map[string]map[int64]string
+	checked  map[int64]bool
+	missing  map[int64]bool
+	included []string // the slot's included games, empty when it reports none
+	total    int
 }
 
 type apPlayer struct {
@@ -247,12 +370,60 @@ type apPlayer struct {
 	Name  string `json:"name"`
 }
 
+type apSlotInfo struct {
+	Game string `json:"game"`
+}
+
+type apConnected struct {
+	Slot       int                   `json:"slot"`
+	HintPoints *int                  `json:"hint_points"`
+	Players    []apPlayer            `json:"players"`
+	SlotInfo   map[string]apSlotInfo `json:"slot_info"`
+	SlotData   apSlotData            `json:"slot_data"`
+	Checked    []int64               `json:"checked_locations"`
+	Missing    []int64               `json:"missing_locations"`
+}
+
+// apSlotData is the part of a world's slot data the launcher reads: the games
+// this slot actually includes, which bound the items it can be sent.
+type apSlotData struct {
+	IncludedGames []string `json:"included_games"`
+}
+
+// apHint is one record of the room's stored hint list for this slot.
+type apHint struct {
+	Receiving int   `json:"receiving_player"`
+	Finding   int   `json:"finding_player"`
+	Location  int64 `json:"location"`
+	Item      int64 `json:"item"`
+	Found     bool  `json:"found"`
+	Flags     int   `json:"item_flags"`
+}
+
+type apText struct {
+	Text string `json:"text"`
+}
+
+type apItem struct {
+	Item     int64 `json:"item"`
+	Location int64 `json:"location"`
+	Player   int   `json:"player"`
+	Flags    int   `json:"flags"`
+}
+
+type apPrint struct {
+	Type      string   `json:"type"`
+	Data      []apText `json:"data"`
+	Receiving int      `json:"receiving"`
+	Item      apItem   `json:"item"`
+}
+
 func newAPSession(f *Feed, cfg feedConn, send func(cmds ...any) error) *apSession {
 	return &apSession{
 		feed: f, cfg: cfg, send: send,
 		alias: map[int]string{}, game: map[int]string{},
 		items: map[string]map[int64]string{}, locs: map[string]map[int64]string{},
-		checked: map[int64]bool{},
+		checked: map[int64]bool{}, missing: map[int64]bool{},
 	}
 }
 
@@ -278,11 +449,15 @@ func (s *apSession) dispatch(raw json.RawMessage) error {
 	case "DataPackage":
 		s.onDataPackage(raw)
 	case "Connected":
-		s.onConnected(raw)
+		return s.onConnected(raw)
 	case "RoomUpdate":
 		s.onRoomUpdate(raw)
 	case "PrintJSON":
 		s.onPrintJSON(raw)
+	case "Retrieved":
+		s.onRetrieved(raw)
+	case "SetReply":
+		s.onSetReply(raw)
 	case "ConnectionRefused":
 		return s.onRefused(raw)
 	}
@@ -300,16 +475,18 @@ func cmdName(raw json.RawMessage) string {
 
 func (s *apSession) onRoomInfo(raw json.RawMessage) error {
 	var m struct {
-		Games []string `json:"games"`
+		Games    []string `json:"games"`
+		HintCost *float64 `json:"hint_cost"`
 	}
 	_ = json.Unmarshal(raw, &m)
+	s.feed.setHintCost(m.HintCost)
 	getPkg := map[string]any{"cmd": "GetDataPackage"}
 	if len(m.Games) > 0 {
 		getPkg["games"] = m.Games
 	}
 	return s.send(getPkg, map[string]any{
 		"cmd": "Connect", "game": "", "name": s.cfg.Slot, "password": s.cfg.Password,
-		"uuid": feedUUID, "items_handling": 0, "tags": []string{"TextOnly"}, "slot_data": false,
+		"uuid": feedUUID, "items_handling": 0, "tags": []string{"TextOnly"}, "slot_data": true,
 		"version": map[string]any{"major": 0, "minor": 6, "build": 8, "class": "Version"},
 	})
 }
@@ -332,31 +509,47 @@ func (s *apSession) onDataPackage(raw json.RawMessage) {
 	}
 }
 
-func (s *apSession) onConnected(raw json.RawMessage) {
-	var m struct {
-		Slot     int        `json:"slot"`
-		Players  []apPlayer `json:"players"`
-		SlotInfo map[string]struct {
-			Game string `json:"game"`
-		} `json:"slot_info"`
-		Checked []int64 `json:"checked_locations"`
-		Missing []int64 `json:"missing_locations"`
-	}
-	if json.Unmarshal(raw, &m) != nil {
-		return
-	}
+func (s *apSession) onConnected(raw json.RawMessage) error {
+	var m apConnected
+	_ = json.Unmarshal(raw, &m)
 	s.me = m.Slot
 	s.setPlayers(m.Players)
-	for k, v := range m.SlotInfo {
+	s.setGames(m.SlotInfo)
+	s.checked, s.missing = map[int64]bool{}, map[int64]bool{}
+	for _, id := range m.Missing {
+		s.missing[id] = true
+	}
+	s.total = len(m.Checked) + len(m.Missing)
+	s.included = m.SlotData.IncludedGames
+	s.addChecked(m.Checked)
+	if m.HintPoints != nil {
+		s.feed.setPoints(*m.HintPoints)
+	}
+	s.feed.setStatus(true, "Connected as "+s.cfg.Slot+".")
+	return s.send(hintSubscriptions(s.hintKey())...)
+}
+
+// setGames records each slot's game, which keys the item and location names.
+func (s *apSession) setGames(info map[string]apSlotInfo) {
+	for k, v := range info {
 		if n, err := strconv.Atoi(k); err == nil {
 			s.game[n] = v.Game
 		}
 	}
-	s.checked = map[int64]bool{}
-	s.mergeChecked(m.Checked)
-	s.total = len(m.Checked) + len(m.Missing)
-	s.feed.setChecks(len(s.checked), s.total)
-	s.feed.setStatus(true, "Connected as "+s.cfg.Slot+".")
+}
+
+// hintKey is the server-side key holding this slot's hints. It is read-only:
+// the server rewrites it, so nothing here ever sends Set on it.
+func (s *apSession) hintKey() string {
+	return fmt.Sprintf("_read_hints_0_%d", s.me)
+}
+
+// hintSubscriptions asks for this slot's stored hints and then keeps them live.
+func hintSubscriptions(key string) []any {
+	return []any{
+		map[string]any{"cmd": "Get", "keys": []string{key}},
+		map[string]any{"cmd": "SetNotify", "keys": []string{key}},
+	}
 }
 
 // mergeChecked marks the given location IDs as checked, ignoring duplicates.
@@ -366,37 +559,162 @@ func (s *apSession) mergeChecked(ids []int64) {
 	}
 }
 
+// addChecked records newly checked locations and refreshes the counts and the
+// hint form's unchecked names.
+func (s *apSession) addChecked(ids []int64) {
+	s.mergeChecked(ids)
+	for _, id := range ids {
+		delete(s.missing, id)
+	}
+	if s.total > 0 {
+		s.feed.setChecks(len(s.checked), s.total)
+	}
+	s.publishLists()
+}
+
+// publishLists hands the hint form the names it autocompletes: the slot's
+// unchecked locations and the item names of its own game.
+func (s *apSession) publishLists() {
+	game := s.game[s.me]
+	missing := make([]string, 0, len(s.missing))
+	for id := range s.missing {
+		if n, ok := s.locs[game][id]; ok {
+			missing = append(missing, n)
+		}
+	}
+	items := make([]string, 0, len(s.items[game]))
+	for _, n := range s.items[game] {
+		if s.offerItem(n) {
+			items = append(items, n)
+		}
+	}
+	s.feed.setLists(missing, items)
+}
+
+// offerItem reports whether a hint for this item can reach the slot: items of a
+// game the slot excludes never can. Slot data names games by key ("spyro1"), item
+// names by display name ("Spyro 1: …"), so both sides are folded before comparing.
+func (s *apSession) offerItem(name string) bool {
+	if len(s.included) == 0 {
+		return true
+	}
+	sep := strings.Index(name, ": ")
+	if sep < 0 {
+		return true
+	}
+	prefix := foldGame(name[:sep])
+	for _, g := range s.included {
+		if foldGame(g) == prefix {
+			return true
+		}
+	}
+	return false
+}
+
+// foldGame compares game names the way item prefixes and slot-data keys spell
+// them: "Spyro 1", "spyro1" and "SPYRO 1" all fold together.
+func foldGame(name string) string {
+	return strings.ToLower(strings.ReplaceAll(name, " ", ""))
+}
+
 func (s *apSession) onRoomUpdate(raw json.RawMessage) {
 	var m struct {
-		Players []apPlayer `json:"players"`
-		Checked []int64    `json:"checked_locations"`
+		Players    []apPlayer `json:"players"`
+		Checked    []int64    `json:"checked_locations"`
+		HintPoints *int       `json:"hint_points"`
 	}
 	if json.Unmarshal(raw, &m) != nil {
 		return
 	}
 	s.setPlayers(m.Players)
-	s.mergeChecked(m.Checked)
-	if s.total > 0 {
-		s.feed.setChecks(len(s.checked), s.total)
+	s.addChecked(m.Checked)
+	if m.HintPoints != nil {
+		s.feed.setPoints(*m.HintPoints)
 	}
 }
 
-// ItemSend: item.player is the finder (whose world held the item), receiving
-// is the slot that gets it.
-func (s *apSession) onPrintJSON(raw json.RawMessage) {
+// onRetrieved applies the answer to our hint subscription.
+func (s *apSession) onRetrieved(raw json.RawMessage) {
 	var m struct {
-		Type      string `json:"type"`
-		Receiving int    `json:"receiving"`
-		Item      struct {
-			Item     int64 `json:"item"`
-			Location int64 `json:"location"`
-			Player   int   `json:"player"`
-			Flags    int   `json:"flags"`
-		} `json:"item"`
+		Keys map[string]json.RawMessage `json:"keys"`
 	}
-	if json.Unmarshal(raw, &m) != nil || s.me == 0 || (m.Type != "ItemSend" && m.Type != "ItemCheat") {
+	if json.Unmarshal(raw, &m) != nil {
 		return
 	}
+	s.applyHints(m.Keys[s.hintKey()])
+}
+
+// onSetReply applies a later replacement of the hint list, which the server
+// pushes because we subscribed to it.
+func (s *apSession) onSetReply(raw json.RawMessage) {
+	var m struct {
+		Key   string          `json:"key"`
+		Value json.RawMessage `json:"value"`
+	}
+	if json.Unmarshal(raw, &m) != nil || m.Key != s.hintKey() {
+		return
+	}
+	s.applyHints(m.Value)
+}
+
+// applyHints replaces the whole hint list from a payload of hint records.
+func (s *apSession) applyHints(b json.RawMessage) {
+	var recs []apHint
+	if json.Unmarshal(b, &recs) != nil {
+		return
+	}
+	hints := make([]feedHint, 0, len(recs))
+	for _, r := range recs {
+		hints = append(hints, s.hint(r))
+	}
+	s.feed.setHints(hints)
+}
+
+// hint names one hint record: the item belongs to the receiving slot's game and
+// the location to the finding slot's.
+func (s *apSession) hint(r apHint) feedHint {
+	return feedHint{
+		ItemName:     s.itemName(r.Receiving, r.Item),
+		LocationName: s.locationName(r.Finding, r.Location),
+		ReceiverName: s.playerName(r.Receiving),
+		FinderName:   s.playerName(r.Finding),
+		Progression:  r.Flags&flagProgression != 0,
+		Found:        r.Found,
+	}
+}
+
+// onPrintJSON shows the requester's CommandResult text as the hint notice, and
+// keeps the item feed: item.player is the finder (whose world held the item),
+// receiving is the slot that gets it.
+func (s *apSession) onPrintJSON(raw json.RawMessage) {
+	var m apPrint
+	if json.Unmarshal(raw, &m) != nil {
+		return
+	}
+	if m.Type == "CommandResult" {
+		s.feed.SetNotice(commandText(m.Data))
+		return
+	}
+	if s.me == 0 || (m.Type != "ItemSend" && m.Type != "ItemCheat") {
+		return
+	}
+	if e, ok := s.movement(m); ok {
+		s.feed.add(e)
+	}
+}
+
+// commandText joins the text parts of one server line.
+func commandText(parts []apText) string {
+	var b strings.Builder
+	for _, p := range parts {
+		b.WriteString(p.Text)
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// movement turns an item movement into a feed event, reporting false when
+// neither end is this slot.
+func (s *apSession) movement(m apPrint) (FeedEvent, bool) {
 	finder, receiver := m.Item.Player, m.Receiving
 	e := FeedEvent{
 		Time:        time.Now(),
@@ -412,9 +730,9 @@ func (s *apSession) onPrintJSON(raw json.RawMessage) {
 	case receiver == s.me:
 		e.Kind, e.Other = "received", s.playerName(finder)
 	default:
-		return
+		return FeedEvent{}, false
 	}
-	s.feed.add(e)
+	return e, true
 }
 
 func (s *apSession) onRefused(raw json.RawMessage) error {

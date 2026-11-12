@@ -4,7 +4,7 @@
 
 -- checks_drop: ingest the Go checkd daemon's check drops.
 --
--- Reads C:/srtap_bridge/checks.json (owned by checkd, client/checkd/main.go
+-- Reads <bridge>/checks.json (owned by checkd, client/checkd/main.go
 -- sendDrop) with hand-rolled parsing for exactly its {"seq":N,"checks":[ids],
 -- "names":[...]} shape, drops ids absent from this slot's locationNameToId
 -- (checkd is option-blind, so option-disabled checks resolve here), dedups
@@ -15,7 +15,7 @@
 
 local logger = require("logger")
 
-local DEFAULT_CHECKS_DROP = "C:/srtap_bridge/checks.json"
+local DEFAULT_CHECKS_DROP = logger.bridge_dir .. "checks.json"
 
 local drop_last_seq = nil    -- last checks.json seq ingested
 local drop_errs = 0          -- consecutive parse errors

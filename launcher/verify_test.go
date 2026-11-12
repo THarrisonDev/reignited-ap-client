@@ -7,6 +7,8 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -96,5 +98,138 @@ func TestModEnabled(t *testing.T) {
 	}
 	if _, seen := modEnabled(filepath.Join(dir, "missing.txt")); seen {
 		t.Error("missing mods.txt must report not-found")
+	}
+}
+
+// findCheck returns the named check, or nil.
+func findCheck(checks []Check, name string) *Check {
+	for i := range checks {
+		if checks[i].Name == name {
+			return &checks[i]
+		}
+	}
+	return nil
+}
+
+// TestVerifyBridgeFixDefersWithoutPrefix pins the deferred-install wording: on
+// Linux with no Proton prefix the fix is to launch the game once, not to create
+// the folder by hand.
+func TestVerifyBridgeFixDefersWithoutPrefix(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Proton prefix wording")
+	}
+	root := t.TempDir()
+	checks := Verify(Paths{
+		ConfigDir: filepath.Join(root, "missing-bridge"),
+		GameWin64: filepath.Join(root, "missing-win64"),
+	})
+	check := findCheck(checks, "Bridge folder")
+	if check == nil || check.OK {
+		t.Fatalf("missing bridge folder must fail: %+v", check)
+	}
+	if !strings.Contains(check.Fix, "Launch the game once through Steam") {
+		t.Fatalf("fix should defer to the prefix: %s", check.Fix)
+	}
+}
+
+// removeFiles deletes each path, failing the test on error.
+func removeFiles(t *testing.T, paths ...string) {
+	t.Helper()
+	for _, p := range paths {
+		if err := os.Remove(p); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// bridgeMatchCheck returns the bridge-matching check for p, failing the test
+// when the check is absent.
+func bridgeMatchCheck(t *testing.T, p Paths) Check {
+	t.Helper()
+	check := findCheck(Verify(p), "Bridge folder matches the game")
+	if check == nil {
+		t.Fatalf("the bridge-matching check is missing for %+v", p)
+	}
+	return *check
+}
+
+// TestVerifyBridgeMatchesGameFires: a temp prefix with a newer bridge.log than
+// the selected folder must be reported, naming the folder to switch to.
+func TestVerifyBridgeMatchesGameFires(t *testing.T) {
+	home, root := steamTree(t)
+	libA := filepath.Join(home, "LibraryA")
+	libB := filepath.Join(home, "LibraryB")
+	listLibraries(t, root, libA, libB)
+
+	bridgeA := bridgeIn(t, prefixTree(t, libA))
+	mkfile(t, filepath.Join(bridgeA, "config.txt"))
+	logA := filepath.Join(bridgeA, "bridge.log")
+	mkfile(t, logA)
+	setMtime(t, logA, 1000)
+
+	bridgeB := bridgeIn(t, prefixTree(t, libB))
+	mkfile(t, filepath.Join(bridgeB, "config.txt"))
+	logB := filepath.Join(bridgeB, "bridge.log")
+	mkfile(t, logB)
+	setMtime(t, logB, 5000)
+
+	p := Paths{ConfigDir: bridgeA, GameWin64: filepath.Join(libA, gameRel()), PrefixReady: true}
+	check := bridgeMatchCheck(t, p)
+	if check.OK {
+		t.Fatalf("a newer bridge.log elsewhere must fail the check: %+v", check)
+	}
+	if !strings.Contains(check.Detail, bridgeB) {
+		t.Fatalf("detail should name %s: %s", bridgeB, check.Detail)
+	}
+	if !strings.Contains(check.Fix, "Set the Bridge folder to "+bridgeB) {
+		t.Fatalf("fix should name the folder to select: %s", check.Fix)
+	}
+
+	p.ConfigDir = bridgeB
+	if check := bridgeMatchCheck(t, p); !check.OK {
+		t.Fatalf("the newest bridge folder must pass: %+v", check)
+	}
+
+	removeFiles(t, logA, logB)
+	if check := bridgeMatchCheck(t, p); !check.OK {
+		t.Fatalf("no bridge log anywhere must pass: %+v", check)
+	}
+}
+
+// TestVerifyBridgeMismatchSkippedOutsidePrefix: an unrelated temp layout must
+// never trigger Steam discovery, even with PrefixReady set.
+func TestVerifyBridgeMismatchSkippedOutsidePrefix(t *testing.T) {
+	p := fullLayout(t)
+	p.PrefixReady = true
+	if check := findCheck(Verify(p), "Bridge folder matches the game"); check != nil {
+		t.Fatalf("the check must not run outside a Proton prefix: %+v", check)
+	}
+}
+
+// TestVerifyGameFolderWritable pins the new permission check on the game folder.
+func TestVerifyGameFolderWritable(t *testing.T) {
+	p := fullLayout(t)
+	if check := findCheck(Verify(p), "Game folder writable"); check == nil || !check.OK {
+		t.Fatalf("a writable game folder must pass: %+v", check)
+	}
+
+	readOnly := filepath.Join(t.TempDir(), "win64")
+	if err := os.MkdirAll(readOnly, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(readOnly, 0555); err != nil {
+		t.Skipf("cannot make the folder read-only: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(readOnly, 0755) })
+	if probeWritable(readOnly) == nil {
+		t.Skip("the folder is still writable (running as root)")
+	}
+	p.GameWin64 = readOnly
+	check := findCheck(Verify(p), "Game folder writable")
+	if check == nil || check.OK {
+		t.Fatalf("an unwritable game folder must fail: %+v", check)
+	}
+	if !strings.Contains(check.Fix, "administrator") {
+		t.Fatalf("fix should name the likely cause: %s", check.Fix)
 	}
 }

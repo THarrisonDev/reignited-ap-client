@@ -59,6 +59,15 @@ movements: it keeps its own listener-only connection to the Archipelago room.
 It does not start `checkd` (the mod does), does not watch `checkd.hb`, and does
 not forward checks — the mod's AP client reports checks itself.
 
+Steam is located through the Windows registry (then `Program Files`) or the
+native, Flatpak and Snap roots on Linux, and every library in
+`libraryfolders.vdf` is searched, so Steam and the game may live on different
+drives. The mod's bridge folder is `%LOCALAPPDATA%\srtap_bridge`
+(`.../drive_c/users/<user>/AppData/Local/srtap_bridge` in a Proton prefix); an
+older `C:\srtap_bridge` install migrates there on the next install.
+`srtap_launcher -detect` prints the resolved roots, libraries, game, prefix and
+bridge folder for a support report.
+
 For bug reports it offers **Download logs for support** (also available as
 `install/collect-logs.sh` and `install/collect-logs.bat` when the launcher will
 not start): a zip holding the tail of `bridge.log`, `checkd.log` and `UE4SS.log`,

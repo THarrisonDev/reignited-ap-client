@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -64,33 +65,127 @@ func sourceDir() string {
 	return filepath.Dir(exe)
 }
 
-// Install copies the client artifacts into the resolved paths and enables the
-// mod. Steps are best-effort: a failing step is reported and the rest still
-// run, so a player always gets as far as possible. Callers re-run Verify for
-// the authoritative checklist afterwards. A Game folder that does not exist is
-// refused before any step touches it, so a typo'd override cannot grow a fake
-// install tree that Verify would then report green.
-func Install(p Paths, src string, opts installOptions) []installResult {
+// permissionFix is the guidance a permission failure carries. Under Proton the
+// usual cause is a Steam library inside Program Files, which the player's
+// account cannot write to.
+const permissionFix = "Steam is under Program Files — run install.bat as administrator, " +
+	"or move the Steam library to a user-writable drive."
+
+// Install copies the client artifacts into the resolved paths and returns the
+// steps plus the folders actually used (a legacy bridge folder migrates to the
+// contract's new location). Steps are best-effort: a failing step is reported
+// and the rest still run, so a player always gets as far as possible. Callers
+// re-run Verify for the authoritative checklist afterwards. A Game folder that
+// does not exist is refused before any step touches it, so a typo'd override
+// cannot grow a fake install tree that Verify would then report green.
+func Install(p Paths, src string, opts installOptions) ([]installResult, Paths) {
 	if p.ConfigDir == "" || p.GameWin64 == "" {
 		return []installResult{{"Folder locations", false,
-			"both folders are required — set the Bridge folder and Game folder override in the launcher"}}
-	}
-	out := []installResult{resultOf("Bridge folder", p.ConfigDir, os.MkdirAll(p.ConfigDir, 0755))}
-	if src != "" {
-		out = append(out, installScanner(src, p.ConfigDir))
+			"both folders are required — set the Bridge folder and Game folder override in the launcher"}}, p
 	}
 	if !dirExists(p.GameWin64) {
-		out = append(out, installResult{"Game folder", false,
-			"not found: " + p.GameWin64 + " — set the Game folder override to your Spyro Reignited Trilogy install's Falcon\\Binaries\\Win64"})
-		return out
+		return []installResult{{"Game folder", false,
+			"not found: " + p.GameWin64 + " — set the Game folder override to your Spyro Reignited Trilogy install's Falcon\\Binaries\\Win64"}}, p
 	}
-	out = append(out, installUE4SSStep(p.GameWin64, opts))
+	effective := p
+	out := installGameFolder(p.GameWin64, src, opts)
+	bridgeOut, bridgeDir := installBridge(p, src)
+	effective.ConfigDir = bridgeDir
+	return append(out, bridgeOut...), effective
+}
+
+// installGameFolder runs the steps that need no Proton prefix: UE4SS, the mod
+// tree and mods.txt. A folder the player cannot write to is reported once and
+// the write steps are skipped, so a permissions problem cannot look like a
+// half-finished install.
+func installGameFolder(win64, src string, opts installOptions) []installResult {
+	if err := probeWritable(win64); err != nil {
+		return []installResult{{"Folder permissions", false,
+			"the game folder is not writable: " + win64 + " — " + permissionFix}}
+	}
+	out := []installResult{installUE4SSStep(win64, opts)}
 	if src != "" {
-		modDir := filepath.Join(p.GameWin64, "Mods", "srt_bridge")
-		out = append(out, resultOf("srt_bridge mod", modDir, installMod(src, p.GameWin64)))
+		modDir := filepath.Join(win64, "Mods", "srt_bridge")
+		out = append(out, resultOf("srt_bridge mod", modDir, installMod(src, win64)))
 	}
-	modsTxt := filepath.Join(p.GameWin64, "Mods", "mods.txt")
+	modsTxt := filepath.Join(win64, "Mods", "mods.txt")
 	return append(out, resultOf("Enable mod (mods.txt)", modsTxt, enableMod(modsTxt)))
+}
+
+// installBridge creates the bridge folder and installs the scanner into it,
+// returning the folder actually used. With no usable Proton prefix on Linux it
+// creates nothing and reports the deferred-install guidance instead: a partial
+// prefix makes Steam reuse a broken one. A legacy folder migrates to the new
+// location first (the legacy tree is left in place).
+func installBridge(p Paths, src string) ([]installResult, string) {
+	if runtime.GOOS != "windows" && !p.PrefixReady {
+		return []installResult{{"Bridge folder", false,
+				"no Proton prefix found (launch the game once through Steam, then click Install again)"}},
+			p.ConfigDir
+	}
+	target, migrated := bridgePlan(p.ConfigDir)
+	if err := probeWritable(filepath.Dir(target)); err != nil {
+		return []installResult{{"Bridge folder", false,
+				"the bridge folder's parent is not writable: " + filepath.Dir(target) + " — " + permissionFix}},
+			p.ConfigDir
+	}
+	var out []installResult
+	if migrated != "" {
+		if err := os.MkdirAll(target, 0755); err != nil {
+			return append(out, resultOf("Bridge folder", target, err)), p.ConfigDir
+		}
+		if err := copyTree(migrated, target); err != nil {
+			return append(out, resultOf("Bridge folder", target, err)), p.ConfigDir
+		}
+		resetTransientBridgeFiles(target)
+		out = append(out, installResult{"Bridge folder", true,
+			"migrated the old bridge folder " + migrated + " to " + target})
+	} else {
+		out = append(out, resultOf("Bridge folder", target, os.MkdirAll(target, 0755)))
+	}
+	if src != "" {
+		out = append(out, installScanner(src, target))
+	}
+	return out, target
+}
+
+// bridgePlan returns the folder an install should write the bridge files to,
+// plus the legacy folder it must migrate from ("" when nothing is migrated).
+// Only a legacy folder whose new-location counterpart holds no bridge files
+// yet migrates; anything else installs in place.
+func bridgePlan(configDir string) (target, migratedFrom string) {
+	if !isLegacyBridge(configDir) {
+		return configDir, ""
+	}
+	newDir := newBridgeForConfig(configDir)
+	if newDir == "" || samePath(newDir, configDir) || hasBridgeFiles(newDir) {
+		return configDir, ""
+	}
+	return newDir, configDir
+}
+
+// resetTransientBridgeFiles removes the session-scoped files a copied bridge
+// carries. A heartbeat would make a freshly spawned checkd think another
+// instance is alive, and a session/drop belongs to the previous save.
+func resetTransientBridgeFiles(bridge string) {
+	for _, name := range []string{"checkd.hb", "checks.json", "session.txt"} {
+		_ = os.Remove(filepath.Join(bridge, name))
+	}
+}
+
+// probeWritable reports whether dir accepts a new file, creating dir first when
+// it is missing and leaving nothing behind.
+func probeWritable(dir string) error {
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	f, err := os.CreateTemp(dir, ".srtap-write-*")
+	if err != nil {
+		return err
+	}
+	name := f.Name()
+	_ = f.Close()
+	return os.Remove(name)
 }
 
 // resultOf is one step's outcome: detail when err is nil, else its message.

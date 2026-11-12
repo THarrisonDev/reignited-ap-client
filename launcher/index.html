@@ -1,5 +1,17 @@
+{{define "flash"}}{{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}{{end}}
+
+{{define "checks"}}{{range .Checks}}
+  <div class="check">
+    <span class="{{if .OK}}ok{{else}}bad{{end}}">{{if .OK}}&#10003;{{else}}&#10007;{{end}}</span>
+    <div>
+      <div>{{.Name}}</div>
+      <div class="detail">{{.Detail}}</div>
+      {{if not .OK}}<div class="fix">{{.Fix}}</div>{{end}}
+    </div>
+  </div>
+{{end}}{{end}}
+
 {{define "panel"}}
-  {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
   {{if .Install}}
   <ul class="checklist">
     {{range .Install}}
@@ -14,18 +26,10 @@
   </ul>
   {{end}}
   <p class="{{if .AllOK}}status-all-ok{{else}}status-not-ok{{end}}">
-    {{if .AllOK}}All good — you're ready to launch.{{else}}Some items need attention:{{end}}
-  </p>
-  {{range .Checks}}
-  <div class="check">
-    <span class="{{if .OK}}ok{{else}}bad{{end}}">{{if .OK}}&#10003;{{else}}&#10007;{{end}}</span>
-    <div>
-      <div>{{.Name}}</div>
-      <div class="detail">{{.Detail}}</div>
-      {{if not .OK}}<div class="fix">{{.Fix}}</div>{{end}}
-    </div>
-  </div>
-  {{end}}
+    {{if .AllOK}}All good — ready to launch.{{else}}Needs attention:{{end}}</p>
+  {{if .AllOK}}
+  <details><summary>All {{len .Checks}} checks passed</summary>{{template "checks" .}}</details>
+  {{else}}{{template "checks" .}}{{end}}
 {{end}}
 
 {{define "feed"}}
@@ -47,9 +51,47 @@
     {{end}}
   </ul>
   {{else}}
-  <p class="hint">Checks you send and items you receive show up here while this page is open.</p>
+  <p class="hint">Sent checks and received items appear here while you play.</p>
   {{end}}
 {{end}}
+
+{{define "hints"}}
+  <p class="hint">
+    {{if not .PointsKnown}}Points unknown — reconnect to refresh.
+    {{else if .Free}}Hints are free.
+    {{else}}Hints: <b>{{.Points}}</b> points · <b>{{.Cost}}</b> per hint{{end}}
+  </p>
+  {{if .Notice}}<p class="bad">{{.Notice}}</p>{{end}}
+  {{if .Hints}}
+  <ul class="events">
+    {{range .Hints}}
+    <li>
+      <span class="what">
+        <b{{if .Progression}} class="prog"{{end}}>{{.ItemName}}</b> for {{.ReceiverName}}
+        <span class="where">{{.LocationName}}{{if ne .FinderName .ReceiverName}} ({{.FinderName}}){{end}} ·
+          {{if .Found}}found{{else}}not found{{end}}</span>
+      </span>
+    </li>
+    {{end}}
+  </ul>
+  {{else}}
+  <p class="hint">{{if .Connected}}No hints yet — ask for one below.{{else}}Waiting for the server.{{end}}</p>
+  {{end}}
+{{end}}
+
+{{define "hintResults"}}
+  {{if .Shown}}
+  <div class="buttons results">
+    {{range .Shown}}<button type="button" hx-post="/hint?kind={{$.Field}}&{{$.Param}}={{urlquery .}}" hx-target="#hints" hx-include="#cfg"{{if not $.Free}} hx-confirm="Spend {{$.Cost}} points on this hint?"{{end}}>{{.}}</button>{{end}}
+  </div>
+  {{if .Capped}}<p class="hint">Showing {{len .Shown}} of {{.Total}} matches — keep typing to narrow.</p>{{end}}
+  {{else}}
+  <p class="hint">{{.Prompt}}</p>
+  {{end}}
+{{end}}
+
+{{define "apply"}}<div id="flash" hx-swap-oob="true" data-tab="{{.NextTab}}">{{template "flash" .}}</div>
+{{template "panel" .}}{{end}}
 
 {{define "page"}}<!DOCTYPE html>
 <html lang="en">
@@ -69,12 +111,21 @@
   input[type=text], input[type=password], select {
      width: 100%; padding: .5rem; font-size: 1rem; box-sizing: border-box; }
   .hint { font-weight: 400; color: #8a8a8a; font-size: .85rem; }
-  .buttons { margin: 1.5rem 0; display: flex; gap: .6rem; flex-wrap: wrap; }
+  ul.hint { padding-left: 1.2rem; margin: .3rem 0; }
+  ul.hint li { margin: .25rem 0; }
+  .buttons { margin: 1.2rem 0; display: flex; gap: .6rem; flex-wrap: wrap;
+             align-items: center; }
   button { padding: .6rem 1.1rem; font-size: 1rem; cursor: pointer; border-radius: 6px;
            border: 1px solid #8886; }
   button.linkish { padding: 0; border: 0; background: none; color: inherit;
                    text-decoration: underline; font-size: inherit; }
   button.primary { background: #2d7d46; color: #fff; border-color: #2d7d46; }
+  .tabs { display: flex; gap: .4rem; border-bottom: 1px solid #8884; margin-top: 1.2rem; }
+  .tabbtn { padding: .45rem .9rem; font-size: .95rem; color: inherit; background: none;
+            border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; }
+  .tabbtn.active { border-color: #8884; background: #8881; font-weight: 600; }
+  .tab { padding-top: .4rem; }
+  .tab[hidden] { display: none; }
   .flash { background: #2d7d4622; border: 1px solid #2d7d46; padding: .6rem .8rem;
            border-radius: 6px; margin: 1rem 0; }
   .check { display: flex; gap: .6rem; align-items: baseline; padding: .35rem 0;
@@ -92,6 +143,8 @@
   .count { color: #8a8a8a; font-size: .9rem; margin-left: .4rem; }
   .events { list-style: none; padding: 0; margin: .5rem 0; max-height: 22rem; overflow-y: auto; }
   .events li { display: flex; gap: .7rem; padding: .3rem 0; border-bottom: 1px solid #8882; }
+  .results { margin: .35rem 0 0; gap: .35rem; max-height: 12rem; overflow-y: auto; }
+  .results button { padding: .25rem .55rem; font-size: .88rem; text-align: left; }
   .when { color: #8a8a8a; font-variant-numeric: tabular-nums; flex: none; }
   .where { display: block; color: #8a8a8a; font-size: .82rem; }
   .prog { color: #b8860b; }
@@ -100,49 +153,156 @@
 <body>
   <h1>Spyro Reignited Launcher</h1>
 
-  <h2>Your checks</h2>
-  <div id="feed" hx-get="/feed" hx-trigger="every 2s">{{template "feed" .Feed}}</div>
+  <div id="flash">{{template "flash" .}}</div>
+
+  <div class="tabs" role="tablist">
+    <button type="button" class="tabbtn" role="tab" data-tab="setup">Setup</button>
+    <button type="button" class="tabbtn" role="tab" data-tab="play">Play</button>
+    <button type="button" class="tabbtn" role="tab" data-tab="help">Help</button>
+  </div>
 
   <form id="cfg">
     <input type="hidden" name="csrf" value="{{.Token}}">
-    <h2>Connection</h2>
-    <label>Server host</label>
-    <input type="text" name="host" value="{{.Host}}" placeholder="archipelago.gg:38281">
 
-    <label>Slot name</label>
-    <input type="text" name="slot" value="{{.Slot}}" placeholder="SRTPlayer">
+    <section id="tab-setup" class="tab" role="tabpanel">
+      <h2>Connection</h2>
+      <label>Server host</label>
+      <input type="text" name="host" value="{{.Host}}" placeholder="archipelago.gg:38281">
 
-    <label>Password</label>
-    <input type="password" name="password" value="{{.Password}}">
+      <label>Slot name</label>
+      <input type="text" name="slot" value="{{.Slot}}" placeholder="SRTPlayer">
 
-    <h2>Save file</h2>
-    <p class="hint">Pick New Game or Continue from the game's main menu. Nothing is
-      sent to the server until you're playing, so you can delete or switch saves
-      there first. Returning to the main menu disconnects.</p>
+      <label>Password</label>
+      <input type="password" name="password" value="{{.Password}}">
 
-    <details>
-      <summary>Folder locations</summary>
-      <label>Bridge folder</label>
-      <input type="text" name="config_dir" value="{{.Paths.ConfigDir}}">
-      <label>Game folder</label>
-      <input type="text" name="game_win64" value="{{.Paths.GameWin64}}">
-      <p><button type="submit" form="reset" class="linkish">↺ Reset to auto-detected</button></p>
-    </details>
+      <p class="hint">Nothing connects until you load a save, so switching or deleting
+        saves on the main menu is fine.</p>
 
-    <div class="buttons"
-         hx-include="#cfg" hx-target="#panel" hx-swap="innerHTML">
-      <button type="button" hx-post="/apply" hx-vals='{"action":"save"}'>Save config</button>
-      <button type="button" hx-post="/apply" hx-vals='{"action":"launch"}' class="primary">Save &amp; launch game</button>
-      <button type="button" hx-post="/apply" hx-vals='{"action":"install"}' hx-disabled-elt="this">Install / update setup</button>
-      <button type="button" hx-post="/apply" hx-vals='{"action":"recheck"}'>Re-check setup</button>
-      <button type="button" onclick="location.href='/logs.zip'">Download logs for support</button>
-    </div>
+      {{if .Linux}}
+      <p class="hint">On Linux, add <code>WINEDLLOVERRIDES="dwmapi=n,b" %command%</code>
+        to the game's Steam launch options (right-click Spyro in Steam → Properties).
+        Without it the game runs but the mod never loads.</p>
+      {{end}}
+
+      <div class="buttons" hx-include="#cfg" hx-target="#panel" hx-swap="innerHTML">
+        <button type="button" hx-post="/apply" hx-vals='{"action":"launch"}' class="primary">Save &amp; launch game</button>
+        <button type="button" hx-post="/apply" hx-vals='{"action":"save"}'>Save config</button>
+      </div>
+
+      <h2>Setup check</h2>
+      <div id="panel">{{template "panel" .}}</div>
+      <div class="buttons" hx-include="#cfg" hx-target="#panel" hx-swap="innerHTML">
+        <button type="button" hx-post="/apply" hx-vals='{"action":"install"}' hx-disabled-elt="this">Install / update setup</button>
+        <button type="button" hx-post="/apply" hx-vals='{"action":"recheck"}'>Re-check</button>
+      </div>
+
+      <details>
+        <summary>Folders</summary>
+        <p class="hint">Detected from Steam. Only change these if the setup check can't
+          find your game.</p>
+        <label>Bridge folder{{if .ConfigAuto}} <span class="hint">(auto-detected)</span>{{end}}</label>
+        <input type="text" name="config_dir" value="{{.Paths.ConfigDir}}">
+        <label>Game folder{{if .GameAuto}} <span class="hint">(auto-detected)</span>{{end}}</label>
+        <input type="text" name="game_win64" value="{{.Paths.GameWin64}}">
+        {{if .Discovery}}
+        <div class="detail">
+          {{range .Discovery}}{{.}}<br>{{end}}
+        </div>
+        {{end}}
+        <div class="buttons" hx-include="#cfg" hx-target="#panel" hx-swap="innerHTML">
+          <button type="button" hx-post="/apply" hx-vals='{"action":"save"}'>Save</button>
+          <button type="submit" form="reset" class="linkish">↺ Reset to auto-detected</button>
+        </div>
+      </details>
+    </section>
+
+    <section id="tab-play" class="tab" role="tabpanel">
+      <h2>Your checks</h2>
+      <div id="feed" hx-get="/feed" hx-trigger="every 2s">{{template "feed" .Feed}}</div>
+
+      <h2>Hints</h2>
+      <div id="hints" hx-get="/hints" hx-trigger="every 2s">{{template "hints" .Hints}}</div>
+
+      <div id="hint-form">
+        <label>Location in your world</label>
+        <input type="text" name="loc_name" placeholder="Artisans: Free Nestor" autocomplete="off"
+               hx-get="/hint/search" hx-trigger="keyup changed delay:250ms, focus"
+               hx-vals='{"field":"location"}' hx-include="this" hx-target="#loc-results">
+        <div id="loc-results"></div>
+
+        <label>Item you can receive</label>
+        <input type="text" name="item_name" placeholder="Dragon" autocomplete="off"
+               hx-get="/hint/search" hx-trigger="keyup changed delay:250ms, focus"
+               hx-vals='{"field":"item"}' hx-include="this" hx-target="#item-results">
+        <div id="item-results"></div>
+
+        <div class="buttons">
+          <button type="button" hx-post="/hint" hx-target="#hints" hx-include="#cfg" hx-vals='{"kind":"location"}'{{if not .Hints.Free}} hx-confirm="Spend {{.Hints.Cost}} points on this hint?"{{end}}>Hint location</button>
+          <button type="button" hx-post="/hint" hx-target="#hints" hx-include="#cfg" hx-vals='{"kind":"item"}'{{if not .Hints.Free}} hx-confirm="Spend {{.Hints.Cost}} points on this hint?"{{end}}>Hint item</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-help" class="tab" role="tabpanel">
+      <h2>Cap the frame rate</h2>
+      <p class="hint">Uncapped, Spyro's movement breaks, and the in-game limiter is
+        buggy too — so cap at <b>60 FPS</b> in your graphics driver and leave the
+        in-game limit off.</p>
+      <ul class="hint">
+        <li><b>NVIDIA:</b> Control Panel → Manage 3D settings → Program Settings →
+          Spyro Reignited Trilogy → <i>Max Frame Rate</i> = 60 (on Linux, the same
+          per-application profile in <code>nvidia-settings</code>).</li>
+        <li><b>AMD:</b> Adrenalin → Gaming → Spyro Reignited Trilogy →
+          <i>Frame Rate Target Control</i> = 60.</li>
+        <li><b>Linux (Proton):</b> <code>DXVK_FRAME_RATE=60</code> in the game's Steam
+          launch options, or cap it with gamescope.</li>
+      </ul>
+
+      <h2>When checks are sent</h2>
+      <p class="hint">Checks are read from your save file, so they reach the server when
+        the game saves — finishing or quitting a level does it.</p>
+
+      <h2>Support</h2>
+      <p class="hint">A red setup check names what's missing. Logs live in
+        <code>{{.Paths.ConfigDir}}</code>.</p>
+      <div class="buttons">
+        <button type="button" onclick="location.href='/logs.zip'">Download logs for support</button>
+      </div>
+    </section>
   </form>
+
   <form id="reset" method="post" action="/reset">
     <input type="hidden" name="csrf" value="{{.Token}}">
   </form>
 
-  <h2>Setup check</h2>
-  <div id="panel">{{template "panel" .}}</div>
+  <script>
+    (function () {
+      var tabs = document.querySelectorAll('.tab');
+      var buttons = document.querySelectorAll('.tabbtn');
+      function show(name) {
+        var found = false;
+        tabs.forEach(function (el) {
+          var on = el.id === 'tab-' + name;
+          el.hidden = !on;
+          if (on) found = true;
+        });
+        if (!found) { show('setup'); return; }
+        buttons.forEach(function (b) {
+          var on = b.dataset.tab === name;
+          b.classList.toggle('active', on);
+          b.setAttribute('aria-selected', on ? 'true' : 'false');
+        });
+        if (location.hash !== '#' + name) history.replaceState(null, '', '#' + name);
+      }
+      buttons.forEach(function (b) {
+        b.addEventListener('click', function () { show(b.dataset.tab); });
+      });
+      document.body.addEventListener('htmx:oobAfterSwap', function () {
+        var tab = document.getElementById('flash').dataset.tab;
+        if (tab) show(tab);
+      });
+      show((location.hash || '').replace('#', '') || 'setup');
+    })();
+  </script>
 </body>
 </html>{{end}}
