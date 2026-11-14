@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-26
--- Updated: 2026-10-23
+-- Updated: 2026-11-13
 
 -- util: shared UE4SS Lua helpers — pcall-safe reads, out-param unwrapping,
 -- actor identity and the one-job game-thread runner. Pure logic, no mod state.
@@ -31,6 +31,19 @@ function U.game_state()
     local gs = ok_res(function() return FindFirstOf("FalconGameState_C") end, nil)
     if not U.valid(gs) then return nil end
     return gs
+end
+
+--- Return the pawn the player controller is driving, or nil. The controller is
+--- the game's own answer to "which Spyro is the player"; a bare pawn-class
+--- lookup can also match a parked actor from another world.
+--- @return userdata|nil
+function U.controlled_pawn()
+    local pc = ok_res(function() return FindFirstOf("BP_Controller_Player_C") end, nil)
+    if not U.valid(pc) then return nil end
+    local pawn = ok_res(function() return pc.CurrentControlledPawn end, nil)
+    if not U.valid(pawn) then pawn = ok_res(function() return pc:GetPawn() end, nil) end
+    if not U.valid(pawn) then return nil end
+    return pawn
 end
 
 --- Return whether UE4SS exposes the game-thread write API.

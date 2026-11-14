@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-26
--- Updated: 2026-11-10
+-- Updated: 2026-11-13
 
 -- fillers: apply received filler items — Extra Life, cheat-code looks (colors,
 -- Big Head, Flat Spyro) and Damage Trap. Its one persisted value (the granted
@@ -748,23 +748,9 @@ local function expire_look(now)
     end
 end
 
---- Return the pawn the player controller is driving, or nil. The controller is
---- the game's own answer to "which Spyro is the player"; the same pawn class is
---- used in all three games, and a bare class lookup can also match a parked
---- actor from another world.
---- @return userdata|nil
-local function controlled_pawn()
-    local pc = safe(function() return FindFirstOf("BP_Controller_Player_C") end, nil)
-    if not valid(pc) then return nil end
-    local pawn = safe(function() return pc.CurrentControlledPawn end, nil)
-    if not valid(pawn) then pawn = safe(function() return pc:GetPawn() end, nil) end
-    if not valid(pawn) then return nil end
-    return pawn
-end
-
 --- Find the pawn and its actor key, forgetting the tint state for a new pawn.
 local function find_pawn()
-    local pawn = controlled_pawn() or safe(function() return FindFirstOf(PAWN_CLASS) end, nil)
+    local pawn = U.controlled_pawn() or safe(function() return FindFirstOf(PAWN_CLASS) end, nil)
     local key = valid(pawn) and actor_key(pawn) or nil
     if not key then return nil, nil end
     if key ~= applied_pawn then reset_tint(key) end

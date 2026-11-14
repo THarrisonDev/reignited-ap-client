@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-09-26
--- Updated: 2026-11-09
+-- Updated: 2026-11-13
 
 -- death_link: AP DeathLink — Spyro's own deaths bounce to the other DeathLink
 -- players, and an incoming bounce queues the game's own death path
@@ -145,18 +145,8 @@ end
 
 --- Poll the pawn: apply a pending kill, then bounce a fresh player death
 --- (unless it is our own suppressed induced death).
---- Return the pawn the player controller is driving, or nil.
-local function controlled_pawn()
-    local pc = safe(function() return FindFirstOf("BP_Controller_Player_C") end, nil)
-    if not valid(pc) then return nil end
-    local pawn = safe(function() return pc.CurrentControlledPawn end, nil)
-    if not valid(pawn) then pawn = safe(function() return pc:GetPawn() end, nil) end
-    if not valid(pawn) then return nil end
-    return pawn
-end
-
 function M.tick()
-    local pawn = controlled_pawn() or safe(function() return FindFirstOf(PAWN_CLASS) end, nil)
+    local pawn = U.controlled_pawn() or safe(function() return FindFirstOf(PAWN_CLASS) end, nil)
     if not valid(pawn) then return end
     local is_dead = safe(function() return pawn:IsDead() end, nil)
     if is_dead == nil then is_dead = false end

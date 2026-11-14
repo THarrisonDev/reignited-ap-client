@@ -1,6 +1,6 @@
 // Author: Tim Harrison
 // Created: 2026-09-26
-// Updated: 2026-11-11
+// Updated: 2026-11-13
 
 package main
 
@@ -149,11 +149,26 @@ func (s *server) postForm(h http.HandlerFunc, path string, form url.Values) *htt
 	return rec
 }
 
+// newTestServer builds a server over throwaway state and game paths.
+func newTestServer(t *testing.T) *server {
+	t.Helper()
+	useStateFile(t, filepath.Join(t.TempDir(), "paths.json"))
+	return testServer(t, Paths{ConfigDir: t.TempDir(), GameWin64: t.TempDir()})
+}
+
+// rootPage returns a fresh server and the rendered root page.
+func rootPage(t *testing.T) (*server, string) {
+	t.Helper()
+	s := newTestServer(t)
+	rec := httptest.NewRecorder()
+	s.handleRoot(rec, httptest.NewRequest("GET", "/", nil))
+	return s, rec.Body.String()
+}
+
 // TestApplyRejectsGet pins the method guard: /apply installs and launches, so a
 // GET (which any <img src> can trigger) must not reach it.
 func TestApplyRejectsGet(t *testing.T) {
-	useStateFile(t, filepath.Join(t.TempDir(), "paths.json"))
-	s := testServer(t, Paths{ConfigDir: t.TempDir(), GameWin64: t.TempDir()})
+	s := newTestServer(t)
 
 	rec := httptest.NewRecorder()
 	s.handleApply(rec, httptest.NewRequest("GET", "/apply?action=install", nil))
@@ -164,8 +179,7 @@ func TestApplyRejectsGet(t *testing.T) {
 
 // TestApplyAndResetRejectBadToken pins the CSRF guard on both POST endpoints.
 func TestApplyAndResetRejectBadToken(t *testing.T) {
-	useStateFile(t, filepath.Join(t.TempDir(), "paths.json"))
-	s := testServer(t, Paths{ConfigDir: t.TempDir(), GameWin64: t.TempDir()})
+	s := newTestServer(t)
 
 	for _, tc := range []struct {
 		name string
@@ -422,12 +436,8 @@ func TestRootNeverWritesState(t *testing.T) {
 // TestRootShowsFrameRateNote pins the frame-rate workaround: uncapped, the
 // game's movement breaks, so the note must stay on the page the player sees.
 func TestRootShowsFrameRateNote(t *testing.T) {
-	useStateFile(t, filepath.Join(t.TempDir(), "paths.json"))
-	s := testServer(t, Paths{ConfigDir: t.TempDir(), GameWin64: t.TempDir()})
+	_, body := rootPage(t)
 
-	rec := httptest.NewRecorder()
-	s.handleRoot(rec, httptest.NewRequest("GET", "/", nil))
-	body := rec.Body.String()
 	for _, want := range []string{"Cap the frame rate", "60 FPS", "Max Frame Rate", "Frame Rate Target Control"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("page is missing %q from the frame-rate note", want)
@@ -439,13 +449,9 @@ func TestRootShowsFrameRateNote(t *testing.T) {
 // an /apply answer carries its flash out of band so the message is visible
 // whichever tab the player is on.
 func TestPageHasSetupPlayAndHelpTabs(t *testing.T) {
-	useStateFile(t, filepath.Join(t.TempDir(), "paths.json"))
-	s := testServer(t, Paths{ConfigDir: t.TempDir(), GameWin64: t.TempDir()})
-
-	page := httptest.NewRecorder()
-	s.handleRoot(page, httptest.NewRequest("GET", "/", nil))
+	s, page := rootPage(t)
 	for _, want := range []string{`id="tab-setup"`, `id="tab-play"`, `id="tab-help"`, `data-tab="play"`} {
-		if !strings.Contains(page.Body.String(), want) {
+		if !strings.Contains(page, want) {
 			t.Fatalf("page is missing %q", want)
 		}
 	}
@@ -464,12 +470,8 @@ func TestPageHasSetupPlayAndHelpTabs(t *testing.T) {
 // the install button all sit on the tab the page opens on, so the player can
 // start playing without hunting for a second tab.
 func TestSetupTabKeepsLaunchAndInstall(t *testing.T) {
-	useStateFile(t, filepath.Join(t.TempDir(), "paths.json"))
-	s := testServer(t, Paths{ConfigDir: t.TempDir(), GameWin64: t.TempDir()})
+	_, body := rootPage(t)
 
-	rec := httptest.NewRecorder()
-	s.handleRoot(rec, httptest.NewRequest("GET", "/", nil))
-	body := rec.Body.String()
 	setup, play := strings.Index(body, `id="tab-setup"`), strings.Index(body, `id="tab-play"`)
 	if setup < 0 || play < 0 || setup > play {
 		t.Fatalf("Setup must come first: setup=%d play=%d", setup, play)
@@ -488,12 +490,8 @@ func TestSetupTabKeepsLaunchAndInstall(t *testing.T) {
 // TestPlayTabIsChecksAndHints pins what the Play tab is for: the live check feed
 // and the hint panel, nothing else.
 func TestPlayTabIsChecksAndHints(t *testing.T) {
-	useStateFile(t, filepath.Join(t.TempDir(), "paths.json"))
-	s := testServer(t, Paths{ConfigDir: t.TempDir(), GameWin64: t.TempDir()})
+	_, body := rootPage(t)
 
-	rec := httptest.NewRecorder()
-	s.handleRoot(rec, httptest.NewRequest("GET", "/", nil))
-	body := rec.Body.String()
 	play, help := strings.Index(body, `id="tab-play"`), strings.Index(body, `id="tab-help"`)
 	if play < 0 || help < 0 || play > help {
 		t.Fatalf("Play must sit between Setup and Help: play=%d help=%d", play, help)
@@ -510,8 +508,7 @@ func TestPlayTabIsChecksAndHints(t *testing.T) {
 // polls, while the name inputs, their search results and the buttons sit outside
 // the polled div, so a refresh never wipes what the player typed.
 func TestPlayTabHintsPollAndStayTypingSafe(t *testing.T) {
-	useStateFile(t, filepath.Join(t.TempDir(), "paths.json"))
-	s := testServer(t, Paths{ConfigDir: t.TempDir(), GameWin64: t.TempDir()})
+	s := newTestServer(t)
 	ten := 10.0
 	s.feed.setHintCost(&ten)
 	s.feed.setChecks(3, 238)
@@ -668,8 +665,7 @@ func hintSearch(t *testing.T, s *server, field, q string) string {
 // connected room would leave them.
 func hintSearchServer(t *testing.T, missing, items []string) *server {
 	t.Helper()
-	useStateFile(t, filepath.Join(t.TempDir(), "paths.json"))
-	s := testServer(t, Paths{ConfigDir: t.TempDir(), GameWin64: t.TempDir()})
+	s := newTestServer(t)
 	s.feed.setStatus(true, "Connected as SRTPlayer.")
 	s.feed.setLists(missing, items)
 	return s
@@ -761,8 +757,7 @@ func TestHintSearchSpreadsLevelsWithinOneGame(t *testing.T) {
 // TestHintSearchNeedsAConnection pins the idle state: before the feed connects the
 // search waits rather than claiming the room holds nothing.
 func TestHintSearchNeedsAConnection(t *testing.T) {
-	useStateFile(t, filepath.Join(t.TempDir(), "paths.json"))
-	s := testServer(t, Paths{ConfigDir: t.TempDir(), GameWin64: t.TempDir()})
+	s := newTestServer(t)
 
 	body := hintSearch(t, s, "location", "nestor")
 	if !strings.Contains(body, "Waiting for the server.") || strings.Contains(body, "<button") {
