@@ -1,13 +1,16 @@
 -- Author: Tim Harrison
 -- Created: 2026-11-03
--- Updated: 2026-11-03
+-- Updated: 2026-11-13
 
 -- guidebook_core: factory behind the per-game spyroN/guidebook.lua modules. It
 -- marks a received level key's level as visited in the game, so the level is
--- listed in the in-game Guide Book before the player has ever entered it. With
--- the slot's Open World option on it also marks every homeworld visited, so the
--- Guide Book's own travel lists the hubs; the book's jump is the game's feature
--- (do level jump -> begin level load), not something this mod drives.
+-- listed in the in-game Guide Book before the player has ever entered it, and
+-- it marks that level's homeworld too: the book lists a homeworld's levels on a
+-- page of its own, and the page only exists once the hub's path is visited, so
+-- a key to a hub the player has never entered would otherwise stay invisible.
+-- With the slot's Open World option on it also marks every homeworld visited, so
+-- the Guide Book's own travel lists the hubs; the book's jump is the game's
+-- feature (do level jump -> begin level load), not something this mod drives.
 --
 -- The write is the gamestate's own `set level visited`, the call `complete
 -- level load` makes (it is not `save progression`, which stays banned). Every
@@ -33,6 +36,7 @@ local function new(cfg)
     local region_to_path = {}   -- "Stone Hill" -> "/LS102_StoneHill/Maps/"
     local homeworlds = cfg.homeworlds or {} -- region -> true (constants.lua)
     local key_to_region = {}    -- key item name -> region, this seed
+    local region_homeworld = {} -- level region -> its homeworld region, this seed
     local key_count = 0
     local can_write = false     -- ExecuteInGameThread available
     local enabled = false
@@ -104,6 +108,20 @@ local function new(cfg)
         return false
     end
 
+    --- Queue the key's homeworld visit, so its page exists in the book. A seed
+    --- without the mapping (old slot data) marks the level alone.
+    local function queue_homeworld(region)
+        local homeworld = region_homeworld[region]
+        if homeworld == nil or listed[homeworld] then return end
+        if region_to_path[homeworld] == nil then
+            if warned[homeworld] then return end
+            warned[homeworld] = true
+            log.warn("no level path for homeworld " .. homeworld .. "; guide book page dropped")
+            return
+        end
+        pending[homeworld] = true
+    end
+
     -- -----------------------------------------------------------------------
     -- API
     -- -----------------------------------------------------------------------
@@ -131,16 +149,31 @@ local function new(cfg)
         end
     end
 
+    --- Copy the string -> string pairs of one slot-data table into out; anything
+    --- else (an absent table, a malformed entry) is dropped.
+    local function string_map(raw, out)
+        for k, v in pairs(type(raw) == "table" and raw or {}) do
+            if type(k) == "string" and type(v) == "string" then out[k] = v end
+        end
+        return out
+    end
+
+    --- Read one game's level keys and level -> homeworld map from slot data.
+    --- Returns key item name -> region, and level region -> homeworld region.
+    local function read_level_data(sd)
+        local gamedata = O.game_data(sd, cfg.game)
+        local keys = {}
+        for region, key in pairs(string_map(gamedata.level_keys, {})) do
+            keys[key] = region
+        end
+        return keys, string_map(gamedata.level_homeworlds, {})
+    end
+
     --- Read this game's level keys from slot data and reset per-session state.
     function M.configure(sd)
-        key_to_region, key_count = {}, 0
-        local raw = O.game_data(sd, cfg.game).level_keys
-        for region, key in pairs(type(raw) == "table" and raw or {}) do
-            if type(region) == "string" and type(key) == "string" then
-                key_to_region[key] = region
-                key_count = key_count + 1
-            end
-        end
+        key_to_region, region_homeworld = read_level_data(sd)
+        key_count = 0
+        for _ in pairs(key_to_region) do key_count = key_count + 1 end
         local open_world = O.flag(O.game_options(sd, cfg.game).open_world, "open_world", log)
         held, pending, listed, retries, warned = {}, {}, {}, {}, {}
         if open_world then queue_homeworlds() end
@@ -163,6 +196,7 @@ local function new(cfg)
         end
         held[region] = true
         if not listed[region] then pending[region] = true end
+        queue_homeworld(region)
         log.debug(string.format("%s received (index %s); guide book visit queued", name, tostring(index)))
     end
 

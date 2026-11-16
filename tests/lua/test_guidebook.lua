@@ -1,6 +1,6 @@
 -- Author: Tim Harrison
 -- Created: 2026-11-03
--- Updated: 2026-11-03
+-- Updated: 2026-11-13
 
 -- Stub-based spec for the guide-book visit modules
 -- (Scripts/guidebook_core.lua behind spyroN/guidebook.lua). Fakes the
@@ -8,7 +8,8 @@
 -- itself and the readback answers from that record, so a write the game did not
 -- take is visible to the module's own readback. ExecuteInGameThread only
 -- QUEUES work; H.pump() runs it with the game-thread flag set, and every write
--- asserts that flag (level_locks hardlock lesson).
+-- asserts that flag (level_locks hardlock lesson). A key also marks its
+-- level's homeworld, because the book's level page lives under a visited hub.
 -- Run from the client repo root: lua tests/lua/test_guidebook.lua
 
 package.path = (debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "./") .. "support/?.lua;" .. package.path
@@ -61,6 +62,20 @@ local SD = {
 -- a key whose region is in the slot data but in no level path table
 local MISSING_SD = {
     games = { spyro1 = { level_keys = { ["Nowhere"] = "Spyro 1: Nowhere Key" } } },
+}
+-- the same keys with the slot's level -> homeworld map (both hubs are Artisans)
+local HUB_SD = {
+    games = { spyro1 = {
+        level_keys = { ["Stone Hill"] = STONE_KEY, ["Dark Hollow"] = HOLLOW_KEY },
+        level_homeworlds = { ["Stone Hill"] = "Artisans", ["Dark Hollow"] = "Artisans" },
+    } },
+}
+-- a key whose mapped homeworld is in no level path table
+local NOWHERE_HUB_SD = {
+    games = { spyro1 = {
+        level_keys = { ["Stone Hill"] = STONE_KEY },
+        level_homeworlds = { ["Stone Hill"] = "Nowhere" },
+    } },
 }
 
 -- ---------------------------------------------------------------------------
@@ -228,6 +243,77 @@ test("the spyro2 wrapper reads games.spyro2.level_keys", function()
     assert(#sets == 1 and sets[1].path == GLIMMER_PATH, "expected one visit write for Glimmer")
     assert(world.visited[GLIMMER_PATH] == true, "Glimmer not marked visited")
     assert(G.status():find("spyro2 ", 1, true), "status missing the spyro2 prefix: " .. G.status())
+end)
+
+test("a received key marks its level and its homeworld", function()
+    local G = fresh()
+    G.configure(HUB_SD)
+    G.note_item(STONE_KEY, 0)
+    settle(G)
+    local sets = calls_of("set")
+    assert(#sets == 2, "expected a level and a homeworld write, got " .. #sets)
+    assert(world.visited[STONE_PATH] == true, "Stone Hill not marked visited")
+    assert(world.visited[ARTISANS_PATH] == true, "Artisans homeworld not marked visited")
+    local s = G.status()
+    assert(s:find("listed=2", 1, true) and s:find("pending=0", 1, true), "status: " .. s)
+end)
+
+test("a second key in a listed homeworld does not rewrite the homeworld", function()
+    local G = fresh()
+    G.configure(HUB_SD)
+    G.note_item(STONE_KEY, 0)
+    settle(G)
+    assert(#calls_of("set") == 2, "expected a level and a homeworld write, got " .. #calls_of("set"))
+    G.note_item(HOLLOW_KEY, 1)
+    settle(G)
+    local sets = calls_of("set")
+    assert(#sets == 3, "expected one more write, got " .. #sets)
+    assert(sets[3].path == HOLLOW_PATH, "expected the Dark Hollow write, got " .. tostring(sets[3].path))
+    assert(G.status():find("listed=3", 1, true), "status: " .. G.status())
+end)
+
+test("a key skips a homeworld an open-world configure already listed", function()
+    local G = fresh()
+    G.configure({ games = { spyro1 = {
+        options = { open_world = 1 },
+        level_keys = { ["Stone Hill"] = STONE_KEY },
+        level_homeworlds = { ["Stone Hill"] = "Artisans" },
+    } } })
+    settle(G)
+    assert(#calls_of("set") == 1, "expected one homeworld write, got " .. #calls_of("set"))
+    G.note_item(STONE_KEY, 0)
+    settle(G)
+    local sets = calls_of("set")
+    assert(#sets == 2, "expected one more write, got " .. #sets)
+    assert(sets[2].path == STONE_PATH, "expected the Stone Hill write, got " .. tostring(sets[2].path))
+end)
+
+test("a key with no homeworld mapping marks only its level", function()
+    local G = fresh()
+    G.configure(SD)
+    G.note_item(STONE_KEY, 0)
+    settle(G)
+    local sets = calls_of("set")
+    assert(#sets == 1 and sets[1].path == STONE_PATH, "expected only the level write, got " .. #sets)
+    assert(not H.logged("WARN", true), "warned without a homeworld mapping")
+    assert(G.status():find("listed=1", 1, true), "status: " .. G.status())
+end)
+
+test("a homeworld with no level path warns once and drops its visit", function()
+    local G = fresh()
+    G.configure(NOWHERE_HUB_SD)
+    G.note_item(STONE_KEY, 0)
+    settle(G)
+    assert(world.visited[STONE_PATH] == true, "Stone Hill not marked visited")
+    assert(H.count_logged("no level path for homeworld Nowhere", true) == 1,
+        "expected one homeworld no-path WARN")
+    assert(G.status():find("listed=1", 1, true) and G.status():find("pending=0", 1, true),
+        "status: " .. G.status())
+    G.note_item(STONE_KEY, 1)
+    settle(G)
+    assert(H.count_logged("no level path for homeworld Nowhere", true) == 1,
+        "the homeworld no-path WARN repeated")
+    assert(#calls_of("set") == 1, "the dropped homeworld was retried")
 end)
 
 H.finish()
