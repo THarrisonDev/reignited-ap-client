@@ -112,18 +112,6 @@ return {
     end,
   },
   {
-    name = "level_tracker",
-    shape = "sender",
-    games = ALL,
-    opts = function(host)
-      return {
-        send = function(region)
-          return host.ap.bounce({ type = "SRTLevel", level = region }, nil, { host.ap.player_number() })
-        end,
-      }
-    end,
-  },
-  {
     name = "death_link",
     shape = "sender",
     games = ALL,
