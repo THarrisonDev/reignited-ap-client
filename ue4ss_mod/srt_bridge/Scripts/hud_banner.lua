@@ -31,13 +31,13 @@
 -- longer than one window's budget spills into the next burst.
 --
 -- Received items carry a watermark, kept in the shared srtap_state file for
--- this seed+slot so a later session does not replay the item history AP
--- re-delivers on every connect, while items AP granted while the game was closed
--- (the tail of that sync) are still announced. It is written at the module's
--- durability points only — prime end, every ten new items, menu return, socket
--- drop — never per item or per burst, and it suppresses the banner only: the
--- item fan-out still counts the whole backlog, because the reconciles' recount
--- depends on it.
+-- this seed+slot. The first connect on a seed+slot announces its whole sync,
+-- paced like any other burst; the stored watermark keeps later connects quiet
+-- while items AP granted while the game was closed (the tail of that sync) are
+-- still announced. It is written at the module's durability points only — every
+-- ten new items, menu return, socket drop — never per item or per burst, and it
+-- suppresses the banner only: the item fan-out still counts the whole backlog,
+-- because the reconciles' recount depends on it.
 
 local M = {}
 
@@ -62,9 +62,6 @@ local dir = nil -- the host's state directory (fillers shares the same file)
 local shown_upto = -1 -- highest AP item index this connect has accounted for
 local flushed_upto = -1 -- shown_upto at the last persisted write
 local ITEM_FLUSH_EVERY = 10 -- new items that force a mid-session flush
-local priming = false -- the connect backlog is still arriving: swallow it
-local prime_quiet = 0 -- in-play polls with no item since the last one
-local primed = 0 -- items the current prime treated as history
 local backlog = 0 -- items suppressed because they were already announced
 
 local EFFT_DRAGON, DRAGON = 1, "Nestor" -- stand-in fanfare; the text is ours
@@ -85,7 +82,6 @@ local MISS_LIMIT = 3 -- consecutive widget-lookup misses before the burst drops
 local RESUME_VERIFY_TICKS = 16 -- in-play polls (~4s) a resumed Intro gets to close itself
 local FALLBACK_VERIFY_TICKS = 4 -- in-play polls (~1s) the legacy close gets to land
 local IDLE_OPEN_TICKS = 120 -- in-play polls (~30s) the game's own window may hold
-local PRIME_QUIET_TICKS = 4 -- in-play polls (~1s) of quiet that end the connect prime
 
 local STATE_IDLE, STATE_OPENING, STATE_OPEN = "idle", "opening", "open"
 local state = STATE_IDLE
@@ -673,10 +669,10 @@ function M.init(opts)
   dir = (opts and opts.dir) or dir
 end
 
---- Write the watermark into the shared state file. Durability points are the
---- end of a first-boot prime, every ITEM_FLUSH_EVERY new items (so a session
---- that ends without a menu return loses at most that many, not the whole run),
---- menu return (M.reset) and a socket drop.
+--- Write the watermark into the shared state file. Durability points are every
+--- ITEM_FLUSH_EVERY new items (so a session that ends without a menu return
+--- loses at most that many, not the whole run), menu return (M.reset) and a
+--- socket drop.
 local function save_seen()
   if shown_upto < 0 then
     return
@@ -688,18 +684,15 @@ end
 
 --- Take this seed+slot's stored watermark. A stored value means the connect
 --- backlog was already accounted for on an earlier session, so only the tail —
---- items AP delivered while the game was closed — is news; no value means this
---- is the first boot there and the whole sync is history. AP may deliver that
---- sync in several ItemsReceived messages, so the first boot waits
---- PRIME_QUIET_TICKS of quiet rather than one batch.
+--- items AP delivered while the game was closed — is news. No value means this
+--- is the first connect there: the whole sync is announced, paced like any other
+--- burst, and the watermark it writes keeps later connects quiet.
 --- @param sd table|nil Slot data carrying seed and slot.
 function M.configure(sd)
   S.open(sd, dir)
-  local seen = S.get("seen_upto", nil)
-  priming = seen == nil
-  shown_upto = seen or -1
+  shown_upto = S.get("seen_upto", nil) or -1
   flushed_upto = shown_upto
-  prime_quiet, primed, backlog = 0, 0, 0
+  backlog = 0
 end
 
 --- Clear the per-session queues and counters; a burst in flight releases its
@@ -712,7 +705,7 @@ function M.reset()
   end
   Q = { system = {}, item = {}, sent = {} }
   counters = { queued = 0, shown = 0, failed = 0, sent_queued = 0, sent_shown = 0 }
-  backlog, shown_upto, priming, prime_quiet, primed = 0, -1, false, 0, 0
+  backlog, shown_upto = 0, -1
   flushed_upto = -1
   state, batch, batch_i, current = STATE_IDLE, {}, 0, nil
   written, burst_ticks, dwell, opening, wait_ticks = 0, 0, 0, 0, 0
@@ -730,14 +723,6 @@ function M.tick(world)
   end
   not_in_play = false
   ticks = ticks + 1
-  if priming then
-    prime_quiet = prime_quiet + 1
-    if prime_quiet >= PRIME_QUIET_TICKS then
-      priming = false
-      log.info("connect backlog: " .. primed .. " item(s) treated as history")
-      save_seen()
-    end
-  end
   verify_release()
   if lease_lost() then
     return
@@ -754,9 +739,9 @@ function M.tick(world)
 end
 
 --- Queue a received item to show, unless the watermark already accounted for it.
---- While priming, an indexed item only advances the watermark and restarts the
---- quiet window; nothing is shown. Otherwise the stored watermark is what makes
---- the replay quiet and lets the offline tail (indexes past it) announce.
+--- The stored watermark is what makes a later connect's replay quiet and lets
+--- the offline tail (indexes past it) announce; the first connect on a seed+slot
+--- has none, so its whole sync is announced like any other burst.
 --- @param name string Item name.
 --- @param index number|nil AP item index; nil (no slot data) skips the watermark.
 function M.note_item(name, index)
@@ -764,13 +749,6 @@ function M.note_item(name, index)
     return
   end
   if index ~= nil then
-    if priming then
-      if index > shown_upto then
-        shown_upto = index
-      end
-      prime_quiet, primed = 0, primed + 1
-      return
-    end
     if index <= shown_upto then
       backlog = backlog + 1
       return
@@ -827,11 +805,10 @@ function M.status()
     lstate, attempts = lease.state, lease.attempts
   end
   return string.format(
-    "state=%s queued=%d backlog=%d priming=%s shown=%d failed=%d waiting=%d left=%d sent=%d sent_queued=%d sent_waiting=%d misses=%d held=%s lease=%s/%d idle_open=%d",
+    "state=%s queued=%d backlog=%d shown=%d failed=%d waiting=%d left=%d sent=%d sent_queued=%d sent_waiting=%d misses=%d held=%s lease=%s/%d idle_open=%d",
     state,
     counters.queued,
     backlog,
-    priming and "y" or "n",
     counters.shown,
     counters.failed,
     queue_len(),

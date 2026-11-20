@@ -972,30 +972,26 @@ do
 end
 
 -- Persistent state: one srtap_<seed>_<slot>.txt per seed+slot, written only at
--- the module's durability points (prime end, menu return, socket drop).
-local PRIME_QUIET_TICKS = 4 -- mirrors the module's priming window (~1s)
+-- the module's durability points (every ten new items, menu return, socket drop).
 
--- a first run has no watermark, so the whole connect sync is history and
--- nothing is announced
+-- a first run has no watermark, so the whole connect sync is announced like any
+-- other burst
 do
-    fresh() -- the host's menu-return reset first, as a real boot does
+    local w = fresh() -- the host's menu-return reset first, as a real boot does
     os.remove(STATE_FILE)
     uncache_state()
     banner.configure(SD)
     for i = 1, 20 do banner.note_item("Item " .. i, i) end
     advance(1) -- a second ItemsReceived message lands a tick later
     for i = 21, 40 do banner.note_item("Item " .. i, i) end
-    check("no fanfare for the sync", fanfares == 0, tostring(fanfares))
-    check("nothing queued", has(banner.status(), "waiting=0"), banner.status())
-    advance(PRIME_QUIET_TICKS)
-    check("the prime ended", has(banner.status(), "priming=n"), banner.status())
-    check("logged once", count_log("connect backlog: 40 item(s) treated as history") == 1, log_text())
-    banner.note_item("Fresh Item", 41)
-    advance(1)
-    pump()
-    check("the next item is announced", fanfares == 1, tostring(fanfares))
-    check("its line", writes[1] == "Received Fresh Item", table.concat(writes, ","))
-    drain()
+    check("the sync opens a fanfare", fanfares == 1, tostring(fanfares))
+    check("the first line is announced", writes[1] == "Received Item 1", table.concat(writes, ","))
+    check("the first line holds the banner", w._prop == "Received Item 1", w._prop)
+    check("the rest of the sync waits its burst", has(banner.status(), "waiting=20"), banner.status())
+    check("nothing is treated as history", count_log("treated as history") == 0, log_text())
+    drain(40)
+    check("every synced item is announced", #writes == 40, tostring(#writes))
+    check("the last one lands", writes[40] == "Received Item 40", table.concat(writes, ","))
 end
 
 -- a stored watermark swallows the replay and announces only the items
@@ -1005,7 +1001,6 @@ do
     write_state("seen_upto=40\n")
     uncache_state()
     banner.configure(SD)
-    check("not priming with a stored watermark", has(banner.status(), "priming=n"), banner.status())
     for i = 1, 40 do banner.note_item("Item " .. i, i) end
     advance(2)
     check("the replay is silent", fanfares == 0, tostring(fanfares))

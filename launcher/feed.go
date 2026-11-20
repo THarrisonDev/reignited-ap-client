@@ -107,6 +107,21 @@ func (f *Feed) setStatus(connected bool, status string) {
 	f.connected, f.status = connected, status
 }
 
+// reset drops every session-scoped field, keeping the status line and the hint
+// request channel, so a new or dead session never shows on the Play tab.
+func (f *Feed) reset() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.connected = false
+	f.checked, f.total = 0, 0
+	f.events = nil
+	f.points, f.pointsKnown = 0, false
+	f.hintCost = nil
+	f.hints = nil
+	f.missing, f.items = nil, nil
+	f.notice = ""
+}
+
 func (f *Feed) setChecks(checked, total int) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -210,14 +225,27 @@ func (f *Feed) HintView() hintView {
 // Run keeps the feed connected to the room named by conf, reconnecting after
 // drops and as soon as host/slot/password change. It returns when ctx ends.
 func (f *Feed) Run(ctx context.Context, conf func() feedConn) {
+	var (
+		last      feedConn
+		attempted bool
+	)
 	for ctx.Err() == nil {
 		cfg := conf()
 		if cfg.Slot == "" {
+			f.reset()
 			f.setStatus(false, "Set a slot name above to follow your checks.")
-		} else if err := f.runOnce(ctx, cfg, conf); errors.Is(err, errConfigChanged) {
-			continue
-		} else if err != nil && ctx.Err() == nil {
-			f.setStatus(false, err.Error()+" Retrying…")
+		} else {
+			if !attempted || cfg != last {
+				f.reset()
+			}
+			attempted, last = true, cfg
+			err := f.runOnce(ctx, cfg, conf)
+			f.reset()
+			if errors.Is(err, errConfigChanged) {
+				continue
+			} else if err != nil && ctx.Err() == nil {
+				f.setStatus(false, err.Error()+" Retrying…")
+			}
 		}
 		select {
 		case <-ctx.Done():
@@ -487,7 +515,7 @@ func (s *apSession) onRoomInfo(raw json.RawMessage) error {
 	return s.send(getPkg, map[string]any{
 		"cmd": "Connect", "game": "", "name": s.cfg.Slot, "password": s.cfg.Password,
 		"uuid": feedUUID, "items_handling": 0, "tags": []string{"TextOnly"}, "slot_data": true,
-		"version": map[string]any{"major": 0, "minor": 7, "build": 1, "class": "Version"},
+		"version": map[string]any{"major": 0, "minor": 7, "build": 2, "class": "Version"},
 	})
 }
 

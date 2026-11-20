@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -57,6 +58,10 @@ const (
 		"slot_info":{"2":{"name":"SRTPlayer","game":"Spyro Reignited Trilogy","type":1}},
 		"slot_data":{"other_option":true},
 		"checked_locations":[],"missing_locations":[100]}]`
+	secondSlotJS = `[{"cmd":"Connected","slot":3,
+		"players":[{"team":0,"slot":3,"alias":"OtherPlayer","name":"OtherPlayer"}],
+		"slot_info":{"3":{"name":"OtherPlayer","game":"Spyro Reignited Trilogy","type":1}},
+		"checked_locations":[],"missing_locations":[]}]`
 )
 
 func itemSendJS(receiving, finder int, item, loc int64, flags int) string {
@@ -230,6 +235,74 @@ func TestFeedClassifiesItemMovements(t *testing.T) {
 	}
 }
 
+// TestFeedResetClearsSessionState pins the Play tab's clean slate: one slot's
+// counts, events, points, hints and lists never outlive its session.
+func TestFeedResetClearsSessionState(t *testing.T) {
+	f, s, _ := testSession(t)
+	mustHandle(t, s, hintRoomInfoJS)
+	mustHandle(t, s, dataPackageJS)
+	mustHandle(t, s, hintConnectedJS)
+	mustHandle(t, s, retrievedHintsJS)
+	mustHandle(t, s, itemSendJS(2, 2, 10, 100, 0))
+	mustHandle(t, s, commandResultJS)
+
+	requireLiveFeed(t, f.View())
+	requireLiveHints(t, f.HintView())
+
+	f.reset()
+
+	requireIdleFeed(t, f.View())
+	requireIdleHints(t, f.HintView())
+	if f.HintView().Connected {
+		t.Error("hint panel still reports a live connection")
+	}
+}
+
+// requireLiveFeed fails unless a session filled the check counts and events.
+func requireLiveFeed(t *testing.T, v feedView) {
+	t.Helper()
+	if !v.Connected || v.Checked == 0 || len(v.Events) == 0 {
+		t.Fatalf("session did not populate the feed: %+v", v)
+	}
+}
+
+// requireLiveHints fails unless a session filled the hint panel and its lists.
+func requireLiveHints(t *testing.T, h hintView) {
+	t.Helper()
+	if !h.PointsKnown || h.Points == 0 || len(h.Hints) == 0 {
+		t.Fatalf("session did not populate the hint panel: %+v", h)
+	}
+	if len(h.Missing) == 0 || len(h.Items) == 0 || h.Notice == "" {
+		t.Fatalf("session did not populate the hint lists: %+v", h)
+	}
+}
+
+// requireIdleFeed fails unless the feed holds no session data but keeps its
+// status line.
+func requireIdleFeed(t *testing.T, v feedView) {
+	t.Helper()
+	if v.Connected || v.Checked != 0 || v.Total != 0 || len(v.Events) != 0 {
+		t.Errorf("view after reset = %+v, want an idle feed", v)
+	}
+	if v.Status == "" {
+		t.Error("reset dropped the status line")
+	}
+}
+
+// requireIdleHints fails unless the hint panel holds no session data.
+func requireIdleHints(t *testing.T, h hintView) {
+	t.Helper()
+	if h.PointsKnown || h.Points != 0 {
+		t.Errorf("hint view after reset = %+v, want an idle panel", h)
+	}
+	if len(h.Hints) != 0 || len(h.Missing) != 0 || len(h.Items) != 0 {
+		t.Errorf("hint view after reset = %+v, want an idle panel", h)
+	}
+	if h.Notice != "" || h.Cost != 0 || !h.Free {
+		t.Errorf("hint view after reset = %+v, want an idle panel", h)
+	}
+}
+
 func TestFeedUnknownIDsAndServerGrants(t *testing.T) {
 	f, s, _ := testSession(t)
 	mustHandle(t, s, connectedJS)
@@ -335,6 +408,111 @@ func waitForEvent(t *testing.T, f *Feed) feedView {
 		time.Sleep(20 * time.Millisecond)
 	}
 	return f.View()
+}
+
+// waitForStatus blocks until the feed reports that exact status line.
+func waitForStatus(t *testing.T, f *Feed, status string) feedView {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if v := f.View(); v.Connected && v.Status == status {
+			return v
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("feed never reported %q: %+v", status, f.View())
+	return feedView{}
+}
+
+// TestFeedRunDropsPreviousSlot pins the Play tab across a slot change: once the
+// settings name another slot, the previous slot's checks, events and hints are
+// gone rather than looking live on the new session.
+func TestFeedRunDropsPreviousSlot(t *testing.T) {
+	switched := new(atomic.Bool)
+	srv := slotChangeServer(t)
+
+	host := "ws://" + strings.TrimPrefix(srv.URL, "http://")
+	f := NewFeed()
+	runInBackground(t, f, func() feedConn {
+		slot := "SRTPlayer"
+		if switched.Load() {
+			slot = "OtherPlayer"
+		}
+		return feedConn{Host: host, Slot: slot}
+	})
+
+	a := waitForEvent(t, f)
+	if !a.Connected || a.Checked != 1 || a.Total != 4 || len(a.Events) != 1 {
+		t.Fatalf("slot A never became live: %+v", a)
+	}
+	requireLiveHints(t, f.HintView())
+
+	switched.Store(true)
+	b := waitForStatus(t, f, "Connected as OtherPlayer.")
+	if !b.Connected || b.Checked != 0 || b.Total != 0 || len(b.Events) != 0 {
+		t.Errorf("slot B inherited slot A's feed: %+v", b)
+	}
+	requireIdleHints(t, f.HintView())
+}
+
+// runInBackground runs the feed until the test ends.
+func runInBackground(t *testing.T, f *Feed, conf func() feedConn) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		f.Run(ctx, conf)
+		close(done)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+		}
+	})
+}
+
+// slotChangeServer serves slot A with checks, an event and hints, then an empty
+// slot B on the next connection.
+func slotChangeServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	var conns atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		serveSlotChange(w, r, &conns)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// serveSlotChange runs one accepted connection: the first reports slot A, every
+// later one the empty secondSlotJS.
+func serveSlotChange(w http.ResponseWriter, r *http.Request, conns *atomic.Int32) {
+	c, err := websocket.Accept(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer func() { _ = c.CloseNow() }()
+	ctx := context.Background()
+	_ = c.Write(ctx, websocket.MessageText, []byte(roomInfoJS))
+	_, b, err := c.Read(ctx)
+	if err != nil || !strings.Contains(string(b), `"Connect"`) {
+		return
+	}
+	if conns.Add(1) == 1 {
+		first := []string{dataPackageJS, connectedJS, retrievedHintsJS,
+			`[{"cmd":"RoomUpdate","hint_points":30}]`, commandResultJS, itemSendJS(1, 2, 500, 101, 1)}
+		for _, js := range first {
+			_ = c.Write(ctx, websocket.MessageText, []byte(js))
+		}
+	} else {
+		_ = c.Write(ctx, websocket.MessageText, []byte(secondSlotJS))
+	}
+	for {
+		if _, _, err := c.Read(ctx); err != nil {
+			return
+		}
+	}
 }
 
 func TestFeedFragmentEscapesNames(t *testing.T) {
