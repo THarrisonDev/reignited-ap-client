@@ -425,6 +425,96 @@ func assertMigratedBridge(t *testing.T, newDir, legacy string) {
 	}
 }
 
+// writeContent creates a file (and parents) holding body.
+func writeContent(t *testing.T, path, body string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// assertContent fails unless path exists and holds want.
+func assertContent(t *testing.T, path, want string) {
+	t.Helper()
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Errorf("%s: %v", path, err)
+		return
+	}
+	if string(got) != want {
+		t.Errorf("%s = %q, want %q", path, got, want)
+	}
+}
+
+// TestInstallAdoptsLiveNewBridge: when the new-location bridge folder already
+// holds bridge files it is the folder the mod reads, so install writes there
+// instead of the legacy folder and never touches the legacy tree.
+func TestInstallAdoptsLiveNewBridge(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Proton prefix layout")
+	}
+	root := t.TempDir()
+	driveC := filepath.Join(root, "pfx", "drive_c")
+	legacy := legacyBridgeForDriveC(driveC)
+	newDir := newBridgeForDriveC(driveC)
+	writeContent(t, filepath.Join(legacy, "config.txt"), "legacy")
+	writeContent(t, filepath.Join(legacy, "srtap_checkd.exe"), "legacy")
+	writeContent(t, filepath.Join(newDir, "config.txt"), "live")
+	writeContent(t, filepath.Join(newDir, "srtap_checkd.exe"), "stale")
+	writeContent(t, filepath.Join(newDir, "keep.txt"), "player notes")
+	src := filepath.Join(root, "src")
+	writeContent(t, filepath.Join(src, "srtap_checkd.exe"), "fresh")
+
+	res, effective := Install(Paths{ConfigDir: legacy, GameWin64: installedGame(t, root),
+		PrefixReady: true}, src, installOptions{NoDownload: true})
+
+	step := stepOf(res, "Bridge folder")
+	if step == nil || !step.OK || !strings.Contains(step.Detail, newDir) {
+		t.Fatalf("expected an adopt step naming %s: %+v", newDir, res)
+	}
+	if effective.ConfigDir != newDir {
+		t.Fatalf("effective ConfigDir = %s, want %s", effective.ConfigDir, newDir)
+	}
+	scanner := stepOf(res, "Save scanner (srtap_checkd.exe)")
+	if scanner == nil || !scanner.OK || scanner.Detail != filepath.Join(newDir, "srtap_checkd.exe") {
+		t.Fatalf("the scanner must install into %s: %+v", newDir, res)
+	}
+	assertContent(t, filepath.Join(newDir, "srtap_checkd.exe"), "fresh")
+	assertContent(t, filepath.Join(newDir, "config.txt"), "live")
+	assertContent(t, filepath.Join(newDir, "keep.txt"), "player notes")
+	assertContent(t, filepath.Join(legacy, "config.txt"), "legacy")
+	assertContent(t, filepath.Join(legacy, "srtap_checkd.exe"), "legacy")
+}
+
+// TestBridgePlan pins the three install targets: adopt the new-location folder
+// once it holds bridge files, migrate into it while it is empty, and install in
+// place for a folder that is not legacy.
+func TestBridgePlan(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Proton prefix layout")
+	}
+	driveC := filepath.Join(t.TempDir(), "pfx", "drive_c")
+	legacy := legacyBridgeForDriveC(driveC)
+	newDir := newBridgeForDriveC(driveC)
+	other := filepath.Join(driveC, "elsewhere")
+
+	if got, from := bridgePlan(legacy); got != newDir || from != legacy {
+		t.Errorf("empty new folder: got (%s, %s), want (%s, %s)", got, from, newDir, legacy)
+	}
+
+	mkfile(t, filepath.Join(newDir, "config.txt"))
+	if got, from := bridgePlan(legacy); got != newDir || from != "" {
+		t.Errorf("live new folder: got (%s, %s), want (%s, none)", got, from, newDir)
+	}
+
+	if got, from := bridgePlan(other); got != other || from != "" {
+		t.Errorf("non-legacy folder: got (%s, %s), want (%s, none)", got, from, other)
+	}
+}
+
 // TestInstallNoPrefixDefersBridge: with no Proton prefix the game steps still
 // run, the bridge step reports the deferred-install message and nothing is
 // created anywhere in the prefix tree.

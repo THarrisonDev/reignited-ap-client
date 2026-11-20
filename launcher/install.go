@@ -116,7 +116,8 @@ func installGameFolder(win64, src string, opts installOptions) []installResult {
 // returning the folder actually used. With no usable Proton prefix on Linux it
 // creates nothing and reports the deferred-install guidance instead: a partial
 // prefix makes Steam reuse a broken one. A legacy folder migrates to the new
-// location first (the legacy tree is left in place).
+// location, or adopts it when the mod already reads it there (the legacy tree is
+// left in place either way).
 func installBridge(p Paths, src string) ([]installResult, string) {
 	if runtime.GOOS != "windows" && !p.PrefixReady {
 		return []installResult{{"Bridge folder", false,
@@ -129,37 +130,71 @@ func installBridge(p Paths, src string) ([]installResult, string) {
 				"the bridge folder's parent is not writable: " + filepath.Dir(target) + " — " + permissionFix}},
 			p.ConfigDir
 	}
-	var out []installResult
-	if migrated != "" {
-		if err := os.MkdirAll(target, 0755); err != nil {
-			return append(out, resultOf("Bridge folder", target, err)), p.ConfigDir
-		}
-		if err := copyTree(migrated, target); err != nil {
-			return append(out, resultOf("Bridge folder", target, err)), p.ConfigDir
-		}
-		resetTransientBridgeFiles(target)
-		out = append(out, installResult{"Bridge folder", true,
-			"migrated the old bridge folder " + migrated + " to " + target})
-	} else {
-		out = append(out, resultOf("Bridge folder", target, os.MkdirAll(target, 0755)))
+	step, err := prepareBridge(target, p.ConfigDir, migrated)
+	if err != nil {
+		return []installResult{step}, p.ConfigDir
 	}
+	out := []installResult{step}
 	if src != "" {
 		out = append(out, installScanner(src, target))
 	}
 	return out, target
 }
 
+// prepareBridge creates the install's bridge target and reports which folder is
+// used: a copy of the legacy one when migrated names it, the new location when
+// the plan moved there, else the folder itself.
+func prepareBridge(target, old, migrated string) (installResult, error) {
+	switch {
+	case migrated != "":
+		return migrateBridge(target, migrated)
+	case !samePath(target, old):
+		return adoptBridge(target, old)
+	default:
+		err := os.MkdirAll(target, 0755)
+		return resultOf("Bridge folder", target, err), err
+	}
+}
+
+// migrateBridge copies the legacy folder into target, dropping the session-scoped
+// files a stale heartbeat or session would misreport.
+func migrateBridge(target, from string) (installResult, error) {
+	if err := os.MkdirAll(target, 0755); err != nil {
+		return resultOf("Bridge folder", target, err), err
+	}
+	if err := copyTree(from, target); err != nil {
+		return resultOf("Bridge folder", target, err), err
+	}
+	resetTransientBridgeFiles(target)
+	return installResult{"Bridge folder", true,
+		"migrated the old bridge folder " + from + " to " + target}, nil
+}
+
+// adoptBridge reports the switch to the folder the mod already reads.
+func adoptBridge(target, old string) (installResult, error) {
+	err := os.MkdirAll(target, 0755)
+	if err != nil {
+		return resultOf("Bridge folder", target, err), err
+	}
+	return installResult{"Bridge folder", true,
+		"using the bridge folder the mod reads: " + target + " (was " + old + ")"}, nil
+}
+
 // bridgePlan returns the folder an install should write the bridge files to,
 // plus the legacy folder it must migrate from ("" when nothing is migrated).
-// Only a legacy folder whose new-location counterpart holds no bridge files
-// yet migrates; anything else installs in place.
+// A legacy folder whose new-location counterpart already holds bridge files
+// adopts that folder, since it is the one the mod reads; an empty one migrates;
+// anything else installs in place.
 func bridgePlan(configDir string) (target, migratedFrom string) {
 	if !isLegacyBridge(configDir) {
 		return configDir, ""
 	}
 	newDir := newBridgeForConfig(configDir)
-	if newDir == "" || samePath(newDir, configDir) || hasBridgeFiles(newDir) {
+	if newDir == "" || samePath(newDir, configDir) {
 		return configDir, ""
+	}
+	if hasBridgeFiles(newDir) {
+		return newDir, ""
 	}
 	return newDir, configDir
 }

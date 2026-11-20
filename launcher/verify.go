@@ -172,7 +172,8 @@ func bridgeMatchesGame(p Paths) (Check, bool) {
 	}
 	check.OK = false
 	check.Detail = "newer bridge activity in " + best.Bridge
-	check.Fix = "Set the Bridge folder to " + best.Bridge + " and save (or click Reset to auto-detected)."
+	check.Fix = "Click Install / update setup to switch to " + best.Bridge +
+		", or set the Bridge folder to " + best.Bridge + " and save."
 	return check, true
 }
 

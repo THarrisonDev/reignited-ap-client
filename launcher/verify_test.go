@@ -181,8 +181,9 @@ func TestVerifyBridgeMatchesGameFires(t *testing.T) {
 	if !strings.Contains(check.Detail, bridgeB) {
 		t.Fatalf("detail should name %s: %s", bridgeB, check.Detail)
 	}
-	if !strings.Contains(check.Fix, "Set the Bridge folder to "+bridgeB) {
-		t.Fatalf("fix should name the folder to select: %s", check.Fix)
+	if !strings.Contains(check.Fix, "Click Install / update setup to switch to "+bridgeB) ||
+		!strings.Contains(check.Fix, "set the Bridge folder to "+bridgeB) {
+		t.Fatalf("fix should name the folder to switch to: %s", check.Fix)
 	}
 
 	p.ConfigDir = bridgeB
