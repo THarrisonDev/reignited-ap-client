@@ -382,29 +382,16 @@ func installedGame(t *testing.T, root string) string {
 // bridge folder is copied into the new location, the legacy tree is kept, and
 // the returned paths follow the new folder.
 func TestInstallMigratesLegacyBridge(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Proton prefix layout")
-	}
-	root := t.TempDir()
-	driveC := filepath.Join(root, "pfx", "drive_c")
-	legacy := legacyBridgeForDriveC(driveC)
-	newDir := newBridgeForDriveC(driveC)
+	root, legacy, newDir, src := legacyPrefix(t)
 	mkfile(t, filepath.Join(legacy, "config.txt"))
 	mkfile(t, filepath.Join(legacy, "keep", "old.txt"))
 	mkfile(t, filepath.Join(legacy, "checkd.hb"))
-	src := filepath.Join(root, "src")
 	mkfile(t, filepath.Join(src, "srtap_checkd.exe"))
 
-	res, effective := Install(Paths{ConfigDir: legacy, GameWin64: installedGame(t, root),
-		PrefixReady: true}, src, installOptions{NoDownload: true})
+	res, effective := installBridgeRun(t, root, legacy, src)
 
-	step := stepOf(res, "Bridge folder")
-	if step == nil || !step.OK || !strings.Contains(step.Detail, "migrated") {
-		t.Fatalf("expected a migration step: %+v", res)
-	}
-	if effective.ConfigDir != newDir {
-		t.Fatalf("effective ConfigDir = %s, want %s", effective.ConfigDir, newDir)
-	}
+	requireBridgeStep(t, res, "migrated")
+	requireConfigDir(t, effective, newDir)
 	assertMigratedBridge(t, newDir, legacy)
 }
 
@@ -449,35 +436,60 @@ func assertContent(t *testing.T, path, want string) {
 	}
 }
 
+// legacyPrefix builds a temp Proton prefix with a legacy and a new bridge folder
+// plus a source dir, skipping on a native Windows layout.
+func legacyPrefix(t *testing.T) (root, legacy, newDir, src string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("Proton prefix layout")
+	}
+	root = t.TempDir()
+	driveC := filepath.Join(root, "pfx", "drive_c")
+	return root, legacyBridgeForDriveC(driveC), newBridgeForDriveC(driveC),
+		filepath.Join(root, "src")
+}
+
+// installBridgeRun installs src into a prefix-backed layout rooted at root.
+func installBridgeRun(t *testing.T, root, configDir, src string) ([]installResult, Paths) {
+	t.Helper()
+	return Install(Paths{ConfigDir: configDir, GameWin64: installedGame(t, root),
+		PrefixReady: true}, src, installOptions{NoDownload: true})
+}
+
+// requireBridgeStep fails unless the install's bridge step succeeded and named
+// want.
+func requireBridgeStep(t *testing.T, res []installResult, want string) {
+	t.Helper()
+	step := stepOf(res, "Bridge folder")
+	if step == nil || !step.OK || !strings.Contains(step.Detail, want) {
+		t.Fatalf("expected a bridge step naming %s: %+v", want, res)
+	}
+}
+
+// requireConfigDir fails unless the install used want as its bridge folder.
+func requireConfigDir(t *testing.T, effective Paths, want string) {
+	t.Helper()
+	if effective.ConfigDir != want {
+		t.Fatalf("effective ConfigDir = %s, want %s", effective.ConfigDir, want)
+	}
+}
+
 // TestInstallAdoptsLiveNewBridge: when the new-location bridge folder already
 // holds bridge files it is the folder the mod reads, so install writes there
 // instead of the legacy folder and never touches the legacy tree.
 func TestInstallAdoptsLiveNewBridge(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Proton prefix layout")
-	}
-	root := t.TempDir()
-	driveC := filepath.Join(root, "pfx", "drive_c")
-	legacy := legacyBridgeForDriveC(driveC)
-	newDir := newBridgeForDriveC(driveC)
+	root, legacy, newDir, src := legacyPrefix(t)
 	writeContent(t, filepath.Join(legacy, "config.txt"), "legacy")
 	writeContent(t, filepath.Join(legacy, "srtap_checkd.exe"), "legacy")
 	writeContent(t, filepath.Join(newDir, "config.txt"), "live")
 	writeContent(t, filepath.Join(newDir, "srtap_checkd.exe"), "stale")
 	writeContent(t, filepath.Join(newDir, "keep.txt"), "player notes")
-	src := filepath.Join(root, "src")
 	writeContent(t, filepath.Join(src, "srtap_checkd.exe"), "fresh")
 
-	res, effective := Install(Paths{ConfigDir: legacy, GameWin64: installedGame(t, root),
-		PrefixReady: true}, src, installOptions{NoDownload: true})
+	res, effective := installBridgeRun(t, root, legacy, src)
 
-	step := stepOf(res, "Bridge folder")
-	if step == nil || !step.OK || !strings.Contains(step.Detail, newDir) {
-		t.Fatalf("expected an adopt step naming %s: %+v", newDir, res)
-	}
-	if effective.ConfigDir != newDir {
-		t.Fatalf("effective ConfigDir = %s, want %s", effective.ConfigDir, newDir)
-	}
+	requireBridgeStep(t, res, newDir)
+	requireConfigDir(t, effective, newDir)
 	scanner := stepOf(res, "Save scanner (srtap_checkd.exe)")
 	if scanner == nil || !scanner.OK || scanner.Detail != filepath.Join(newDir, "srtap_checkd.exe") {
 		t.Fatalf("the scanner must install into %s: %+v", newDir, res)

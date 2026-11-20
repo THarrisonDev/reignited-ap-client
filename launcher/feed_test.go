@@ -371,22 +371,33 @@ func TestFeedRunAgainstServer(t *testing.T) {
 	}
 }
 
+// acceptClient completes the room-info handshake and returns the connection
+// once the client has sent Connect.
+func acceptClient(w http.ResponseWriter, r *http.Request) (*websocket.Conn, context.Context, bool) {
+	c, err := websocket.Accept(w, r, nil)
+	if err != nil {
+		return nil, nil, false
+	}
+	ctx := context.Background()
+	_ = c.Write(ctx, websocket.MessageText, []byte(roomInfoJS))
+	_, b, err := c.Read(ctx)
+	if err != nil || !strings.Contains(string(b), `"Connect"`) {
+		_ = c.CloseNow()
+		return nil, nil, false
+	}
+	return c, ctx, true
+}
+
 // feedServer serves the handshake, data package, Connected and one ItemSend,
 // then holds the connection open until the test ends.
 func feedServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		c, err := websocket.Accept(w, r, nil)
-		if err != nil {
+		c, ctx, ok := acceptClient(w, r)
+		if !ok {
 			return
 		}
 		defer func() { _ = c.CloseNow() }()
-		ctx := context.Background()
-		_ = c.Write(ctx, websocket.MessageText, []byte(roomInfoJS))
-		_, b, err := c.Read(ctx)
-		if err != nil || !strings.Contains(string(b), `"Connect"`) {
-			return
-		}
 		for _, js := range []string{dataPackageJS, connectedJS, itemSendJS(1, 2, 500, 101, 1)} {
 			_ = c.Write(ctx, websocket.MessageText, []byte(js))
 		}
@@ -488,17 +499,11 @@ func slotChangeServer(t *testing.T) *httptest.Server {
 // serveSlotChange runs one accepted connection: the first reports slot A, every
 // later one the empty secondSlotJS.
 func serveSlotChange(w http.ResponseWriter, r *http.Request, conns *atomic.Int32) {
-	c, err := websocket.Accept(w, r, nil)
-	if err != nil {
+	c, ctx, ok := acceptClient(w, r)
+	if !ok {
 		return
 	}
 	defer func() { _ = c.CloseNow() }()
-	ctx := context.Background()
-	_ = c.Write(ctx, websocket.MessageText, []byte(roomInfoJS))
-	_, b, err := c.Read(ctx)
-	if err != nil || !strings.Contains(string(b), `"Connect"`) {
-		return
-	}
 	if conns.Add(1) == 1 {
 		first := []string{dataPackageJS, connectedJS, retrievedHintsJS,
 			`[{"cmd":"RoomUpdate","hint_points":30}]`, commandResultJS, itemSendJS(1, 2, 500, 101, 1)}

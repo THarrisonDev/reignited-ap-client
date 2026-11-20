@@ -15,12 +15,7 @@ import (
 // mkfile creates a file (and parents) with placeholder content.
 func mkfile(t *testing.T, path string) {
 	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte("x"), 0644); err != nil {
-		t.Fatal(err)
-	}
+	writeContent(t, path, "x")
 }
 
 // fullLayout builds a temp dir tree that passes every check and returns Paths.
